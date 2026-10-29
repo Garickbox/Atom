@@ -118,49 +118,196 @@ object UpdateChecker {
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .readTimeout(30, TimeUnit.SECONDS)
                     .build()
-                val req = Request.Builder()
-                    .url(release.apkUrl)
-                    .header("User-Agent", "Atom-Android")
-                    .build()
 
-                client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
-                    val body = resp.body ?: throw IllegalStateException("empty body")
-                    val total = body.contentLength()
-                    body.byteStream().use { input ->
-                        FileOutputStream(out).use { output ->
-                            val buf = ByteArray(64 * 1024)
-                            var downloaded = 0L
-                            var lastUpdate = 0L
-                            while (true) {
-                                val read = input.read(buf)
-                                if (read < 0) break
-                                output.write(buf, 0, read)
-                                downloaded += read
-                                val now = System.currentTimeMillis()
-                                if (now - lastUpdate > 300) {
-                                    lastUpdate = now
-                                    showNotification(activity, release, downloaded, total, false)
-                                }
-                            }
-                            InAppLogger.d("UpdateChecker",
-                                "download done: ${out.length()} bytes → ${out.absolutePath}")
-                        }
-                    }
+                val success = downloadWithRanges(client, release.apkUrl, out) { downloaded, total ->
+                    showNotification(activity, release, downloaded, total, false)
                 }
+
+                if (!success) {
+                    throw IllegalStateException("parallel download failed")
+                }
+
+                InAppLogger.d("UpdateChecker",
+                    "download done: ${out.length()} bytes → ${out.absolutePath}")
                 hideNotification(activity)
                 activity.runOnUiThread {
-                    Toast.makeText(activity, "Скачано. Открываю установщик…", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "Скачано. Открываю установщик…",
+                        Toast.LENGTH_SHORT).show()
                     installApk(activity, out)
                 }
             } catch (e: Exception) {
                 InAppLogger.d("UpdateChecker", "download error: ${e.message}")
                 hideNotification(activity)
                 activity.runOnUiThread {
-                    Toast.makeText(activity, "Ошибка загрузки: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, "Ошибка загрузки: ${e.message}",
+                        Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
+    }
+
+    /**
+     * 4-поточная загрузка через HTTP Range.
+     * Если сервер не поддерживает Range или файл < 2 МБ — fallback на single.
+     */
+    private fun downloadWithRanges(
+        client: OkHttpClient,
+        url: String,
+        outFile: File,
+        onProgress: (Long, Long) -> Unit
+    ): Boolean {
+        // HEAD — узнать размер и Accept-Ranges
+        val headReq = Request.Builder()
+            .url(url)
+            .head()
+            .header("User-Agent", "Atom-Android")
+            .build()
+
+        var totalSize = 0L
+        var acceptsRanges = false
+        try {
+            client.newCall(headReq).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    InAppLogger.d("UpdateChecker", "HEAD http ${resp.code} → single")
+                    return downloadSingle(client, url, outFile, onProgress)
+                }
+                totalSize = resp.header("Content-Length")?.toLongOrNull() ?: 0L
+                acceptsRanges = resp.header("Accept-Ranges") == "bytes"
+                InAppLogger.d("UpdateChecker",
+                    "HEAD: size=$totalSize acceptsRanges=$acceptsRanges")
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("UpdateChecker", "HEAD error: ${e.message} → single")
+            return downloadSingle(client, url, outFile, onProgress)
+        }
+
+        if (totalSize < 2_000_000L || !acceptsRanges) {
+            InAppLogger.d("UpdateChecker",
+                "small file or no Range support → single-thread")
+            return downloadSingle(client, url, outFile, onProgress)
+        }
+
+        val threads = 4
+        val chunkSize = (totalSize + threads - 1) / threads
+        val downloaded = java.util.concurrent.atomic.AtomicLong(0L)
+        val lastNotif = java.util.concurrent.atomic.AtomicLong(0L)
+        var allOk = true
+
+        // Preallocate file (setLength)
+        try {
+            java.io.RandomAccessFile(outFile, "rw").use { it.setLength(totalSize) }
+        } catch (e: Exception) {
+            InAppLogger.d("UpdateChecker", "preallocate error: ${e.message}")
+            return downloadSingle(client, url, outFile, onProgress)
+        }
+
+        InAppLogger.d("UpdateChecker",
+            "parallel download: $threads threads × ${chunkSize / 1024 / 1024} MB each")
+
+        val startTime = System.currentTimeMillis()
+
+        val jobs = (0 until threads).map { i ->
+            val threadStart = i * chunkSize
+            val threadEnd = minOf(threadStart + chunkSize, totalSize) - 1
+            if (threadStart > threadEnd) return@map null
+
+            Thread {
+                try {
+                    val req = Request.Builder()
+                        .url(url)
+                        .header("Range", "bytes=$threadStart-$threadEnd")
+                        .header("User-Agent", "Atom-Android")
+                        .build()
+
+                    client.newCall(req).execute().use { resp ->
+                        if (resp.code != 206) {
+                            throw IllegalStateException("Range not supported: ${resp.code}")
+                        }
+                        val body = resp.body ?: throw IllegalStateException("null body")
+
+                        java.io.RandomAccessFile(outFile, "rw").use { raf ->
+                            raf.seek(threadStart)
+                            val input = java.io.BufferedInputStream(
+                                body.byteStream(), 256 * 1024)
+                            val buf = ByteArray(256 * 1024)
+                            while (true) {
+                                val read = input.read(buf)
+                                if (read < 0) break
+                                raf.write(buf, 0, read)
+                                val total = downloaded.addAndGet(read.toLong())
+                                val now = System.currentTimeMillis()
+                                if (now - lastNotif.get() > 400) {
+                                    lastNotif.set(now)
+                                    onProgress(total, totalSize)
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    InAppLogger.d("UpdateChecker", "thread $i error: ${e.message}")
+                    allOk = false
+                }
+            }.apply { isDaemon = true; start() }
+        }
+
+        // Ждём завершения всех потоков
+        jobs.forEach { it?.join() }
+
+        val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
+        val speed = if (elapsed > 0) totalSize / 1024.0 / 1024.0 / elapsed else 0.0
+        InAppLogger.d("UpdateChecker",
+            "parallel done in ${"%.1f".format(elapsed)}s = ${"%.1f".format(speed)} MB/s, allOk=$allOk")
+
+        if (!allOk || outFile.length() != totalSize) {
+            InAppLogger.d("UpdateChecker",
+                "parallel failed (size=${outFile.length()}/$totalSize) → fallback single")
+            outFile.delete()
+            return downloadSingle(client, url, outFile, onProgress)
+        }
+
+        onProgress(totalSize, totalSize)
+        return true
+    }
+
+    /** Fallback single-thread (для маленьких файлов или без Range). */
+    private fun downloadSingle(
+        client: OkHttpClient,
+        url: String,
+        outFile: File,
+        onProgress: (Long, Long) -> Unit
+    ): Boolean {
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Atom-Android")
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
+            val body = resp.body ?: throw IllegalStateException("empty body")
+            val total = body.contentLength()
+            var downloaded = 0L
+            var lastUpdate = 0L
+
+            java.io.BufferedOutputStream(
+                java.io.FileOutputStream(outFile), 256 * 1024
+            ).use { output ->
+                val input = java.io.BufferedInputStream(body.byteStream(), 256 * 1024)
+                val buf = ByteArray(256 * 1024)
+                while (true) {
+                    val read = input.read(buf)
+                    if (read < 0) break
+                    output.write(buf, 0, read)
+                    downloaded += read
+                    val now = System.currentTimeMillis()
+                    if (now - lastUpdate > 400) {
+                        lastUpdate = now
+                        onProgress(downloaded, total)
+                    }
+                }
+            }
+            onProgress(downloaded, total)
+        }
+        return true
     }
 
     private fun showNotification(
