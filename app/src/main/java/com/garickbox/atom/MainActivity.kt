@@ -48,12 +48,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkUpdate() {
+        InAppLogger.d("MainActivity", "manual update check")
         lifecycleScope.launch {
             Toast.makeText(this@MainActivity, "Проверяю обновление…", Toast.LENGTH_SHORT).show()
             val release = UpdateChecker.checkForUpdate(this@MainActivity)
             if (release == null) {
+                InAppLogger.d("MainActivity", "no update")
                 Toast.makeText(this@MainActivity, "Обновлений нет", Toast.LENGTH_SHORT).show()
             } else {
+                InAppLogger.d("MainActivity", "update found: ${release.tag}")
                 UpdateChecker.promptAndInstall(this@MainActivity, release)
             }
         }
