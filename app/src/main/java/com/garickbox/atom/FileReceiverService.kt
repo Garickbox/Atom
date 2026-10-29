@@ -77,6 +77,7 @@ class FileReceiverService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        AtomController.setTransferActive(true)
         instance = this
         // Немедленный startForeground — иначе ANR на Android 12+
         startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0, 0L))
@@ -143,6 +144,7 @@ class FileReceiverService : Service() {
     }
 
     override fun onDestroy() {
+        AtomController.setTransferActive(false)
         instance = null
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)

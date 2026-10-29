@@ -176,6 +176,7 @@ class MeshNode(private val ctx: Context) {
             }
             PacketType.HERE -> {
                 val hp = HelloPayload.fromJson(packet.payload)
+                if (hp.peerId == myId) return  // skip self
                 InAppLogger.d("MeshNode", "received HERE from ${hp.name} @ $fromIp")
                 hereAwaiters[fromIp]?.complete(true)
             }

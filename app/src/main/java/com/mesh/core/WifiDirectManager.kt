@@ -156,6 +156,15 @@ class WifiDirectManager(private val ctx: Context) {
                 )
                 InAppLogger.d("WifiDirect",
                     "connected: isGO=${conn.isGroupOwner} goIp=$ip")
+                // Log group frequency — проверка 5/2.4 GHz
+                try {
+                    manager?.requestGroupInfo(channel) { group ->
+                        if (group != null) {
+                            InAppLogger.d("WifiDirect",
+                                "GROUP freq=${group.frequency} MHz (${if (group.frequency > 4000) "5 GHz" else "2.4 GHz"}) ssid=${group.networkName}")
+                        }
+                    }
+                } catch (_: Exception) {}
                 onConnected?.invoke(conn)
             }
         } catch (e: Exception) {
@@ -229,10 +238,23 @@ class WifiDirectManager(private val ctx: Context) {
             return
         }
         try {
-            val config = android.net.wifi.p2p.WifiP2pConfig().apply {
-                deviceAddress = mac
+            // Пытаемся force 5 GHz через WifiP2pConfig.Builder (API 29+)
+            val config = try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    android.net.wifi.p2p.WifiP2pConfig.Builder()
+                        .setDeviceAddress(mac)
+                        .setGroupOperatingFrequency(5180)  // ch 36, 5 GHz
+                        .build()
+                } else {
+                    android.net.wifi.p2p.WifiP2pConfig().apply { deviceAddress = mac }
+                }
+            } catch (e: Exception) {
+                InAppLogger.d("WifiDirect",
+                    "5GHz config failed (fallback 2.4): ${e.message}")
+                android.net.wifi.p2p.WifiP2pConfig().apply { deviceAddress = mac }
             }
-            InAppLogger.d("WifiDirect", "connect to $mac")
+
+            InAppLogger.d("WifiDirect", "connect to $mac (5GHz requested)")
             manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     InAppLogger.d("WifiDirect", "connect initiated")

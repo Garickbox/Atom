@@ -26,6 +26,9 @@ object AtomController {
         private set
 
     val peers = MutableStateFlow<List<Peer>>(emptyList())
+    private var _transferActive: Boolean = false
+    val transferActive: Boolean get() = _transferActive
+    private var appForeground: Boolean = false
     val transferState = MutableStateFlow<TransferState>(TransferState.Idle)
 
     var myName: String = ""
@@ -87,10 +90,12 @@ object AtomController {
             androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : androidx.lifecycle.DefaultLifecycleObserver {
                     override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                        appForeground = true
                         InAppLogger.d("AtomController", "app foreground → start discover loop")
                         startContinuousP2P()
                     }
                     override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+                        appForeground = false
                         InAppLogger.d("AtomController", "app background → stop discover loop")
                         stopContinuousP2P()
                     }
@@ -124,6 +129,10 @@ object AtomController {
 
 
     private fun startContinuousP2P() {
+        if (_transferActive) {
+            InAppLogger.d("AtomController", "skip continuous discover — transfer active")
+            return
+        }
         InAppLogger.d("AtomController", "app foreground → start continuous P2P discover")
         wifiDirect?.startContinuousDiscover()
     }
@@ -131,6 +140,21 @@ object AtomController {
     private fun stopContinuousP2P() {
         InAppLogger.d("AtomController", "app background → stop continuous P2P discover")
         wifiDirect?.stopContinuousDiscover()
+    }
+
+    /**
+     * Вызывается FileSenderService / FileReceiverService при старте/конце передачи.
+     * Пока transferActive = true — continuousDiscover НЕ работает (иначе
+     * radio switching каждые 12 сек сбивает TCP → скорость падает).
+     */
+    fun setTransferActive(active: Boolean) {
+        _transferActive = active
+        InAppLogger.d("AtomController", "transferActive = $active")
+        if (active) {
+            wifiDirect?.stopContinuousDiscover()
+        } else if (appForeground) {
+            wifiDirect?.startContinuousDiscover()
+        }
     }
 
 }

@@ -40,7 +40,7 @@ class FileSenderService : Service() {
         const val EXTRA_URIS = "uris"
 
         private const val NOTIF_ID = 1001
-        private const val CHUNK = 128 * 1024
+        private const val CHUNK = 512 * 1024
 
         fun startTransfer(ctx: Context, peer: Peer, uris: List<Uri>) {
             val intent = Intent(ctx, FileSenderService::class.java).apply {
@@ -67,6 +67,7 @@ class FileSenderService : Service() {
         startForeground(NOTIF_ID, TransferNotification.buildRunning(
             this, "prep", "…", "Подготовка", 0, 0
         ))
+        AtomController.setTransferActive(true)
         wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
 
@@ -426,6 +427,7 @@ class FileSenderService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        AtomController.setTransferActive(false)
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         scope.cancel()
