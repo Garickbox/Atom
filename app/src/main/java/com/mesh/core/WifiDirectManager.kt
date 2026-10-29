@@ -225,7 +225,6 @@ class WifiDirectManager(private val ctx: Context) {
     }
     /** Force reset: close channel, re-init. Спасает от вечных BUSY. */
 @SuppressLint("MissingPermission")
-    @SuppressLint("MissingPermission")
     fun connect(mac: String) {
         if (manager == null || channel == null) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
