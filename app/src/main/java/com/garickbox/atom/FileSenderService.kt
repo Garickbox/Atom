@@ -20,9 +20,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.BufferedOutputStream
 import java.io.FileNotFoundException
 import java.net.Socket
 import java.security.MessageDigest
@@ -39,7 +41,7 @@ class FileSenderService : Service() {
         const val EXTRA_URIS = "uris"
 
         private const val NOTIF_ID = 1001
-        private const val CHUNK = 32 * 1024
+        private const val CHUNK = 128 * 1024
 
         fun startTransfer(ctx: Context, peer: Peer, uris: List<Uri>) {
             val intent = Intent(ctx, FileSenderService::class.java).apply {
@@ -81,6 +83,34 @@ class FileSenderService : Service() {
             }
             TransferNotification.ACTION_CANCEL -> {
                 InAppLogger.d("FileSenderService", "cancel requested")
+                // Отправляем FILE_CANCEL пиру чтобы удалил .part
+                val curState = AtomController.transferState.value
+                if (curState is TransferState.Running) {
+                    try {
+                        val ip = AtomController.lastPeer?.ip
+                        val node = AtomController.meshNode
+                        if (ip != null && node != null) {
+                            val cancelJson = JSONObject().apply {
+                                put("tid", curState.transferId)
+                            }
+                            node.sendPacket(ip, MeshPacket(PacketType.FILE_CANCEL, cancelJson))
+                            InAppLogger.d("FileSenderService", "FILE_CANCEL sent to $ip")
+                        }
+                    } catch (e: Exception) {
+                        InAppLogger.d("FileSenderService", "cancel packet error: ${e.message}")
+                    }
+                    // Записываем в историю
+                    TransferHistory.add(this, TransferHistory.Record(
+                        id = curState.transferId,
+                        peerName = curState.peerName,
+                        fileName = curState.fileName,
+                        bytes = curState.bytesSent,
+                        durationMs = 0L,
+                        status = "cancelled",
+                        timestamp = System.currentTimeMillis(),
+                        savedPath = ""
+                    ))
+                }
                 currentJob?.cancel()
                 stopSelf()
             }
@@ -136,6 +166,16 @@ class FileSenderService : Service() {
                 }
                 totalSent += sent
                 filesOk++
+                TransferHistory.add(this@FileSenderService, TransferHistory.Record(
+                    id = transferId,
+                    peerName = peerName,
+                    fileName = name,
+                    bytes = sent,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    status = "success",
+                    timestamp = System.currentTimeMillis(),
+                    savedPath = ""
+                ))
             }
 
             val duration = System.currentTimeMillis() - startedAt
@@ -161,12 +201,23 @@ class FileSenderService : Service() {
         transferId: String,
         peerName: String
     ): Long {
-        // Вычисляем "hash" для MVP: размер+имя (полноценный SHA-256 — этап 9)
-        val hash = simpleHash(name, size)
-        // FILE_OFFER
+        // 1) Считаем SHA-256 контента (для целостности и будущего dedup)
+        val notifPrep = TransferNotification.buildRunning(
+            this, transferId, peerName, "$name (хэш…)", 0, size
+        )
+        TransferNotification.update(this, NOTIF_ID, notifPrep)
+
+        val contentHash = computeSha256(uri)
+        if (contentHash == null) {
+            InAppLogger.d("FileSenderService", "hash compute failed for $name")
+            return -1
+        }
+        InAppLogger.d("FileSenderService", "hash($name)=${contentHash.take(16)}… size=$size")
+
+        // 2) FILE_OFFER
         val offerJson = JSONObject().apply {
             put("tid", transferId)
-            put("hash", hash)
+            put("hash", contentHash)
             put("name", name)
             put("size", size)
             put("peer_id", AtomController.myId)
@@ -174,22 +225,24 @@ class FileSenderService : Service() {
         }
         node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
 
-        // Ждём FILE_ACCEPT/RESUME — но у нас нет receiver'а, который бы отвечал,
-        // поэтому для MVP: sender сам открывает TCP и сразу шлёт с offset=0.
-        // TODO: ждать FILE_ACCEPT и обрабатывать offset (для resume)
-
+        // 3) TCP-сессия
         try {
             val socket: Socket = node.openTcpTo(peerIp, 5000)
             try {
-                val dos = DataOutputStream(socket.getOutputStream())
+                // Ускорение TCP
+                socket.sendBufferSize = 4 * 1024 * 1024
+                socket.receiveBufferSize = 4 * 1024 * 1024
+                socket.tcpNoDelay = true
+
+                val dos = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), CHUNK))
                 val tidBytes = transferId.toByteArray(Charsets.UTF_8)
-                val hashBytes = hash.toByteArray(Charsets.UTF_8)
+                val hashBytes = contentHash.toByteArray(Charsets.UTF_8)
+                val nameBytes = name.toByteArray(Charsets.UTF_8)
                 dos.writeInt(tidBytes.size); dos.write(tidBytes)
                 dos.writeInt(hashBytes.size); dos.write(hashBytes)
-                dos.writeLong(0L)  // offset
-                dos.writeLong(size) // total
-                dos.writeInt(name.toByteArray(Charsets.UTF_8).size)
-                dos.write(name.toByteArray(Charsets.UTF_8))
+                dos.writeLong(0L)
+                dos.writeLong(size)
+                dos.writeInt(nameBytes.size); dos.write(nameBytes)
 
                 var sent = 0L
                 val input = contentResolver.openInputStream(uri)
@@ -227,9 +280,27 @@ class FileSenderService : Service() {
             )
             TransferNotification.update(this, NOTIF_ID, notif)
             AtomController.transferState.value = TransferState.Failed(
-                transferId, peerName, name, e.message ?: "соединение", peerIp, hash
+                transferId, peerName, name, e.message ?: "соединение", peerIp, contentHash
             )
             return -1
+        }
+    }
+
+    private suspend fun computeSha256(uri: Uri): String? = withContext(Dispatchers.IO) {
+        try {
+            val md = MessageDigest.getInstance("SHA-256")
+            contentResolver.openInputStream(uri)?.use { input ->
+                val buf = ByteArray(128 * 1024)
+                while (true) {
+                    val r = input.read(buf)
+                    if (r <= 0) break
+                    md.update(buf, 0, r)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            InAppLogger.d("FileSenderService", "hash error: ${e.message}")
+            null
         }
     }
 

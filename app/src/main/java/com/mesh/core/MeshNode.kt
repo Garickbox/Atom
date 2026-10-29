@@ -24,6 +24,7 @@ class MeshNode(private val ctx: Context) {
 
     var onHello: ((HelloInfo) -> Unit)? = null
     var onFileOffer: ((FileOffer) -> Unit)? = null
+    var onFileCancel: ((String) -> Unit)? = null
     var onPeerUnreachable: ((String) -> Unit)? = null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -124,6 +125,10 @@ class MeshNode(private val ctx: Context) {
             PacketType.HERE -> {
                 val hp = HelloPayload.fromJson(packet.payload)
                 hereAwaiters[fromIp]?.complete(true)
+            }
+            PacketType.FILE_CANCEL -> {
+                val tid = packet.payload.optString("tid")
+                if (tid.isNotBlank()) onFileCancel?.invoke(tid)
             }
             PacketType.FILE_OFFER -> {
                 val offer = FileOffer(

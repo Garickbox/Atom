@@ -108,6 +108,12 @@ class MainActivity : AppCompatActivity() {
             R.id.action_view_log -> {
                 startActivity(Intent(this, LogViewerActivity::class.java)); true
             }
+            R.id.action_clear_history -> {
+                TransferHistory.clear(this)
+                renderHistory()
+                android.widget.Toast.makeText(this, "История очищена", android.widget.Toast.LENGTH_SHORT).show()
+                true
+            }
             R.id.action_about -> { showAbout(); true }
             else -> super.onOptionsItemSelected(item)
         }
@@ -186,6 +192,9 @@ class MainActivity : AppCompatActivity() {
 
         // Battery optimization prompt (один раз)
         maybePromptBattery()
+
+        // Обновить историю
+        renderHistory()
         if (permissionAsked) return
         if (!AtomController.hasName()) return  // сначала имя
         val missing = PermissionsHelper.missing(this)
@@ -198,6 +207,56 @@ class MainActivity : AppCompatActivity() {
         permissionLauncher.launch(missing.toTypedArray())
     }
 
+
+    private fun renderHistory() {
+        val records = TransferHistory.list(this)
+        if (records.isEmpty()) {
+            b.emptyText.visibility = android.view.View.VISIBLE
+            b.historyScroll.visibility = android.view.View.GONE
+            return
+        }
+        b.emptyText.visibility = android.view.View.GONE
+        b.historyScroll.visibility = android.view.View.VISIBLE
+        b.historyContainer.removeAllViews()
+        for (r in records) {
+            val row = layoutInflater.inflate(android.R.layout.simple_list_item_2, b.historyContainer, false)
+            val t1 = row.findViewById<android.widget.TextView>(android.R.id.text1)
+            val t2 = row.findViewById<android.widget.TextView>(android.R.id.text2)
+            val icon = when (r.status) {
+                "success" -> "✅"
+                "failed" -> "❌"
+                "cancelled" -> "⚠️"
+                else -> "•"
+            }
+            val arrow = if (r.savedPath.isNotBlank()) "📥" else "📤"
+            t1.text = "$icon $arrow ${r.fileName} · ${r.peerName}"
+            t2.text = "${formatBytes(r.bytes)} · ${formatTime(r.timestamp)}" +
+                (if (r.durationMs > 0) " · ${r.durationMs / 1000} сек" else "") +
+                (if (r.savedPath.isNotBlank()) " · ${r.savedPath}" else "")
+            b.historyContainer.addView(row)
+        }
+    }
+
+    private fun formatBytes(b: Long): String {
+        if (b < 1024) return "$b Б"
+        if (b < 1024 * 1024) return "%.1f КБ".format(b / 1024.0)
+        if (b < 1024 * 1024 * 1024) return "%.1f МБ".format(b / 1024.0 / 1024.0)
+        return "%.1f ГБ".format(b / 1024.0 / 1024.0 / 1024.0)
+    }
+
+    private fun formatTime(ts: Long): String {
+        val now = System.currentTimeMillis()
+        val diff = now - ts
+        return when {
+            diff < 60_000 -> "сейчас"
+            diff < 3_600_000 -> "${diff / 60_000} мин назад"
+            diff < 86_400_000 -> "${diff / 3_600_000} ч назад"
+            else -> {
+                val df = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault())
+                df.format(java.util.Date(ts))
+            }
+        }
+    }
 
     private fun maybePromptBattery() {
         val prefs = getSharedPreferences("atom", MODE_PRIVATE)
