@@ -229,12 +229,12 @@ class WifiDirectManager(private val ctx: Context) {
             return
         }
         try {
+            // Как build-37: без reflection, без groupOwnerIntent.
+            // Framework сам выбирает band. Если повезёт — 5 GHz (лотерея).
             val config = android.net.wifi.p2p.WifiP2pConfig().apply {
                 deviceAddress = mac
             }
-            requestGroup5Ghz(config)
-
-            InAppLogger.d("WifiDirect", "connect to $mac")
+            InAppLogger.d("WifiDirect", "connect to $mac (clean, framework auto)")
             manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     InAppLogger.d("WifiDirect", "connect initiated")
@@ -254,61 +254,7 @@ class WifiDirectManager(private val ctx: Context) {
      * Пробует выставить 5 GHz в WifiP2pConfig через reflection.
      * 3 стратегии: getMethod (public) → getDeclaredMethod (hidden) → Builder (API 30+).
      */
-    @SuppressLint("PrivateApi", "SoonBlockedPrivateApi")
-    private fun requestGroup5Ghz(config: android.net.wifi.p2p.WifiP2pConfig) {
-        if (Build.VERSION.SDK_INT < 29) {
-            InAppLogger.d("WifiDirect", "5 GHz: API ${Build.VERSION.SDK_INT} < 29 — skip")
-            return
-        }
-        val cls = android.net.wifi.p2p.WifiP2pConfig::class.java
-
-        // Стратегия 1: getMethod (public)
-        try {
-            val method = cls.getMethod("setGroupOperatingFrequency", Int::class.javaPrimitiveType)
-            method.invoke(config, 5180)
-            InAppLogger.d("WifiDirect", "✅ 5 GHz via getMethod: 5180")
-            return
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "getMethod fail: ${e.javaClass.simpleName}")
-        }
-
-        // Стратегия 2: getDeclaredMethod (hidden, setAccessible)
-        try {
-            val method = cls.getDeclaredMethod("setGroupOperatingFrequency", Int::class.javaPrimitiveType)
-            method.isAccessible = true
-            method.invoke(config, 5180)
-            InAppLogger.d("WifiDirect", "✅ 5 GHz via getDeclaredMethod+setAccessible: 5180")
-            return
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "getDeclaredMethod fail: ${e.javaClass.simpleName}")
-        }
-
-        // Стратегия 3: mGroupOperatingFrequency field напрямую
-        try {
-            val field = cls.getDeclaredField("mGroupOperatingFrequency")
-            field.isAccessible = true
-            field.setInt(config, 5180)
-            InAppLogger.d("WifiDirect", "✅ 5 GHz via field mGroupOperatingFrequency: 5180")
-            return
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "field fail: ${e.javaClass.simpleName}")
-        }
-
-        // Стратегия 4: mGroupOperatingBand field (some SDK)
-        try {
-            val field = cls.getDeclaredField("mGroupOperatingBand")
-            field.isAccessible = true
-            field.setInt(config, 2)  // 2 = 5 GHz band
-            InAppLogger.d("WifiDirect", "✅ 5 GHz via field mGroupOperatingBand=2")
-            return
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "band field fail: ${e.javaClass.simpleName}")
-        }
-
-        InAppLogger.d("WifiDirect", "❌ Все стратегии 5 GHz провалились → framework auto")
-    }
-
-    @SuppressLint("MissingPermission")
+@SuppressLint("MissingPermission")
     fun disconnect() {
         try {
             manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {

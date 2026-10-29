@@ -288,7 +288,7 @@ class FileSenderService : Service() {
         }
 
         // 3) Multi-thread: 4 потока если size >= 8 MB, иначе 1
-        val threadCount = if (size >= 8 * 1024 * 1024) 2 else 1
+        val threadCount = if (size >= 8 * 1024 * 1024) 4 else 1
         InAppLogger.d("FileSenderService",
             "start transfer: ${threadCount} thread(s) for $size bytes")
 
@@ -339,22 +339,10 @@ class FileSenderService : Service() {
                 if (failed.get()) return@async
                 var socket: Socket? = null
                 try {
-                    // REVERSE TUNE: создаём socket напрямую с БОЛЬШИМИ буферами
-                    // (openTcpTo фиксирует буфер 4MB при connect — не даёт увеличить)
-                    val s = Socket()
-                    try {
-                        s.sendBufferSize = 16 * 1024 * 1024
-                        s.receiveBufferSize = 16 * 1024 * 1024
-                        s.tcpNoDelay = false    // Nagle ON — агрегация пакетов
-                        s.soTimeout = 60_000
-                    } catch (_: Exception) {}
-                    s.connect(java.net.InetSocketAddress(peerIp, com.mesh.core.LanDiscovery.PORT), 5000)
-                    InAppLogger.d("FileSenderService",
-                        "tcp open (reverse): snd=${s.sendBufferSize} rcv=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
-                    socket = s
+                    socket = node.openTcpTo(peerIp, 5000)
                     sockets.add(socket)
                     val dos = DataOutputStream(
-                        java.io.BufferedOutputStream(socket.getOutputStream(), 2 * 1024 * 1024)
+                        java.io.BufferedOutputStream(socket.getOutputStream(), 512 * 1024)
                     )
 
                     // Header: tid, hash, name, totalSize, offset, end, threadIdx, threadCount
@@ -378,7 +366,7 @@ class FileSenderService : Service() {
                     pfd.use { descriptor ->
                         java.io.FileInputStream(descriptor.fileDescriptor).use { ins ->
                             ins.channel.position(start)
-                            val buf = ByteArray(1024 * 1024)
+                            val buf = ByteArray(512 * 1024)
                             while (pos < end && currentCoroutineContext().isActive) {
                                 if (failed.get()) break
                                 val toRead = minOf(buf.size.toLong(), end - pos).toInt()
