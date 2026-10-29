@@ -198,7 +198,7 @@ class ShareTargetActivity : AppCompatActivity() {
             }
         }
 
-        wd.onPeersChanged = { peers ->
+        wd.onPeersChanged = onPeersChanged@ { peers ->
             if (timedOut) return@onPeersChanged
             val filtered = peers.filter { it.deviceName.isNotBlank() }
             InAppLogger.d("ShareTarget", "p2p peers: ${filtered.map { "${it.deviceName}/${it.deviceAddress}" }}")
@@ -252,7 +252,7 @@ class ShareTargetActivity : AppCompatActivity() {
             }
         }
 
-        wd.onConnected = { conn ->
+        wd.onConnected = onConnected@ { conn ->
             if (done) return@onConnected
             done = true
             timeoutJob.cancel()
