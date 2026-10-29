@@ -227,23 +227,6 @@ class WifiDirectManager(private val ctx: Context) {
         }
     }
     /** Force reset: close channel, re-init. Спасает от вечных BUSY. */
-    @SuppressLint("MissingPermission")
-    private fun startDiscover() {
-        try {
-            manager!!.discoverPeers(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "discover started")
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discover failed: $reason")
-                    onError?.invoke("Не удалось начать поиск (код $reason)")
-                }
-            })
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "startDiscover error: ${e.javaClass.simpleName}: ${e.message}")
-        }
-    }
-
     /** Пассивный discover — делает устройство видимым для других. */
     fun passiveDiscover() {
         if (manager == null || channel == null) return
