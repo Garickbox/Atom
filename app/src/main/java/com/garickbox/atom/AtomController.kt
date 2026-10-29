@@ -88,11 +88,11 @@ object AtomController {
                 object : androidx.lifecycle.DefaultLifecycleObserver {
                     override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app foreground → start discover loop")
-                        startPassiveDiscoverLoop()
+                        startContinuousP2P()
                     }
                     override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app background → stop discover loop")
-                        stopPassiveDiscoverLoop()
+                        stopContinuousP2P()
                     }
                 }
             )
@@ -122,9 +122,8 @@ object AtomController {
 
     fun hasName(): Boolean = myName.isNotBlank()
 
-    private var discoverLoopJob: kotlinx.coroutines.Job? = null
 
-    private fun startPassiveDiscoverLoop() {
+    private fun startContinuousP2P() {
         if (discoverLoopJob?.isActive == true) return
         discoverLoopJob = scope.launch {
             // Первый discover сразу
@@ -143,7 +142,7 @@ object AtomController {
         InAppLogger.d("AtomController", "passiveDiscover loop started")
     }
 
-    private fun stopPassiveDiscoverLoop() {
+    private fun stopContinuousP2P() {
         discoverLoopJob?.cancel()
         discoverLoopJob = null
         InAppLogger.d("AtomController", "passiveDiscover loop stopped")

@@ -178,22 +178,23 @@ class MeshNode(private val ctx: Context) {
     }
 
     fun broadcastHello() {
-        // ВАЖНО: используем СВОЙ udpSocket (порт 47822),
-        // иначе ответы придут на ephemeral порт, который уже закрыт
-        try {
-            val sock = udpSocket
-            if (sock == null) {
-                InAppLogger.d("MeshNode", "broadcast: udpSocket null")
-                return
+        // ВСЕГДА в IO — иначе NetworkOnMainThreadException
+        scope.launch {
+            try {
+                val sock = udpSocket
+                if (sock == null) {
+                    InAppLogger.d("MeshNode", "broadcast: udpSocket null")
+                    return@launch
+                }
+                val payload = HelloPayload(myId, myName).toJson()
+                val bytes = MeshPacket(PacketType.HELLO, payload).encode()
+                val addr = InetAddress.getByName("255.255.255.255")
+                sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
+                InAppLogger.d("MeshNode", "broadcast HELLO from :${sock.localPort} to :${LanDiscovery.PORT}")
+            } catch (e: Exception) {
+                InAppLogger.d("MeshNode",
+                    "broadcast error: ${e.javaClass.simpleName}: ${e.message}")
             }
-            val payload = HelloPayload(myId, myName).toJson()
-            val bytes = MeshPacket(PacketType.HELLO, payload).encode()
-            val addr = InetAddress.getByName("255.255.255.255")
-            sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
-            InAppLogger.d("MeshNode", "broadcast HELLO from :${sock.localPort} to :${LanDiscovery.PORT}")
-        } catch (e: Exception) {
-            InAppLogger.d("MeshNode",
-                "broadcast error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -211,13 +212,18 @@ class MeshNode(private val ctx: Context) {
     }
 
     fun sendPacket(ip: String, packet: MeshPacket) {
-        try {
-            val sock = udpSocket ?: return
-            val bytes = packet.encode()
-            val addr = InetAddress.getByName(ip)
-            sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
-        } catch (e: Exception) {
-            InAppLogger.d("MeshNode", "send to $ip: ${e.message}")
+        // ВСЕГДА в IO — иначе NetworkOnMainThreadException
+        scope.launch {
+            try {
+                val sock = udpSocket ?: return@launch
+                val bytes = packet.encode()
+                val addr = InetAddress.getByName(ip)
+                sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
+                InAppLogger.d("MeshNode", "send ${packet.type} to $ip:${LanDiscovery.PORT}")
+            } catch (e: Exception) {
+                InAppLogger.d("MeshNode",
+                    "send error to $ip: ${e.javaClass.simpleName}: ${e.message}")
+            }
         }
     }
 

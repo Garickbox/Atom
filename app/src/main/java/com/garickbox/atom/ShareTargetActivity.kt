@@ -294,8 +294,9 @@ class ShareTargetActivity : AppCompatActivity() {
         val cancelBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
             text = "Отмена"
             setOnClickListener {
+                // НЕ вызываем cleanup() — он ломает channel и receiver
+                // Просто закрываем диалог, continuous discover продолжает работать
                 parent.dismiss()
-                AtomController.wifiDirect?.cleanup()
             }
         }
         b.peersContainer.addView(cancelBtn)

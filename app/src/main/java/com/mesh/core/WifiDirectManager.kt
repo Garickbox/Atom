@@ -30,6 +30,10 @@ class WifiDirectManager(private val ctx: Context) {
     private var channel: WifiP2pManager.Channel? = null
     private var receiver: BroadcastReceiver? = null
     private var initialized = false
+    private var continuousJob: kotlinx.coroutines.Job? = null
+    private val scope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
 
     fun isP2pEnabled(): Boolean {
         return try {
@@ -113,14 +117,16 @@ class WifiDirectManager(private val ctx: Context) {
     }
 
     @SuppressLint("MissingPermission")
+    @SuppressLint("MissingPermission")
     private fun requestPeers() {
-        InAppLogger.d("WifiDirect", "requestPeers called")
         try {
             manager?.requestPeers(channel) { list ->
                 val peers = list?.deviceList?.toList() ?: emptyList()
                 InAppLogger.d("WifiDirect",
-                    "peers result: ${peers.size} → ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
-                onPeersChanged?.invoke(peers)
+                    "requestPeers → ${peers.size} peer(s): ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+                if (peers.isNotEmpty()) {
+                    onPeersChanged?.invoke(peers)
+                }
             }
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect",
@@ -247,6 +253,53 @@ class WifiDirectManager(private val ctx: Context) {
                 }
             })
         } catch (_: Exception) {}
+    }
+
+    /**
+     * Постоянный discovery: каждые 12 сек вызываем discoverPeers + requestPeers.
+     * Нужно потому что WIFI_P2P_PEERS_CHANGED_ACTION приходит ТОЛЬКО при
+     * изменении списка — если peers=0 всегда, broadcast не приходит вообще.
+     * Принудительный requestPeers решает проблему.
+     */
+    fun startContinuousDiscover() {
+        if (continuousJob?.isActive == true) return
+        continuousJob = scope.launch {
+            InAppLogger.d("WifiDirect", "continuousDiscover started")
+            kotlinx.coroutines.delay(500)
+            while (true) {
+                try {
+                    doDiscoverTick()
+                } catch (e: Exception) {
+                    InAppLogger.d("WifiDirect", "tick error: ${e.javaClass.simpleName}: ${e.message}")
+                }
+                kotlinx.coroutines.delay(12_000)
+            }
+        }
+    }
+
+    fun stopContinuousDiscover() {
+        continuousJob?.cancel()
+        continuousJob = null
+        InAppLogger.d("WifiDirect", "continuousDiscover stopped")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun doDiscoverTick() {
+        try {
+            manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "discover tick ok → requestPeers")
+                    // ВАЖНО: сразу запрашиваем peers, не ждём broadcast
+                    requestPeers()
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "discover tick fail: $reason → requestPeers anyway")
+                    requestPeers()
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "doDiscoverTick error: ${e.message}")
+        }
     }
 
     fun cleanup() {
