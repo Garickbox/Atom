@@ -80,8 +80,9 @@ object SelfTestRunner {
 
     private fun checkFgs(ctx: Context): TestResult {
         return if (Build.VERSION.SDK_INT >= 33) {
-            val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
-                == PackageManager.PERMISSION_GRANTED
+            val granted = (ContextCompat.checkSelfPermission(
+                ctx, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED)
             if (granted) TestResult("FGS/уведомления", true, "Разрешение есть")
             else TestResult("FGS/уведомления", false, "POST_NOTIFICATIONS не выдано")
         } else {
