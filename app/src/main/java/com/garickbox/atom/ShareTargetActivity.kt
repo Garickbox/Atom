@@ -20,6 +20,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ShareTargetActivity : AppCompatActivity() {
+    private var pendingLocationCallback: (() -> Unit)? = null
+
+    override fun onResume() {
+        super.onResume()
+        val cb = pendingLocationCallback ?: return
+        if (LocationHelper.isEnabled(this)) {
+            InAppLogger.d("ShareTarget", "location enabled after prompt, continuing")
+            pendingLocationCallback = null
+            cb.invoke()
+        }
+    }
+
 
     private var uris: List<Uri> = emptyList()
     private var dialog: BottomSheetDialog? = null
@@ -110,8 +122,12 @@ class ShareTargetActivity : AppCompatActivity() {
         val b = SheetShareStep2Binding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
 
-        b.searchRow.setOnClickListener { startSearch(parent) }
-        b.wifiDirectRow.setOnClickListener { startWifiDirectFlow(parent) }
+        b.searchRow.setOnClickListener {
+            ensureLocation { startSearch(parent) }
+        }
+        b.wifiDirectRow.setOnClickListener {
+            ensureLocation { startWifiDirectFlow(parent) }
+        }
         b.scanRow.setOnClickListener {
             Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
         }
@@ -298,6 +314,37 @@ class ShareTargetActivity : AppCompatActivity() {
         }
 
         wd.connect(mac)
+    }
+
+
+    /**
+     * Проверка геолокации. Если выключена — диалог с объяснением и кнопкой "Включить".
+     * После возврата с настроек onResume продолжит flow автоматически.
+     */
+    private fun ensureLocation(onOk: () -> Unit) {
+        if (LocationHelper.isEnabled(this)) {
+            onOk()
+            return
+        }
+        InAppLogger.d("ShareTarget", "location disabled, prompting user")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("📍 Геолокация выключена")
+            .setMessage(
+                "Android требует включённую геолокацию, чтобы искать " +
+                "устройства поблизости по Wi-Fi. Без неё Wi-Fi Direct " +
+                "не найдёт второй телефон.\n\n" +
+                "Включи её — и мы продолжим автоматически."
+            )
+            .setPositiveButton("Включить") { _, _ ->
+                pendingLocationCallback = onOk
+                LocationHelper.openSettings(this)
+            }
+            .setNegativeButton("Всё равно искать") { _, _ ->
+                InAppLogger.d("ShareTarget", "user chose to search without location")
+                onOk()
+            }
+            .setCancelable(true)
+            .show()
     }
 
 }

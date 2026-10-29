@@ -27,6 +27,7 @@ object SelfTestRunner {
             checkStorage(),
             checkOta(),
             checkFgs(ctx),
+            checkLocationEnabled(ctx),
             checkP2p(ctx)
         )
     }
@@ -112,6 +113,17 @@ object SelfTestRunner {
             }
         } catch (e: Exception) {
             TestResult("Wi-Fi Direct", false, "Ошибка: ${e.message}")
+        }
+    }
+
+
+    private fun checkLocationEnabled(ctx: Context): TestResult {
+        return if (LocationHelper.isEnabled(ctx)) {
+            TestResult("Геолокация", true, "Включена")
+        } else {
+            TestResult("Геолокация", false,
+                "Выключена — Wi-Fi Direct не найдёт устройства. " +
+                "Включи в шторке (иконка геолокации)")
         }
     }
 
