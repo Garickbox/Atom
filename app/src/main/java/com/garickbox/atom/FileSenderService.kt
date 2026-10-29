@@ -160,7 +160,6 @@ class FileSenderService : Service() {
                     "probe timeout — но продолжаем FILE_OFFER retry")
             }
 
-            AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
             val startedAt = System.currentTimeMillis()
             var totalSent = 0L
             var filesOk = 0
