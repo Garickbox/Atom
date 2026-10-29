@@ -168,7 +168,6 @@ object UpdateChecker {
         val chunkSize = (totalSize + threads - 1) / threads
         val downloaded = java.util.concurrent.atomic.AtomicLong(0L)
         val lastNotif = java.util.concurrent.atomic.AtomicLong(0L)
-        @Volatile var allOk = true
         val okRef = java.util.concurrent.atomic.AtomicBoolean(true)
 
         try {
