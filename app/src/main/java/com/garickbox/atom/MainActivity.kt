@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAbout() {
-        Toast.makeText(this, "Атом 0.1-mvp\nБыстрая передача файлов", Toast.LENGTH_LONG).show()
+        AboutDialog.show(this)
     }
 
     private val filePicker = registerForActivityResult(
