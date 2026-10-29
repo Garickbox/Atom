@@ -29,6 +29,9 @@ class MeshNode(private val ctx: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var udpSocket: DatagramSocket? = null
     private var tcpServer: ServerSocket? = null
+    var isRunning: Boolean = false
+        private set
+
     private var running = false
 
     private val hereAwaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
@@ -47,6 +50,7 @@ class MeshNode(private val ctx: Context) {
     fun start() {
         if (running) return
         running = true
+        isRunning = true
         try {
             udpSocket = DatagramSocket(null).apply {
                 reuseAddress = true
@@ -74,6 +78,7 @@ class MeshNode(private val ctx: Context) {
 
     fun stop() {
         running = false
+        isRunning = false
         try { udpSocket?.close() } catch (_: Exception) {}
         try { tcpServer?.close() } catch (_: Exception) {}
         scope.cancel()

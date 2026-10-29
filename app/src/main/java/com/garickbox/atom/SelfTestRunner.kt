@@ -44,14 +44,18 @@ object SelfTestRunner {
     }
 
     private fun checkPorts(): TestResult {
+        val node = AtomController.meshNode
+        if (node != null && node.isRunning) {
+            return TestResult("Порты $PORT", true, "Активны (MeshNode слушает)")
+        }
         return try {
             val udp = DatagramSocket(PORT)
             udp.close()
             val tcp = ServerSocket(PORT)
             tcp.close()
-            TestResult("Порты $PORT", true, "UDP и TCP свободны")
+            TestResult("Порты $PORT", true, "Свободны (запустятся при работе)")
         } catch (e: Exception) {
-            TestResult("Порты $PORT", false, "Занято: ${e.message}")
+            TestResult("Порты $PORT", false, "Занято другим приложением: ${e.message}")
         }
     }
 
