@@ -8,6 +8,7 @@ class AtomApp : Application() {
         super.onCreate()
         InAppLogger.init(this)
         NotificationHelper.createChannels(this)
-        InAppLogger.d("AtomApp", "app started, version=${BuildConfig.VERSION_NAME}")
+        AtomController.init(this)
+        InAppLogger.d("AtomApp", "app started, version=${BuildConfig.VERSION_NAME}, myId=${AtomController.myId}")
     }
 }

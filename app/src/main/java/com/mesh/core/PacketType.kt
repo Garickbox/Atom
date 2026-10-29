@@ -1,0 +1,5 @@
+package com.mesh.core
+
+enum class PacketType {
+    HELLO, HERE, FILE_OFFER, FILE_ACCEPT, FILE_DECLINE, FILE_RESUME, FILE_SKIP, FILE_CANCEL
+}
