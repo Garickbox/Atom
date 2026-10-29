@@ -43,10 +43,7 @@ object PreflightChecker {
                 "Нужна Android для сканирования Wi-Fi"))
         }
 
-        if (!isWifiDirectEnabled(ctx)) {
-            list.add(Issue(Id.WIFI_DIRECT, "Wi-Fi Direct",
-                "Выключен в Настройки → Wi-Fi → ⋮ → Wi-Fi Direct"))
-        }
+
 
         return list
     }

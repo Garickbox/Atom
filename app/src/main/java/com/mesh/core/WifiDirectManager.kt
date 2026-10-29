@@ -187,53 +187,43 @@ class WifiDirectManager(private val ctx: Context) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
             return
         }
+        // ОДНА попытка. Fail — просто discover. Как в build 40.
         try {
-            // Одна попытка removeGroup. Fail — не страшно, идём дальше.
             manager!!.removeGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     InAppLogger.d("WifiDirect", "removed group → discover")
-                    startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+                    startDiscover()
                 }
                 override fun onFailure(reason: Int) {
-                    // НЕ RETRY. Сразу discover. Как в build 40.
                     InAppLogger.d("WifiDirect", "removeGroup failed: $reason → discover anyway")
-                    startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+                    startDiscover()
                 }
             })
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "discoverPeers error: ${e.message}")
-            startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+            startDiscover()
         }
     }
 
     /** removeGroup с retry — reason=2 (BUSY) повторяем с задержкой. */
     @SuppressLint("MissingPermission")
-    private fun startDiscoverWithRetry(
-        maxAttempts: Int,
-        delayMs: Long,
-        attempt: Int = 1
-    ) {
-        InAppLogger.d("WifiDirect", "discoverPeers attempt $attempt/$maxAttempts")
+    private fun startDiscover() {
         try {
             manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "discoverPeers OK")
+                    InAppLogger.d("WifiDirect", "discover started OK")
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discoverPeers fail reason=$reason attempt=$attempt")
-                    if (attempt < maxAttempts) {
-                        scope.launch {
-                            kotlinx.coroutines.delay(delayMs)
-                            startDiscoverWithRetry(maxAttempts, delayMs, attempt + 1)
-                        }
-                    } else {
-                        InAppLogger.d("WifiDirect", "discoverPeers gave up — framework busy")
+                    InAppLogger.d("WifiDirect", "discover failed: $reason")
+                    if (reason == 2) {
                         onError?.invoke("Wi-Fi Direct занят. Перезагрузите оба телефона.")
+                    } else {
+                        onError?.invoke("Поиск не запускается. Проверьте Location Services.")
                     }
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "startDiscover exception: ${e.message}")
+            InAppLogger.d("WifiDirect", "startDiscover error: ${e.message}")
         }
     }
     /** Force reset: close channel, re-init. Спасает от вечных BUSY. */
