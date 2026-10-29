@@ -52,7 +52,8 @@ object AtomController {
             Peer(
                 id = it,
                 name = prefs.getString("last_peer_name", "?") ?: "?",
-                ip = prefs.getString("last_peer_ip", "") ?: ""
+                ip = prefs.getString("last_peer_ip", "") ?: "",
+                mac = prefs.getString("last_peer_mac", "") ?: ""
             )
         }
 
@@ -129,7 +130,10 @@ object AtomController {
             .putString("last_peer_id", peer.id)
             .putString("last_peer_name", peer.name)
             .putString("last_peer_ip", peer.ip)
+            .putString("last_peer_mac", peer.mac)
             .apply()
+        InAppLogger.d("AtomController",
+            "saveLastPeer: ${peer.name} ip=${peer.ip} mac=${peer.mac}")
     }
 
     fun hasName(): Boolean = myName.isNotBlank()

@@ -223,13 +223,47 @@ class ShareTargetActivity : AppCompatActivity() {
     }
 
     private fun onPeerSelected(peer: Peer) {
-        InAppLogger.d("ShareTargetActivity", "peer selected: ${peer.name} (${peer.ip})")
+        InAppLogger.d("ShareTargetActivity",
+            "peer selected: ${peer.name} ip=${peer.ip} mac=${peer.mac}")
+
+        // Случай 1: MAC есть — пытаемся быстро probe, если мёртв → auto P2P
+        if (peer.mac.isNotEmpty()) {
+            lifecycleScope.launch {
+                val node = AtomController.meshNode
+                val alive = node?.probePeer(peer.ip, 800) ?: false
+                if (alive) {
+                    InAppLogger.d("ShareTarget", "peer alive @ ${peer.ip} → direct")
+                    startTransferNow(peer)
+                } else {
+                    InAppLogger.d("ShareTarget",
+                        "peer dead @ ${peer.ip} → auto-P2P connect to ${peer.mac}")
+                    autoP2pConnect(peer.mac, peer.name)
+                }
+            }
+            return
+        }
+
+        // Случай 2: MAC нет (старый формат prefs) — просто пробуем
+        InAppLogger.d("ShareTarget", "peer has no MAC → direct transfer attempt")
+        startTransferNow(peer)
+    }
+
+    private fun startTransferNow(peer: Peer) {
         checkBatteryForLarge {
             dialog?.dismiss()
-            Toast.makeText(this, "Отправка ${uris.size} файл(ов) → ${peer.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Отправка ${uris.size} файл(ов) → ${peer.name}",
+                Toast.LENGTH_SHORT).show()
             FileSenderService.startTransfer(this, peer, uris)
             finish()
         }
+    }
+
+    /** Автоматический P2P connect без ручного выбора в списке. */
+    private fun autoP2pConnect(mac: String, name: String) {
+        val d = dialog ?: BottomSheetDialog(this).also {
+            dialog = it
+        }
+        connectP2p(mac, name, d)
     }
 
     private fun checkBatteryForLarge(action: () -> Unit) {
@@ -374,17 +408,26 @@ class ShareTargetActivity : AppCompatActivity() {
                 }
                 if (peer != null) {
                     InAppLogger.d("ShareTarget", "p2p peer resolved: ${peer.name} @ ${peer.ip}")
+                    // Сохраняем MAC — для auto-reconnect в следующий раз
+                    val savedPeer = Peer(
+                        id = peer.id,
+                        name = peer.name,
+                        ip = peer.ip,
+                        mac = mac
+                    )
+                    AtomController.saveLastPeer(savedPeer)
                     parent.dismiss()
                     Toast.makeText(this@ShareTargetActivity,
                         "Wi-Fi Direct → ${peer.name}", Toast.LENGTH_SHORT).show()
-                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris)
+                    FileSenderService.startTransfer(this@ShareTargetActivity, savedPeer, uris)
                     finish()
                 } else {
                     InAppLogger.d("ShareTarget", "p2p peer not in list, falling back to ping")
                     // Пробуем GO IP напрямую, если мы клиент
                     val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
                     if (targetIp != null) {
-                        val fakePeer = Peer(id = "p2p", name = name, ip = targetIp)
+                        val fakePeer = Peer(id = "p2p", name = name, ip = targetIp, mac = mac)
+                        AtomController.saveLastPeer(fakePeer)
                         parent.dismiss()
                         Toast.makeText(this@ShareTargetActivity,
                             "Wi-Fi Direct → $name", Toast.LENGTH_SHORT).show()
