@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.mesh.core.InAppLogger
 import com.mesh.core.MeshNode
+import com.mesh.core.WifiDirectManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -11,6 +12,8 @@ object AtomController {
 
     private lateinit var prefs: SharedPreferences
     private var _meshNode: MeshNode? = null
+    var wifiDirect: WifiDirectManager? = null
+        private set
 
     val peers = MutableStateFlow<List<Peer>>(emptyList())
     val transferState = MutableStateFlow<TransferState>(TransferState.Idle)
@@ -52,6 +55,19 @@ object AtomController {
         }
         node.start()
         _meshNode = node
+
+        val wd = WifiDirectManager(ctx.applicationContext)
+        wd.init()
+        // P2P: после подключения клиент шлёт HELLO на IP Group Owner
+        wd.onConnected = { conn ->
+            InAppLogger.d("AtomController", "p2p connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
+                _meshNode?.sendHello(conn.groupOwnerAddress)
+                InAppLogger.d("AtomController", "HELLO → GO ${conn.groupOwnerAddress}")
+            }
+        }
+        wifiDirect = wd
+
         InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
     }
 

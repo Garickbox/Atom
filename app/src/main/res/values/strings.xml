@@ -17,4 +17,5 @@
     <string name="share_searching">Ищу…</string>
     <string name="share_search_hint">Включите Атом на другом устройстве</string>
     <string name="share_nobody">Никого не нашли. Попробуйте QR</string>
+    <string name="share_wifi_direct">📶  Wi-Fi Direct (без роутера)</string>
 </resources>

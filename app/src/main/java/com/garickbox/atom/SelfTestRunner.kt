@@ -26,7 +26,8 @@ object SelfTestRunner {
             checkPorts(),
             checkStorage(),
             checkOta(),
-            checkFgs(ctx)
+            checkFgs(ctx),
+            checkP2p(ctx)
         )
     }
 
@@ -94,4 +95,24 @@ object SelfTestRunner {
             TestResult("FGS/уведомления", true, "Не требуется (API<33)")
         }
     }
+
+    private fun checkP2p(ctx: Context): TestResult {
+        return try {
+            val m = ctx.getSystemService(Context.WIFI_P2P_SERVICE)
+                as? android.net.wifi.p2p.WifiP2pManager
+            if (m == null) {
+                TestResult("Wi-Fi Direct", false, "Не поддерживается устройством")
+            } else {
+                val wd = AtomController.wifiDirect
+                if (wd != null && wd.isP2pEnabled()) {
+                    TestResult("Wi-Fi Direct", true, "Поддерживается")
+                } else {
+                    TestResult("Wi-Fi Direct", false, "Manager доступен, но инициализация не удалась")
+                }
+            }
+        } catch (e: Exception) {
+            TestResult("Wi-Fi Direct", false, "Ошибка: ${e.message}")
+        }
+    }
+
 }
