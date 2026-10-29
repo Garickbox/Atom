@@ -186,15 +186,15 @@ class WifiDirectManager(private val ctx: Context) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
             return
         }
-        // ОДНА попытка. Fail — просто discover. Как в build 40.
+        // build-32: одна попытка removeGroup → discover. Без retry.
         try {
             manager!!.removeGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "removed group → discover")
+                    InAppLogger.d("WifiDirect", "removeGroup OK → discover")
                     startDiscover()
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "removeGroup failed: $reason → discover anyway")
+                    InAppLogger.d("WifiDirect", "removeGroup failed: $reason → discover")
                     startDiscover()
                 }
             })
@@ -225,32 +225,28 @@ class WifiDirectManager(private val ctx: Context) {
     }
     /** Force reset: close channel, re-init. Спасает от вечных BUSY. */
 @SuppressLint("MissingPermission")
+    @SuppressLint("MissingPermission")
     fun connect(mac: String) {
         if (manager == null || channel == null) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
             return
         }
         try {
+            // build-32 версия: БЕЗ groupOwnerIntent, БЕЗ 5GHz reflection
+            // groupOwnerIntent = 15 ломал GO negotiation на HyperOS
             val config = android.net.wifi.p2p.WifiP2pConfig().apply {
                 deviceAddress = mac
-                groupOwnerIntent = 15  // max приоритет быть GO (важно для 5 GHz)
             }
-            // API 29+ — попросить 5 GHz через reflection
-            // (setGroupOperatingFrequency @SystemApi в SDK, недоступен компилятору)
-            try {
-                if (Build.VERSION.SDK_INT >= 29) {
-                    val method = android.net.wifi.p2p.WifiP2pConfig::class.java
-                        .getMethod("setGroupOperatingFrequency", Int::class.javaPrimitiveType)
-                    method.invoke(config, 5180)  // ch 36, 5 GHz
-                    InAppLogger.d("WifiDirect", "5 GHz set via reflection: 5180 MHz")
+            InAppLogger.d("WifiDirect", "connect to $mac (no GO intent)")
+            manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "connect initiated")
                 }
-            } catch (e: Exception) {
-                InAppLogger.d("WifiDirect",
-                    "5 GHz reflection failed (fallback 2.4): ${e.javaClass.simpleName}: ${e.message}")
-            }
-
-            InAppLogger.d("WifiDirect", "connect to $mac")
-            connectWithRetry(config, mac, maxAttempts = 5, attempt = 1)
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "connect failed: $reason")
+                    onError?.invoke("Connect failed (код $reason)")
+                }
+            })
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "connect error: ${e.message}")
             onError?.invoke("Ошибка connect: ${e.message}")
@@ -282,36 +278,6 @@ fun cleanup() {
         receiver = null
         initialized = false
         InAppLogger.d("WifiDirect", "cleanup")
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun connectWithRetry(
-        config: android.net.wifi.p2p.WifiP2pConfig,
-        mac: String,
-        maxAttempts: Int,
-        attempt: Int
-    ) {
-        InAppLogger.d("WifiDirect", "connect attempt $attempt/$maxAttempts to $mac")
-        try {
-            manager?.connect(channel, config, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "connect initiated")
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "connect fail reason=$reason")
-                    if (attempt < maxAttempts) {
-                        scope.launch {
-                            kotlinx.coroutines.delay(2000)
-                            connectWithRetry(config, mac, maxAttempts, attempt + 1)
-                        }
-                    } else {
-                        onError?.invoke("Connect failed: не удалось подключиться к пиру")
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "connect exception: ${e.message}")
-        }
     }
 
 }
