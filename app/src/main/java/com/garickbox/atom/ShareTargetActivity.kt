@@ -192,11 +192,13 @@ class ShareTargetActivity : AppCompatActivity() {
 
     private fun showEmptySearchDialog(b: SheetSearchBinding, parent: BottomSheetDialog) {
         b.emptyText.visibility = View.VISIBLE
-        b.emptyText.text = "Никого не нашли.\n\n" +
+        b.emptyText.text = "Никого не нашли через Wi-Fi.\n\n" +
             "Проверь:\n" +
             "• Оба телефона в одной Wi-Fi сети\n" +
             "• На роутере не включена изоляция клиентов\n" +
-            "• На втором телефоне открыт Атом"
+            "• На втором телефоне открыт Атом\n\n" +
+            "Или попробуй Wi-Fi Direct — он работает " +
+            "без роутера, достаточно открыть Атом на обоих."
 
         val retryBtn = com.google.android.material.button.MaterialButton(this).apply {
             text = "🔄 Повторить"
@@ -286,9 +288,9 @@ class ShareTargetActivity : AppCompatActivity() {
         // Кнопка «Отмена» сразу
         b.emptyText.visibility = View.VISIBLE
         b.emptyText.text = "Ищу через Wi-Fi Direct…\n\n" +
-            "На втором телефоне тоже открой:\n" +
-            "Атом → Поделиться → 📶 Wi-Fi Direct\n\n" +
-            "Поиск идёт постоянно, пока не найдёт."
+            "На втором телефоне достаточно:\n" +
+            "просто открыть Атом\n\n" +
+            "Он сам станет видимым через несколько секунд."
         val cancelBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
             text = "Отмена"
             setOnClickListener {

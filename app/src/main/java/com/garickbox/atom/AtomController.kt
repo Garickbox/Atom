@@ -79,12 +79,23 @@ object AtomController {
         }
         wifiDirect = wd
 
-        // Автоматически делаем устройство видимым через Wi-Fi Direct
-        // чтобы второй телефон мог нас найти
-        scope.launch {
-            delay(3000)
-            wd.passiveDiscover()
-            InAppLogger.d("AtomController", "auto passive discover triggered")
+        // Подписываемся на lifecycle: пока Атом открыт — периодически
+        // делаем себя видимым через Wi-Fi Direct
+        try {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+                object : androidx.lifecycle.DefaultLifecycleObserver {
+                    override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                        InAppLogger.d("AtomController", "app foreground → start discover loop")
+                        startPassiveDiscoverLoop()
+                    }
+                    override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+                        InAppLogger.d("AtomController", "app background → stop discover loop")
+                        stopPassiveDiscoverLoop()
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            InAppLogger.d("AtomController", "lifecycle observer error: ${e.message}")
         }
 
 
@@ -108,4 +119,32 @@ object AtomController {
     }
 
     fun hasName(): Boolean = myName.isNotBlank()
+
+    private var discoverLoopJob: kotlinx.coroutines.Job? = null
+
+    private fun startPassiveDiscoverLoop() {
+        if (discoverLoopJob?.isActive == true) return
+        discoverLoopJob = scope.launch {
+            // Первый discover сразу
+            delay(2000)
+            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                try {
+                    wifiDirect?.passiveDiscover()
+                    InAppLogger.d("AtomController", "passiveDiscover tick (видимы для других)")
+                } catch (e: Exception) {
+                    InAppLogger.d("AtomController", "passiveDiscover error: ${e.message}")
+                }
+                // Каждые 90 сек — B "живёт" в эфире
+                delay(90_000)
+            }
+        }
+        InAppLogger.d("AtomController", "passiveDiscover loop started")
+    }
+
+    private fun stopPassiveDiscoverLoop() {
+        discoverLoopJob?.cancel()
+        discoverLoopJob = null
+        InAppLogger.d("AtomController", "passiveDiscover loop stopped")
+    }
+
 }
