@@ -124,6 +124,10 @@ object AtomController {
 
 
     private fun startContinuousP2P() {
+        if (_transferActive) {
+            com.mesh.core.InAppLogger.d("AtomController", "skip continuous — transfer active")
+            return
+        }
         InAppLogger.d("AtomController", "app foreground → start continuous P2P discover")
         wifiDirect?.startContinuousDiscover()
     }
@@ -131,6 +135,15 @@ object AtomController {
     private fun stopContinuousP2P() {
         InAppLogger.d("AtomController", "app background → stop continuous P2P discover")
         wifiDirect?.stopContinuousDiscover()
+    }
+
+
+    private var _transferActive: Boolean = false
+    val transferActive: Boolean get() = _transferActive
+
+    fun setTransferActive(active: Boolean) {
+        _transferActive = active
+        com.mesh.core.InAppLogger.d("AtomController", "transferActive = $active")
     }
 
 }

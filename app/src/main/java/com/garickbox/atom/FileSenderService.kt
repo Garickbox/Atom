@@ -63,6 +63,7 @@ class FileSenderService : Service() {
     private var currentJob: Job? = null
 
     override fun onCreate() {
+        try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         super.onCreate()
         startForeground(NOTIF_ID, TransferNotification.buildRunning(
             this, "prep", "…", "Подготовка", 0, 0
@@ -426,6 +427,7 @@ class FileSenderService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         scope.cancel()

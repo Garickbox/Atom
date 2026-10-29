@@ -76,6 +76,7 @@ class FileReceiverService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
+        try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         super.onCreate()
         instance = this
         // Немедленный startForeground — иначе ANR на Android 12+
@@ -143,6 +144,7 @@ class FileReceiverService : Service() {
     }
 
     override fun onDestroy() {
+        try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         instance = null
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
