@@ -11,20 +11,79 @@ import java.io.File
 import java.net.Socket
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 object FileReceiver {
 
     private val activeParts = ConcurrentHashMap<String, File>()
+    private val _isBusy = AtomicBoolean(false)
+
+    val isBusy: Boolean get() = _isBusy.get()
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
-        InAppLogger.d("FileReceiver", "offer from ${offer.peerName}: ${offer.name} (${offer.size} b)")
+        InAppLogger.d("FileReceiver",
+            "offer from ${offer.peerName}: ${offer.name} (${offer.size} b), busy=${isBusy}")
+
+        // Проверка 1: занят
+        if (_isBusy.get()) {
+            sendDecline(ctx, offer, "busy")
+            InAppLogger.d("FileReceiver", "declined: busy")
+            return
+        }
+
+        // Проверка 2: свободное место
+        val required = offer.size + 5 * 1024 * 1024  // +5 МБ буфер
+        val free = ctx.getExternalFilesDir(null)?.usableSpace ?: 0L
+        if (free < required) {
+            sendDecline(ctx, offer, "no_space")
+            InAppLogger.d("FileReceiver",
+                "declined: no_space (нужно ${required / (1024*1024)} МБ, есть ${free / (1024*1024)} МБ)")
+            return
+        }
+
+        // Принимаем: отправляем ACCEPT с offset (resume если .part существует)
+        val partDir = File(ctx.getExternalFilesDir(null), "received").apply { mkdirs() }
+        val existingPart = File(partDir, "${offer.hash}.part")
+        val offset = if (existingPart.exists()) existingPart.length() else 0L
+
+        sendAccept(ctx, offer, offset)
+        _isBusy.set(true)
+        InAppLogger.d("FileReceiver", "accepted, offset=$offset")
+
         FileReceiverService.start(ctx, offer.name, offer.size)
 
         val node = AtomController.meshNode ?: return
         node.onIncomingTcp = { socket -> handleIncoming(socket, ctx, node, offer) }
     }
 
-    /** Обработка FILE_CANCEL от sender. */
+    private fun sendAccept(ctx: Context, offer: MeshNode.FileOffer, offset: Long) {
+        try {
+            val node = AtomController.meshNode ?: return
+            val json = JSONObject().apply {
+                put("tid", offer.transferId)
+                put("offset", offset)
+            }
+            node.sendPacket(offer.fromIp, MeshPacket(PacketType.FILE_ACCEPT, json))
+            InAppLogger.d("FileReceiver", "FILE_ACCEPT sent (offset=$offset)")
+        } catch (e: Exception) {
+            InAppLogger.d("FileReceiver", "sendAccept error: ${e.message}")
+        }
+    }
+
+    private fun sendDecline(ctx: Context, offer: MeshNode.FileOffer, reason: String) {
+        try {
+            val node = AtomController.meshNode ?: return
+            val json = JSONObject().apply {
+                put("tid", offer.transferId)
+                put("reason", reason)
+            }
+            node.sendPacket(offer.fromIp, MeshPacket(PacketType.FILE_DECLINE, json))
+            InAppLogger.d("FileReceiver", "FILE_DECLINE sent: $reason")
+        } catch (e: Exception) {
+            InAppLogger.d("FileReceiver", "sendDecline error: ${e.message}")
+        }
+    }
+
     fun onCancel(ctx: Context, transferId: String) {
         InAppLogger.d("FileReceiver", "cancel requested for $transferId")
         val part = activeParts.remove(transferId)
@@ -32,6 +91,7 @@ object FileReceiver {
             part.delete()
             InAppLogger.d("FileReceiver", "part deleted: ${part.name}")
         }
+        _isBusy.set(false)
         FileReceiverService.stop(ctx)
     }
 
@@ -41,10 +101,8 @@ object FileReceiver {
         node: MeshNode,
         offer: MeshNode.FileOffer
     ) {
-        val partFile: File
         try {
             DataInputStream(socket.getInputStream().buffered(128 * 1024)).use { dis ->
-                // Header
                 val tidLen = dis.readInt()
                 val tidBytes = ByteArray(tidLen); dis.readFully(tidBytes)
                 val transferId = String(tidBytes, Charsets.UTF_8)
@@ -61,20 +119,17 @@ object FileReceiver {
                 val name = String(nameBytes, Charsets.UTF_8)
 
                 InAppLogger.d("FileReceiver",
-                    "incoming $name tid=$transferId offset=$offset total=$total senderHash=${senderHash.take(8)}…")
+                    "incoming $name tid=$transferId offset=$offset total=$total hash=${senderHash.take(8)}…")
 
-                // Приватный .part (resume возможен)
                 val partDir = File(ctx.getExternalFilesDir(null), "received").apply { mkdirs() }
-                partFile = File(partDir, "$transferId.part")
+                val partFile = File(partDir, "$transferId.part")
                 activeParts[transferId] = partFile
 
-                // Открываем на запись с позиции offset (resume)
                 val startPos = if (partFile.exists()) partFile.length().coerceAtMost(offset) else offset
                 java.io.RandomAccessFile(partFile, "rw").use { raf ->
                     raf.seek(startPos)
                     val md = MessageDigest.getInstance("SHA-256")
 
-                    // Для SHA-256 надо прочитать существующие байты (если resume)
                     if (startPos > 0) {
                         raf.seek(0)
                         val oldBuf = ByteArray(128 * 1024)
@@ -113,25 +168,23 @@ object FileReceiver {
                         return
                     }
 
-                    // SHA-256 проверка
                     val actualHash = md.digest().joinToString("") { "%02x".format(it) }
                     val ok = actualHash.equals(senderHash, ignoreCase = true)
                     InAppLogger.d("FileReceiver",
                         "hash check: ${if (ok) "OK" else "FAIL"} (actual=${actualHash.take(8)}… expected=${senderHash.take(8)}…)")
 
                     if (!ok) {
-                        // хэш не совпал — удаляем .part
                         partFile.delete()
                         activeParts.remove(transferId)
                         AtomController.transferState.value = TransferState.Failed(
                             transferId, offer.peerName, name, "Хэш не совпал", "", hashBytes.decodeToString()
                         )
                         FileReceiverService.stop(ctx)
+                        _isBusy.set(false)
                         return
                     }
                 }
 
-                // Успех — сохраняем в MediaStore
                 val fileName = resolveUniqueName(ctx, name)
                 val result = MediaStoreSaver.save(ctx, partFile, fileName, null)
                 if (result.uri != null) {
@@ -139,7 +192,6 @@ object FileReceiver {
                     activeParts.remove(transferId)
                     InAppLogger.d("FileReceiver", "saved to ${result.displayPath}")
 
-                    // История
                     TransferHistory.add(ctx, TransferHistory.Record(
                         id = transferId,
                         peerName = offer.peerName.ifBlank { "unknown" },
@@ -155,20 +207,22 @@ object FileReceiver {
                         offer.peerName, 1, total, 0
                     )
                 } else {
-                    InAppLogger.d("FileReceiver", "MediaStore save failed, keeping .part at ${partFile.absolutePath}")
+                    InAppLogger.d("FileReceiver",
+                        "MediaStore save failed, keeping .part at ${partFile.absolutePath}")
                 }
                 FileReceiverService.stop(ctx)
+                _isBusy.set(false)
             }
         } catch (e: Exception) {
             InAppLogger.d("FileReceiver", "recv error: ${e.message}")
             FileReceiverService.stop(ctx)
+            _isBusy.set(false)
         } finally {
             try { socket.close() } catch (_: Exception) {}
         }
     }
 
     private fun resolveUniqueName(ctx: Context, name: String): String {
-        // На случай если файл уже существует — добавляем (1), (2)…
         val (base, ext) = splitExt(name)
         val dir = File(ctx.getExternalFilesDir(null), "received")
         var candidate = name

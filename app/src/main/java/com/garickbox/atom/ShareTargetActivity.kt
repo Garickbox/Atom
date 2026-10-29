@@ -174,8 +174,7 @@ class ShareTargetActivity : AppCompatActivity() {
             b.spinner.visibility = View.GONE
             val peers = AtomController.peers.value.filter { it.id != AtomController.myId }
             if (peers.isEmpty()) {
-                b.emptyText.visibility = View.VISIBLE
-                b.emptyText.text = getString(R.string.share_nobody)
+                showEmptySearchDialog(b, parent)
             } else {
                 for (p in peers) {
                     val row = TextView(this@ShareTargetActivity).apply {
@@ -191,12 +190,71 @@ class ShareTargetActivity : AppCompatActivity() {
         }
     }
 
+    private fun showEmptySearchDialog(b: SheetSearchBinding, parent: BottomSheetDialog) {
+        b.emptyText.visibility = View.VISIBLE
+        b.emptyText.text = "Никого не нашли.\n\n" +
+            "Проверь:\n" +
+            "• Оба телефона в одной Wi-Fi сети\n" +
+            "• На роутере не включена изоляция клиентов\n" +
+            "• На втором телефоне открыт Атом"
+
+        val retryBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = "🔄 Повторить"
+            setOnClickListener {
+                b.emptyText.visibility = View.GONE
+                b.spinner.visibility = View.VISIBLE
+                b.peersContainer.removeAllViews()
+                startSearch(parent)
+            }
+        }
+        val p2pBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = "📶 Wi-Fi Direct"
+            setOnClickListener {
+                b.emptyText.visibility = View.GONE
+                b.spinner.visibility = View.VISIBLE
+                b.peersContainer.removeAllViews()
+                startWifiDirectFlow(parent)
+            }
+        }
+        b.peersContainer.addView(retryBtn)
+        b.peersContainer.addView(p2pBtn)
+    }
+
     private fun onPeerSelected(peer: Peer) {
         InAppLogger.d("ShareTargetActivity", "peer selected: ${peer.name} (${peer.ip})")
-        dialog?.dismiss()
-        Toast.makeText(this, "Отправка ${uris.size} файл(ов) → ${peer.name}", Toast.LENGTH_SHORT).show()
-        FileSenderService.startTransfer(this, peer, uris)
-        finish()
+        checkBatteryForLarge {
+            dialog?.dismiss()
+            Toast.makeText(this, "Отправка ${uris.size} файл(ов) → ${peer.name}", Toast.LENGTH_SHORT).show()
+            FileSenderService.startTransfer(this, peer, uris)
+            finish()
+        }
+    }
+
+    private fun checkBatteryForLarge(action: () -> Unit) {
+        val total = totalSize()
+        // Только для больших файлов и только если whitelist нет
+        if (total < 100L * 1024 * 1024) {
+            action()
+            return
+        }
+        if (BatteryOptimizationHelper.isWhitelisted(this)) {
+            action()
+            return
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("🔋 Большая передача")
+            .setMessage(
+                "Файл ${"%.1f".format(total / 1024.0 / 1024.0)} МБ может " +
+                "оборваться, если экран выключен.\n\n" +
+                "Разреши Атому работать в фоне — иначе Android " +
+                "«усыпит» его через пару минут."
+            )
+            .setPositiveButton("Разрешить") { _, _ ->
+                BatteryOptimizationHelper.requestWhitelist(this)
+                action()
+            }
+            .setNegativeButton("Всё равно") { _, _ -> action() }
+            .show()
     }
 
     private fun formatBytes(b: Long): String {
@@ -221,43 +279,31 @@ class ShareTargetActivity : AppCompatActivity() {
         b.spinner.visibility = View.VISIBLE
         b.emptyText.visibility = View.GONE
 
-        var timedOut = false
-        val timeoutJob = lifecycleScope.launch {
-            delay(15000)  // Wi-Fi Direct медленный, даём 15 сек
+        // Wi-Fi Direct ищет бесконечно, пока пользователь не отменит
+        // или пока не найдёт пира. Без таймаута.
+        var found = false
 
-            if (!timedOut) {
-                timedOut = true
-                b.spinner.visibility = View.GONE
-                if (b.peersContainer.childCount == 0) {
-                    b.emptyText.visibility = View.VISIBLE
-                    b.emptyText.text = "Wi-Fi Direct никого не нашёл.\n\n" +
-                        "На втором телефоне:\n" +
-                        "• Открой Атом\n" +
-                        "• FAB + → 📄 Файл → Другой → 📶 Wi-Fi Direct\n" +
-                        "• Оставь на экране поиска\n\n" +
-                        "Затем нажми «Повторить поиск» здесь.\n\n" +
-                        "Wi-Fi Direct медленный — первый раз может искать 15-30 сек."
-                    // Кнопка повторного поиска
-                    val retryBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
-                        text = "🔄 Повторить поиск"
-                        setOnClickListener {
-                            b.emptyText.visibility = View.GONE
-                            b.spinner.visibility = View.VISIBLE
-                            startWifiDirectFlow(parent)
-                        }
-                    }
-                    b.peersContainer.addView(retryBtn)
-                }
+        // Кнопка «Отмена» сразу
+        b.emptyText.visibility = View.VISIBLE
+        b.emptyText.text = "Ищу через Wi-Fi Direct…\n\n" +
+            "На втором телефоне тоже открой:\n" +
+            "Атом → Поделиться → 📶 Wi-Fi Direct\n\n" +
+            "Поиск идёт постоянно, пока не найдёт."
+        val cancelBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
+            text = "Отмена"
+            setOnClickListener {
+                parent.dismiss()
+                AtomController.wifiDirect?.cleanup()
             }
         }
+        b.peersContainer.addView(cancelBtn)
 
         wd.onPeersChanged = onPeersChanged@ { peers ->
-            if (timedOut) return@onPeersChanged
+            if (found) return@onPeersChanged
             val filtered = peers.filter { it.deviceName.isNotBlank() }
             InAppLogger.d("ShareTarget", "p2p peers: ${filtered.map { "${it.deviceName}/${it.deviceAddress}" }}")
             if (filtered.isNotEmpty()) {
-                timedOut = true
-                timeoutJob.cancel()
+                found = true
                 b.spinner.visibility = View.GONE
                 b.emptyText.visibility = View.GONE
                 b.peersContainer.removeAllViews()

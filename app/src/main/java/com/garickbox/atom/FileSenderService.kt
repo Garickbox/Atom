@@ -57,6 +57,7 @@ class FileSenderService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val pendingAccepts = ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Result<Long>>>()
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var currentJob: Job? = null
@@ -68,6 +69,17 @@ class FileSenderService : Service() {
         ))
         wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
+
+        // Подключаем приём ответов на FILE_OFFER
+        AtomController.meshNode?.onFileAccept = { tid, offset ->
+            InAppLogger.d("FileSenderService", "got FILE_ACCEPT tid=$tid offset=$offset")
+            pendingAccepts[tid]?.complete(Result.success(offset))
+        }
+        AtomController.meshNode?.onFileDecline = { tid, reason ->
+            InAppLogger.d("FileSenderService", "got FILE_DECLINE tid=$tid reason=$reason")
+            pendingAccepts[tid]?.complete(Result.failure(DeclineException(reason)))
+        }
+
         InAppLogger.d("FileSenderService", "onCreate, locks acquired")
     }
 
@@ -225,6 +237,47 @@ class FileSenderService : Service() {
         }
         node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
 
+        // Ждём FILE_ACCEPT / FILE_DECLINE (таймаут 10 сек)
+        val acceptDeferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
+        pendingAccepts[transferId] = acceptDeferred
+        val acceptResult = try {
+            kotlinx.coroutines.withTimeoutOrNull(10_000L) { acceptDeferred.await() }
+        } finally {
+            pendingAccepts.remove(transferId)
+        }
+
+        if (acceptResult == null) {
+            InAppLogger.d("FileSenderService", "accept timeout for $name")
+            AtomController.transferState.value = TransferState.Failed(
+                transferId, peerName, name, "Получатель не ответил", peerIp, contentHash
+            )
+            TransferNotification.update(this, NOTIF_ID,
+                TransferNotification.buildFailed(this, transferId, peerName, name, "Нет ответа"))
+            return -1
+        }
+
+        val startOffset = acceptResult.getOrNull()
+        if (startOffset == null) {
+            val reason = (acceptResult.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
+            val humanReason = when (reason) {
+                "busy" -> "занят — принимает другой файл"
+                "no_space" -> "нет места на устройстве"
+                "user_declined" -> "отклонил передачу"
+                else -> "отклонил: $reason"
+            }
+            InAppLogger.d("FileSenderService", "declined: $reason → $humanReason")
+            AtomController.transferState.value = TransferState.Failed(
+                transferId, peerName, name, humanReason, peerIp, contentHash
+            )
+            TransferNotification.update(this, NOTIF_ID,
+                TransferNotification.buildFailed(this, transferId, peerName, name, humanReason))
+            return -1
+        }
+
+        if (startOffset > 0) {
+            InAppLogger.d("FileSenderService", "resume from offset=$startOffset for $name")
+        }
+
         // 3) TCP-сессия
         try {
             val socket: Socket = node.openTcpTo(peerIp, 5000)
@@ -240,7 +293,7 @@ class FileSenderService : Service() {
                 val nameBytes = name.toByteArray(Charsets.UTF_8)
                 dos.writeInt(tidBytes.size); dos.write(tidBytes)
                 dos.writeInt(hashBytes.size); dos.write(hashBytes)
-                dos.writeLong(0L)
+                dos.writeLong(startOffset)
                 dos.writeLong(size)
                 dos.writeInt(nameBytes.size); dos.write(nameBytes)
 
@@ -248,6 +301,17 @@ class FileSenderService : Service() {
                 val input = contentResolver.openInputStream(uri)
                     ?: throw FileNotFoundException("cannot open $uri")
                 input.use {
+                    // skip startOffset для resume
+                    if (startOffset > 0) {
+                        var toSkip = startOffset
+                        while (toSkip > 0) {
+                            val skipped = it.skip(toSkip)
+                            if (skipped <= 0) break
+                            toSkip -= skipped
+                        }
+                        sent = startOffset
+                        InAppLogger.d("FileSenderService", "skipped $startOffset bytes for resume")
+                    }
                     val buf = ByteArray(CHUNK)
                     var lastNotif = 0L
                     while (currentCoroutineContext().isActive) {
@@ -351,4 +415,7 @@ class FileSenderService : Service() {
         InAppLogger.d("FileSenderService", "onDestroy, locks released")
         super.onDestroy()
     }
+
+    class DeclineException(val reason: String) : Exception("Peer declined: $reason")
+
 }
