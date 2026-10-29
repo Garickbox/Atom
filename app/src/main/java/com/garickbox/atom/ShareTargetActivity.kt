@@ -223,14 +223,30 @@ class ShareTargetActivity : AppCompatActivity() {
 
         var timedOut = false
         val timeoutJob = lifecycleScope.launch {
-            delay(8000)
+            delay(15000)  // Wi-Fi Direct медленный, даём 15 сек
+
             if (!timedOut) {
                 timedOut = true
                 b.spinner.visibility = View.GONE
                 if (b.peersContainer.childCount == 0) {
                     b.emptyText.visibility = View.VISIBLE
-                    b.emptyText.text = "Wi-Fi Direct никого не нашёл.\n" +
-                        "Проверь: Location Services включены, Wi-Fi Direct включён в настройках."
+                    b.emptyText.text = "Wi-Fi Direct никого не нашёл.\n\n" +
+                        "На втором телефоне:\n" +
+                        "• Открой Атом\n" +
+                        "• FAB + → 📄 Файл → Другой → 📶 Wi-Fi Direct\n" +
+                        "• Оставь на экране поиска\n\n" +
+                        "Затем нажми «Повторить поиск» здесь.\n\n" +
+                        "Wi-Fi Direct медленный — первый раз может искать 15-30 сек."
+                    // Кнопка повторного поиска
+                    val retryBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
+                        text = "🔄 Повторить поиск"
+                        setOnClickListener {
+                            b.emptyText.visibility = View.GONE
+                            b.spinner.visibility = View.VISIBLE
+                            startWifiDirectFlow(parent)
+                        }
+                    }
+                    b.peersContainer.addView(retryBtn)
                 }
             }
         }

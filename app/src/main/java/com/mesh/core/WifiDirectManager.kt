@@ -68,7 +68,9 @@ class WifiDirectManager(private val ctx: Context) {
             }
             receiver = r
             if (Build.VERSION.SDK_INT >= 33) {
-                ctx.registerReceiver(r, filter, Context.RECEIVER_NOT_EXPORTED)
+                // EXPORTED: системные broadcast'ы WifiP2pManager могут
+                // не доставляться NOT_EXPORTED на некоторых OEM
+                ctx.registerReceiver(r, filter, Context.RECEIVER_EXPORTED)
             } else {
                 @Suppress("UnspecifiedRegisterReceiverFlag")
                 ctx.registerReceiver(r, filter)
@@ -112,14 +114,17 @@ class WifiDirectManager(private val ctx: Context) {
 
     @SuppressLint("MissingPermission")
     private fun requestPeers() {
+        InAppLogger.d("WifiDirect", "requestPeers called")
         try {
             manager?.requestPeers(channel) { list ->
                 val peers = list?.deviceList?.toList() ?: emptyList()
-                InAppLogger.d("WifiDirect", "peers available: ${peers.size}")
+                InAppLogger.d("WifiDirect",
+                    "peers result: ${peers.size} → ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
                 onPeersChanged?.invoke(peers)
             }
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "requestPeers error: ${e.message}")
+            InAppLogger.d("WifiDirect",
+                "requestPeers error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -180,11 +185,29 @@ class WifiDirectManager(private val ctx: Context) {
                 }
                 override fun onFailure(reason: Int) {
                     InAppLogger.d("WifiDirect", "discover failed: $reason")
-                    onError?.invoke("Не удалось начать поиск (код $reason). Включи Location Services")
+                    onError?.invoke("Не удалось начать поиск (код $reason)")
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "startDiscover error: ${e.message}")
+            InAppLogger.d("WifiDirect", "startDiscover error: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /** Пассивный discover — делает устройство видимым для других. */
+    fun passiveDiscover() {
+        if (manager == null || channel == null) return
+        InAppLogger.d("WifiDirect", "passive discover starting")
+        try {
+            manager!!.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "passive discover started (we are visible)")
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "passive discover failed: $reason")
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "passiveDiscover error: ${e.javaClass.simpleName}")
         }
     }
 

@@ -166,7 +166,23 @@ class MeshNode(private val ctx: Context) {
     }
 
     fun broadcastHello() {
-        LanDiscovery.sendBroadcastHello(myId, myName)
+        // ВАЖНО: используем СВОЙ udpSocket (порт 47822),
+        // иначе ответы придут на ephemeral порт, который уже закрыт
+        try {
+            val sock = udpSocket
+            if (sock == null) {
+                InAppLogger.d("MeshNode", "broadcast: udpSocket null")
+                return
+            }
+            val payload = HelloPayload(myId, myName).toJson()
+            val bytes = MeshPacket(PacketType.HELLO, payload).encode()
+            val addr = InetAddress.getByName("255.255.255.255")
+            sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
+            InAppLogger.d("MeshNode", "broadcast HELLO from :${sock.localPort} to :${LanDiscovery.PORT}")
+        } catch (e: Exception) {
+            InAppLogger.d("MeshNode",
+                "broadcast error: ${e.javaClass.simpleName}: ${e.message}")
+        }
     }
 
     suspend fun probePeer(ip: String, timeoutMs: Long = 1500): Boolean {
