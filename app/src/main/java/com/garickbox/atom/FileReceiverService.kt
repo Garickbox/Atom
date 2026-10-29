@@ -17,6 +17,8 @@ class FileReceiverService : Service() {
     companion object {
         private const val NOTIF_ID = 2002
 
+        const val ACTION_CANCEL_RECEIVE = "com.garickbox.atom.CANCEL_RECEIVE"
+
         fun start(ctx: Context, fileName: String, totalSize: Long,
                   peerName: String = "?", transferId: String = "") {
             val i = Intent(ctx, FileReceiverService::class.java).apply {
@@ -84,6 +86,11 @@ class FileReceiverService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL_RECEIVE) {
+            InAppLogger.d("FileReceiverService", "cancel receive action")
+            FileReceiver.cancelActiveReceive(this)
+            return START_NOT_STICKY
+        }
         val fileName = intent?.getStringExtra("fileName") ?: "файл"
         val total = intent?.getLongExtra("totalSize", 0L) ?: 0L
         val peerName = intent?.getStringExtra("peerName") ?: "?"
@@ -108,6 +115,16 @@ class FileReceiverService : Service() {
             else append(formatBytes(written))
             if (bps > 0) append("  ·  ${formatSpeed(bps)}")
         }
+        // Кнопка "Отменить" — PendingIntent на этот же сервис
+        val cancelIntent = Intent(this, FileReceiverService::class.java).apply {
+            action = ACTION_CANCEL_RECEIVE
+        }
+        val cancelPi = android.app.PendingIntent.getService(
+            this, 3001, cancelIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("📥 Приём: $fileName")
@@ -116,6 +133,7 @@ class FileReceiverService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отменить", cancelPi)
             .build()
     }
 

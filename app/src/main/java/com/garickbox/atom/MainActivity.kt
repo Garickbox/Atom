@@ -193,8 +193,7 @@ class MainActivity : AppCompatActivity() {
         // Battery optimization prompt (один раз)
         maybePromptBattery()
 
-        // Обновить историю
-        renderHistory()
+        // История скрыта — минимализм
 
         // Подписка на текущую передачу
         observeTransferState()
@@ -219,7 +218,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         b.emptyText.visibility = android.view.View.GONE
-        b.historyScroll.visibility = android.view.View.VISIBLE
+        b.historyScroll.visibility = android.view.View.GONE
         b.historyContainer.removeAllViews()
         for (r in records) {
             val row = layoutInflater.inflate(android.R.layout.simple_list_item_2, b.historyContainer, false)
@@ -338,6 +337,7 @@ class MainActivity : AppCompatActivity() {
             }
             TransferState.Idle -> {
                 b.transferPanel.visibility = android.view.View.GONE
+                b.emptyText.visibility = android.view.View.VISIBLE
             }
         }
     }

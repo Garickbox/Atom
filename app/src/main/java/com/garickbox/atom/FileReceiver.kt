@@ -17,6 +17,7 @@ object FileReceiver {
 
     private val activeParts = ConcurrentHashMap<String, File>()
     private val _isBusy = AtomicBoolean(false)
+    @Volatile private var currentSocket: java.net.Socket? = null
 
     val isBusy: Boolean get() = _isBusy.get()
 
@@ -85,13 +86,18 @@ object FileReceiver {
     }
 
     fun onCancel(ctx: Context, transferId: String) {
-        InAppLogger.d("FileReceiver", "cancel requested for $transferId")
+        InAppLogger.d("FileReceiver", "FILE_CANCEL from sender (tid=$transferId)")
+        // Закрываем socket принудительно — прерываем блокирующий read()
+        try { currentSocket?.close() } catch (_: Exception) {}
+        currentSocket = null
+
         val part = activeParts.remove(transferId)
         if (part != null && part.exists()) {
             part.delete()
             InAppLogger.d("FileReceiver", "part deleted: ${part.name}")
         }
         _isBusy.set(false)
+        AtomController.transferState.value = TransferState.Idle
         FileReceiverService.stop(ctx)
     }
 
@@ -101,6 +107,7 @@ object FileReceiver {
         node: MeshNode,
         offer: MeshNode.FileOffer
     ) {
+        currentSocket = socket
         try {
             DataInputStream(socket.getInputStream().buffered(128 * 1024)).use { dis ->
                 val tidLen = dis.readInt()
@@ -221,8 +228,41 @@ object FileReceiver {
             FileReceiverService.stop(ctx)
             _isBusy.set(false)
         } finally {
+            currentSocket = null
             try { socket.close() } catch (_: Exception) {}
         }
+    }
+
+    /**
+     * Отменить активный приём: закрыть socket, удалить .part, сбросить busy.
+     * Вызывается из FileReceiverService при нажатии "Отменить" в уведомлении.
+     */
+    fun cancelActiveReceive(ctx: Context) {
+        InAppLogger.d("FileReceiver", "cancelActiveReceive")
+        try {
+            currentSocket?.let { sock ->
+                InAppLogger.d("FileReceiver", "closing active socket")
+                sock.close()
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("FileReceiver", "socket close error: ${e.message}")
+        }
+        currentSocket = null
+
+        // Удаляем все активные .part
+        activeParts.values.forEach { part ->
+            try {
+                if (part.exists()) {
+                    part.delete()
+                    InAppLogger.d("FileReceiver", "deleted .part: ${part.name}")
+                }
+            } catch (_: Exception) {}
+        }
+        activeParts.clear()
+
+        _isBusy.set(false)
+        AtomController.transferState.value = TransferState.Idle
+        FileReceiverService.stop(ctx)
     }
 
     private fun resolveUniqueName(ctx: Context, name: String): String {

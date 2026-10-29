@@ -288,4 +288,37 @@ class MeshNode(private val ctx: Context) {
             "tcp open → $ip, sndBuf=${s.sendBufferSize} rcvBuf=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
         return s
     }
+
+    /**
+     * Синхронная отправка — нужна для критичных пакетов (FILE_CANCEL),
+     * которые должны уйти до stopSelf() / scope.cancel().
+     * Не использует scope — отдельный Thread, работает даже если scope убит.
+     */
+    fun sendPacketBlocking(ip: String, packet: MeshPacket, timeoutMs: Long = 500L): Boolean {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var ok = false
+        val t = Thread {
+            try {
+                val sock = udpSocket
+                if (sock != null && !sock.isClosed) {
+                    val bytes = packet.encode()
+                    val addr = InetAddress.getByName(ip)
+                    sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
+                    ok = true
+                    InAppLogger.d("MeshNode", "sendBlocking ${packet.type} → $ip OK")
+                } else {
+                    InAppLogger.d("MeshNode", "sendBlocking: socket closed/null")
+                }
+            } catch (e: Exception) {
+                InAppLogger.d("MeshNode", "sendBlocking ${packet.type} error: ${e.message}")
+            } finally {
+                latch.countDown()
+            }
+        }
+        t.isDaemon = true
+        t.start()
+        try { latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Exception) {}
+        return ok
+    }
+
 }

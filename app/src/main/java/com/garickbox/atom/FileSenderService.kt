@@ -95,9 +95,9 @@ class FileSenderService : Service() {
             }
             TransferNotification.ACTION_CANCEL -> {
                 InAppLogger.d("FileSenderService", "cancel requested")
-                // Отправляем FILE_CANCEL пиру чтобы удалил .part
                 val curState = AtomController.transferState.value
                 if (curState is TransferState.Running) {
+                    // ВАЖНО: синхронный sendPacketBlocking — иначе scope.cancel убьёт пакет
                     try {
                         val ip = AtomController.lastPeer?.ip
                         val node = AtomController.meshNode
@@ -105,26 +105,31 @@ class FileSenderService : Service() {
                             val cancelJson = JSONObject().apply {
                                 put("tid", curState.transferId)
                             }
-                            node.sendPacket(ip, MeshPacket(PacketType.FILE_CANCEL, cancelJson))
-                            InAppLogger.d("FileSenderService", "FILE_CANCEL sent to $ip")
+                            val ok = node.sendPacketBlocking(
+                                ip, MeshPacket(PacketType.FILE_CANCEL, cancelJson), 800L
+                            )
+                            InAppLogger.d("FileSenderService",
+                                "FILE_CANCEL ${if (ok) "SENT" else "FAILED"} to $ip")
+                        } else {
+                            InAppLogger.d("FileSenderService",
+                                "cancel: no ip/node (${ip ?: "null"}, ${node ?: "null"})")
                         }
                     } catch (e: Exception) {
                         InAppLogger.d("FileSenderService", "cancel packet error: ${e.message}")
                     }
-                    // Записываем в историю
-                    TransferHistory.add(this, TransferHistory.Record(
-                        id = curState.transferId,
-                        peerName = curState.peerName,
-                        fileName = curState.fileName,
-                        bytes = curState.bytesSent,
-                        durationMs = 0L,
-                        status = "cancelled",
-                        timestamp = System.currentTimeMillis(),
-                        savedPath = ""
-                    ))
+
+                    AtomController.transferState.value = TransferState.Idle
                 }
+
+                // Отменяем корутину
                 currentJob?.cancel()
-                stopSelf()
+
+                // ВАЖНО: НЕ stopSelf сразу — даём 800 мс на реальную отправку пакета
+                // и на то, чтобы приёмник получил его и закрыл socket
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    stopSelf()
+                    InAppLogger.d("FileSenderService", "delayed stopSelf after cancel")
+                }, 800L)
             }
             TransferNotification.ACTION_RESUME -> {
                 InAppLogger.d("FileSenderService", "resume requested")
