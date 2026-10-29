@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -127,7 +129,7 @@ object AtomController {
         discoverLoopJob = scope.launch {
             // Первый discover сразу
             delay(2000)
-            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+            while (true) {  // delay() бросит CancellationException при отмене
                 try {
                     wifiDirect?.passiveDiscover()
                     InAppLogger.d("AtomController", "passiveDiscover tick (видимы для других)")
