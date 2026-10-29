@@ -339,16 +339,22 @@ class FileSenderService : Service() {
                 if (failed.get()) return@async
                 var socket: Socket? = null
                 try {
-                    socket = node.openTcpTo(peerIp, 5000)
-                    // TCP-тюнинг — NODELAY, меньше буферы, таймаут
+                    // REVERSE TUNE: создаём socket напрямую с БОЛЬШИМИ буферами
+                    // (openTcpTo фиксирует буфер 4MB при connect — не даёт увеличить)
+                    val s = Socket()
                     try {
-                        socket.tcpNoDelay = true
-                        socket.sendBufferSize = 1024 * 1024
-                        socket.soTimeout = 30_000
+                        s.sendBufferSize = 16 * 1024 * 1024
+                        s.receiveBufferSize = 16 * 1024 * 1024
+                        s.tcpNoDelay = false    // Nagle ON — агрегация пакетов
+                        s.soTimeout = 60_000
                     } catch (_: Exception) {}
+                    s.connect(java.net.InetSocketAddress(peerIp, com.mesh.core.LanDiscovery.PORT), 5000)
+                    InAppLogger.d("FileSenderService",
+                        "tcp open (reverse): snd=${s.sendBufferSize} rcv=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
+                    socket = s
                     sockets.add(socket)
                     val dos = DataOutputStream(
-                        java.io.BufferedOutputStream(socket.getOutputStream(), 128 * 1024)
+                        java.io.BufferedOutputStream(socket.getOutputStream(), 2 * 1024 * 1024)
                     )
 
                     // Header: tid, hash, name, totalSize, offset, end, threadIdx, threadCount
@@ -372,7 +378,7 @@ class FileSenderService : Service() {
                     pfd.use { descriptor ->
                         java.io.FileInputStream(descriptor.fileDescriptor).use { ins ->
                             ins.channel.position(start)
-                            val buf = ByteArray(256 * 1024)
+                            val buf = ByteArray(1024 * 1024)
                             while (pos < end && currentCoroutineContext().isActive) {
                                 if (failed.get()) break
                                 val toRead = minOf(buf.size.toLong(), end - pos).toInt()

@@ -110,8 +110,9 @@ object FileReceiver {
     ) {
         var registered = false
         try {
-            socket.receiveBufferSize = 1024 * 1024
-            socket.tcpNoDelay = true
+            socket.receiveBufferSize = 16 * 1024 * 1024
+            socket.sendBufferSize = 4 * 1024 * 1024
+            socket.tcpNoDelay = false    // Nagle ON
             val dis = DataInputStream(BufferedInputStream(socket.getInputStream(), 512 * 1024))
 
             // Header
@@ -159,7 +160,7 @@ object FileReceiver {
             scope.launch {
                 var pos = offset
                 try {
-                    val buf = ByteArray(512 * 1024)
+                    val buf = ByteArray(1024 * 1024)
                     while (pos < end) {
                         if (session.failed.get()) break
                         val toRead = minOf(buf.size.toLong(), end - pos).toInt()
