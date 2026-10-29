@@ -7,6 +7,7 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.mesh.core.InAppLogger
 import androidx.lifecycle.lifecycleScope
 import com.garickbox.atom.databinding.ActivitySelfTestBinding
 import kotlinx.coroutines.launch
