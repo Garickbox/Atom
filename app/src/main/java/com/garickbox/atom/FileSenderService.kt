@@ -24,7 +24,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.io.BufferedOutputStream
 import java.io.FileNotFoundException
 import java.net.Socket
 import java.security.MessageDigest
@@ -242,11 +241,11 @@ class FileSenderService : Service() {
         pendingAccepts[transferId] = acceptDeferred
 
         var acceptResult: Result<Long>? = null
-        for (attempt in 1..3) {
+        for (attempt in 1..5) {
             node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
-            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/3 for $name")
+            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/5 for $name")
             acceptResult = try {
-                kotlinx.coroutines.withTimeoutOrNull(3_000L) { acceptDeferred.await() }
+                kotlinx.coroutines.withTimeoutOrNull(2_000L) { acceptDeferred.await() }
             } catch (e: Exception) { null }
             if (acceptResult != null) break
         }
@@ -288,12 +287,10 @@ class FileSenderService : Service() {
         try {
             val socket: Socket = node.openTcpTo(peerIp, 5000)
             try {
-                // Ускорение TCP
-                socket.sendBufferSize = 4 * 1024 * 1024
-                socket.receiveBufferSize = 4 * 1024 * 1024
-                socket.tcpNoDelay = true
-
-                val dos = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), CHUNK))
+                // socket опции уже установлены в openTcpTo (до connect)
+                // НЕ используем BufferedOutputStream — данные должны уходить сразу
+                // (BufferedOutputStream копит и даёт ложную скорость 0.1 МБ/с в UI)
+                val dos = DataOutputStream(socket.getOutputStream())
                 val tidBytes = transferId.toByteArray(Charsets.UTF_8)
                 val hashBytes = contentHash.toByteArray(Charsets.UTF_8)
                 val nameBytes = name.toByteArray(Charsets.UTF_8)
@@ -326,8 +323,9 @@ class FileSenderService : Service() {
                         dos.write(buf, 0, read)
                         sent += read
                         val now = System.currentTimeMillis()
-                        if (now - lastNotif > 300) {
+                        if (now - lastNotif > 500) {  // 500 мс вместо 300 — меньше overhead notify
                             lastNotif = now
+                            dos.flush()  // принудительно вытолкнуть из user-space буфера
                             senderSpeedTracker.onProgress(sent)
                             val bps = senderSpeedTracker.bytesPerSecond()
                             val notif = TransferNotification.buildRunning(
@@ -337,9 +335,11 @@ class FileSenderService : Service() {
                             AtomController.transferState.value =
                                 TransferState.Running(
                                     transferId, peerName, name, sent, size,
-                                    bytesPerSecond = senderSpeedTracker.bytesPerSecond(),
+                                    bytesPerSecond = bps,
                                     isReceiver = false
                                 )
+                            InAppLogger.d("FileSenderService",
+                                "progress: ${sent}/${size} bytes = ${"%.1f".format(sent*100.0/size)}% @ ${"%.1f".format(bps/1024.0/1024.0)} МБ/с")
                         }
                     }
                 }

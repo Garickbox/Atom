@@ -217,26 +217,27 @@ class MeshNode(private val ctx: Context) {
         }
     }
 
-    /** Вычисляет X.X.X.255 из DHCP info. Возвращает null если не удалось. */
+    /** Broadcast X.X.X.255 через NetworkInterface (работает на API 31+). */
     private fun computeSubnetBroadcast(): InetAddress? {
         return try {
-            val wm = ctx.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
-                as? android.net.wifi.WifiManager ?: return null
-            val dhcp = wm.dhcpInfo ?: return null
-            val ip = dhcp.ipAddress
-            val mask = dhcp.netmask
-            if (ip == 0 || mask == 0) return null
-            // Android хранит little-endian
-            val ipBE = Integer.reverseBytes(ip)
-            val maskBE = Integer.reverseBytes(mask)
-            val bcastBE = ipBE or maskBE.inv()
-            val b = byteArrayOf(
-                (bcastBE ushr 24).toByte(),
-                (bcastBE ushr 16).toByte(),
-                (bcastBE ushr 8).toByte(),
-                bcastBE.toByte()
-            )
-            InetAddress.getByAddress(b)
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            for (iface in interfaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                // Ищем wlan* (не p2p-wlan*)
+                val name = iface.name
+                if (!name.startsWith("wlan") || name.startsWith("p2p")) continue
+                for (ia in iface.interfaceAddresses) {
+                    val addr = ia.address
+                    val bcast = ia.broadcast
+                    if (addr is java.net.Inet4Address && bcast != null) {
+                        InAppLogger.d("MeshNode",
+                            "subnet: ${name} addr=${addr.hostAddress} bcast=${bcast.hostAddress}")
+                        return bcast
+                    }
+                }
+            }
+            InAppLogger.d("MeshNode", "subnet: no wlan interface with broadcast")
+            null
         } catch (e: Exception) {
             InAppLogger.d("MeshNode", "computeSubnetBroadcast error: ${e.message}")
             null
@@ -273,8 +274,18 @@ class MeshNode(private val ctx: Context) {
     }
 
     fun openTcpTo(ip: String, connectTimeoutMs: Int = 5000): Socket {
+        // ВАЖНО: socket опции ставятся ДО connect — иначе игнорируются
         val s = Socket()
+        try {
+            s.sendBufferSize = 4 * 1024 * 1024
+            s.receiveBufferSize = 4 * 1024 * 1024
+            s.tcpNoDelay = false  // агрегация пакетов для bulk transfer
+        } catch (e: Exception) {
+            InAppLogger.d("MeshNode", "socket opts error: ${e.message}")
+        }
         s.connect(InetSocketAddress(ip, LanDiscovery.PORT), connectTimeoutMs)
+        InAppLogger.d("MeshNode",
+            "tcp open → $ip, sndBuf=${s.sendBufferSize} rcvBuf=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
         return s
     }
 }
