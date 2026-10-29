@@ -105,6 +105,9 @@ class MainActivity : AppCompatActivity() {
             R.id.action_self_test -> {
                 startActivity(Intent(this, SelfTestActivity::class.java)); true
             }
+            R.id.action_view_log -> {
+                startActivity(Intent(this, LogViewerActivity::class.java)); true
+            }
             R.id.action_about -> { showAbout(); true }
             else -> super.onOptionsItemSelected(item)
         }

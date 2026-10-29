@@ -40,6 +40,11 @@
         </activity>
 
         <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:label="Лог" />
+
+        <activity
             android:name=".SelfTestActivity"
             android:exported="false"
             android:label="@string/self_test_title" />

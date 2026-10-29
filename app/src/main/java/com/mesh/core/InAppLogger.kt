@@ -15,6 +15,12 @@ object InAppLogger {
     private var dir: File? = null
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
+    fun getLogFile(): File? {
+        val d = dir ?: return null
+        val f = File(d, "atom.log")
+        return if (f.exists()) f else null
+    }
+
     fun init(ctx: Context) {
         val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
         if (!base.exists()) base.mkdirs()
