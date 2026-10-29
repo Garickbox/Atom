@@ -187,9 +187,50 @@ class WifiDirectManager(private val ctx: Context) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
             return
         }
-        // НЕ вызываем removeGroup — это ломает связь с пиром на HyperOS
-        // Просто запускаем discovery. Framework сам разберётся.
-        startDiscoverWithRetry(maxAttempts = 5, delayMs = 3000L)
+        // Если передача активна — только discover
+        if (MeshBridge.isTransferActive()) {
+            InAppLogger.d("WifiDirect", "transfer active — discover only, no removeGroup")
+            startDiscoverWithRetry(maxAttempts = 5, delayMs = 2000L)
+            return
+        }
+        // Убираем залипшую группу (3 попытки × 2 сек), потом discover
+        removeGroupSafe(attempt = 1)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun removeGroupSafe(attempt: Int) {
+        val maxAttempts = 3
+        InAppLogger.d("WifiDirect", "removeGroup attempt $attempt/$maxAttempts")
+        try {
+            manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "removeGroup OK → discover")
+                    startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "removeGroup fail reason=$reason")
+                    if (reason == 2 && attempt < maxAttempts) {  // BUSY → retry
+                        scope.launch {
+                            kotlinx.coroutines.delay(2000)
+                            removeGroupSafe(attempt + 1)
+                        }
+                    } else if (reason == 2) {
+                        // Framework BUSY — БЕЗ forceReset, просто discover
+                        InAppLogger.d("WifiDirect",
+                            "framework BUSY after $maxAttempts — trying discover anyway")
+                        startDiscoverWithRetry(maxAttempts = 3, delayMs = 3000L)
+                        onError?.invoke("Wi-Fi Direct занят. Попробуй через 30 сек.")
+                    } else {
+                        // Другая причина — группы нет, можно discover
+                        InAppLogger.d("WifiDirect", "removeGroup fail reason=$reason (no group)")
+                        startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "removeGroup exception: ${e.message}")
+            startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+        }
     }
 
     /** removeGroup с retry — reason=2 (BUSY) повторяем с задержкой. */

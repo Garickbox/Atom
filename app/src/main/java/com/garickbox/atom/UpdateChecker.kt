@@ -27,12 +27,18 @@ object UpdateChecker {
     private const val API = "https://api.github.com/repos/$REPO/releases/latest"
     private const val NOTIF_ID = 2001
 
+    private val checkMutex = java.util.concurrent.atomic.AtomicBoolean(false)
+
     data class Release(val buildNumber: Int, val tag: String, val apkUrl: String, val apkName: String)
 
     /** Ожидание разрешения на установку — если пользователь ушёл в Settings. */
     private var pendingRelease: Release? = null
 
     suspend fun checkForUpdate(context: Context): Release? = withContext(Dispatchers.IO) {
+        if (!checkMutex.compareAndSet(false, true)) {
+            InAppLogger.d("UpdateChecker", "check already in progress — skipping")
+            return@withContext null
+        }
         try {
             val client = OkHttpClient()
             val req = Request.Builder()
@@ -60,6 +66,8 @@ object UpdateChecker {
         } catch (e: Exception) {
             InAppLogger.d("UpdateChecker", "check error: ${e.message}")
             null
+        } finally {
+            checkMutex.set(false)
         }
     }
 
