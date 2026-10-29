@@ -8,6 +8,28 @@ class AtomApp : Application() {
         super.onCreate()
         InAppLogger.init(this)
         NotificationHelper.createChannels(this)
+        // Cleanup старой P2P группы (если процесс умер без cleanup)
+        try {
+            val wm = getSystemService(android.content.Context.WIFI_P2P_SERVICE)
+                as? android.net.wifi.p2p.WifiP2pManager
+            if (wm != null) {
+                val ch = wm.initialize(this, android.os.Looper.getMainLooper()) {}
+                ch?.let {
+                    wm.removeGroup(it, object : android.net.wifi.p2p.WifiP2pManager.ActionListener {
+                        override fun onSuccess() {
+                            com.mesh.core.InAppLogger.d("AtomApp", "startup removeGroup OK")
+                        }
+                        override fun onFailure(reason: Int) {
+                            com.mesh.core.InAppLogger.d("AtomApp", "startup removeGroup reason=$reason")
+                        }
+                    })
+                    try { it.close() } catch (_: Exception) {}
+                }
+            }
+        } catch (e: Exception) {
+            com.mesh.core.InAppLogger.d("AtomApp", "startup cleanup error: ${e.message}")
+        }
+
         AtomController.init(this)
         cleanupOldParts()
         InAppLogger.d("AtomApp", "app started, version=${BuildConfig.VERSION_NAME}, myId=${AtomController.myId}")

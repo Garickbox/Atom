@@ -199,37 +199,51 @@ class WifiDirectManager(private val ctx: Context) {
 
     @SuppressLint("MissingPermission")
     private fun removeGroupSafe(attempt: Int) {
-        val maxAttempts = 3
+        val maxAttempts = 10  // до 30 сек retry на HyperOS
         InAppLogger.d("WifiDirect", "removeGroup attempt $attempt/$maxAttempts")
+
+        // Перед removeGroup — cancelConnect чтобы очистить pending connect
+        if (attempt == 1) {
+            try {
+                manager?.cancelConnect(channel, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {
+                        InAppLogger.d("WifiDirect", "cancelConnect OK → removeGroup")
+                    }
+                    override fun onFailure(reason: Int) {
+                        InAppLogger.d("WifiDirect", "cancelConnect fail reason=$reason (продолжаем)")
+                    }
+                })
+            } catch (e: Exception) {
+                InAppLogger.d("WifiDirect", "cancelConnect exception: ${e.message}")
+            }
+        }
+
         try {
             manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     InAppLogger.d("WifiDirect", "removeGroup OK → discover")
-                    startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+                    startDiscoverWithRetry(maxAttempts = 5, delayMs = 2000L)
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "removeGroup fail reason=$reason")
-                    if (reason == 2 && attempt < maxAttempts) {  // BUSY → retry
+                    InAppLogger.d("WifiDirect", "removeGroup fail reason=$reason attempt=$attempt")
+                    if (attempt < maxAttempts) {
+                        // 3-сек между попытками — framework на HyperOS долго выходит из BUSY
                         scope.launch {
-                            kotlinx.coroutines.delay(2000)
+                            kotlinx.coroutines.delay(3000)
                             removeGroupSafe(attempt + 1)
                         }
-                    } else if (reason == 2) {
-                        // Framework BUSY — БЕЗ forceReset, просто discover
-                        InAppLogger.d("WifiDirect",
-                            "framework BUSY after $maxAttempts — trying discover anyway")
-                        startDiscoverWithRetry(maxAttempts = 3, delayMs = 3000L)
-                        onError?.invoke("Wi-Fi Direct занят. Попробуй через 30 сек.")
                     } else {
-                        // Другая причина — группы нет, можно discover
-                        InAppLogger.d("WifiDirect", "removeGroup fail reason=$reason (no group)")
-                        startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+                        // После 30 сек — просто discover БЕЗ removeGroup
+                        InAppLogger.d("WifiDirect",
+                            "removeGroup gave up after $maxAttempts — trying discover anyway")
+                        startDiscoverWithRetry(maxAttempts = 5, delayMs = 3000L)
+                        onError?.invoke("Wi-Fi Direct завис. Перезагрузи оба телефона.")
                     }
                 }
             })
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "removeGroup exception: ${e.message}")
-            startDiscoverWithRetry(maxAttempts = 3, delayMs = 2000L)
+            startDiscoverWithRetry(maxAttempts = 5, delayMs = 2000L)
         }
     }
 
