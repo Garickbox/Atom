@@ -3,15 +3,18 @@ package com.garickbox.atom
 import java.util.ArrayDeque
 
 /**
- * Скользящее окно 5 сек — считает мгновенную скорость в байт/с.
+ * Скользящее окно скорости. Глобальный rate-limit 500мс — не чаще чем 2 раза в секунду,
+ * даже если 4 потока дёргают одновременно.
  */
 class SpeedTracker(private val windowMs: Long = 5_000L) {
-
-    private val samples = ArrayDeque<Pair<Long, Long>>()  // (timestamp, totalBytes)
+    private val samples = ArrayDeque<Pair<Long, Long>>()
+    @Volatile private var lastAccept: Long = 0L
 
     @Synchronized
     fun onProgress(totalBytes: Long) {
         val now = System.currentTimeMillis()
+        if (now - lastAccept < 500) return
+        lastAccept = now
         samples.addLast(now to totalBytes)
         while (samples.isNotEmpty() && now - samples.first().first > windowMs) {
             samples.removeFirst()
@@ -31,11 +34,6 @@ class SpeedTracker(private val windowMs: Long = 5_000L) {
     @Synchronized
     fun reset() {
         samples.clear()
-    }
-
-    fun formatSpeed(bps: Long): String {
-        if (bps <= 0) return "—"
-        val mbps = bps / 1024.0 / 1024.0
-        return "%.1f МБ/с".format(mbps)
+        lastAccept = 0L
     }
 }
