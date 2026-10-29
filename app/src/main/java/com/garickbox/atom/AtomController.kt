@@ -5,33 +5,21 @@ import android.content.SharedPreferences
 import com.mesh.core.InAppLogger
 import com.mesh.core.MeshNode
 import com.mesh.core.WifiDirectManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 object AtomController {
 
     private lateinit var appContext: Context
-
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-
     private lateinit var prefs: SharedPreferences
     private var _meshNode: MeshNode? = null
     var wifiDirect: WifiDirectManager? = null
         private set
 
     val peers = MutableStateFlow<List<Peer>>(emptyList())
+    val transferState = MutableStateFlow<TransferState>(TransferState.Idle)
+
     private var _transferActive: Boolean = false
     val transferActive: Boolean get() = _transferActive
-    val transferState = MutableStateFlow<TransferState>(TransferState.Idle)
 
     var myName: String = ""
     var myId: String = ""
@@ -41,8 +29,13 @@ object AtomController {
 
     fun init(ctx: Context) {
         appContext = ctx.applicationContext
-        com.mesh.core.MeshBridge.register { _transferActive }
-        InAppLogger.d("AtomController", "registered MeshBridge for transferActive")
+        try {
+            com.mesh.core.MeshBridge.register { _transferActive }
+            InAppLogger.d("AtomController", "registered MeshBridge for transferActive")
+        } catch (e: Exception) {
+            InAppLogger.d("AtomController", "MeshBridge register error: ${e.message}")
+        }
+
         prefs = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
         myId = prefs.getString("my_id", null) ?: java.util.UUID.randomUUID().toString().also {
             prefs.edit().putString("my_id", it).apply()
@@ -57,11 +50,13 @@ object AtomController {
             )
         }
 
+        // MeshNode для LAN
         val node = MeshNode(ctx.applicationContext).apply {
             this.myId = this@AtomController.myId
             this.myName = this@AtomController.myName
             this.onHello = { info ->
                 if (info.peerId != this@AtomController.myId) {
+                    InAppLogger.d("AtomController", "found peer: ${info.name} @ ${info.ip}")
                     val existing = peers.value.toMutableList()
                     existing.removeAll { it.id == info.peerId }
                     existing.add(Peer(info.peerId, info.name, info.ip))
@@ -78,18 +73,20 @@ object AtomController {
         node.start()
         _meshNode = node
 
+        // Wi-Fi Direct
         val wd = WifiDirectManager(ctx.applicationContext)
         wd.init()
-        // P2P: после подключения клиент шлёт HELLO на IP Group Owner
         wd.onConnected = { conn ->
-            InAppLogger.d("AtomController", "p2p connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            InAppLogger.d("AtomController",
+                "p2p connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
             if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
                 _meshNode?.sendHello(conn.groupOwnerAddress)
                 InAppLogger.d("AtomController", "HELLO → GO ${conn.groupOwnerAddress}")
             }
         }
         wifiDirect = wd
-InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
+
+        InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
     }
 
     fun saveMyName(name: String) {
@@ -113,35 +110,12 @@ InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
 
     fun hasName(): Boolean = myName.isNotBlank()
 
-
-    private fun // (continuous removed) {
-        if (_transferActive) {
-            InAppLogger.d("AtomController", "skip continuous discover — transfer active")
-            return
-        }
-        InAppLogger.d("AtomController", "app foreground → start continuous P2P discover")
-        wifiDirect?.startContinuousDiscover()
-    }
-
-    private fun // (continuous removed) {
-        InAppLogger.d("AtomController", "app background → stop continuous P2P discover")
-        wifiDirect?.stopContinuousDiscover()
-    }
-
     /**
-     * Вызывается FileSenderService / FileReceiverService при старте/конце передачи.
-     * Пока transferActive = true — continuousDiscover НЕ работает (иначе
-     * radio switching каждые 12 сек сбивает TCP → скорость падает).
+     * Флаг активной передачи. Используется только для FileSender/FileReceiver
+     * чтобы случайно не запустить параллельную передачу. НЕ влияет на P2P discovery.
      */
     fun setTransferActive(active: Boolean) {
         _transferActive = active
         InAppLogger.d("AtomController", "transferActive = $active")
-        if (active) {
-            wifiDirect?.stopContinuousDiscover()
-        } else if (appForeground) {
-            wifiDirect?.startContinuousDiscover()
-        }
     }
-
-
 }

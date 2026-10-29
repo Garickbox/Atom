@@ -403,7 +403,6 @@ class ShareTargetActivity : AppCompatActivity() {
         }
         val cancelBtn = com.google.android.material.button.MaterialButton(this).apply {
             text = "Отмена"
-            style = com.google.android.material.R.style.Widget_Material3_Button_TextButton
             setOnClickListener {
                 progressJob.cancel()
                 parent.dismiss()
