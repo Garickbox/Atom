@@ -179,12 +179,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UpdateChecker.checkPending(this)
-        // Тихая проверка геолокации — только в лог, без диалогов
-        if (!LocationHelper.isEnabled(this)) {
-            InAppLogger.d("MainActivity", "location disabled (silent check)")
-        } else {
-            InAppLogger.d("MainActivity", "location enabled (silent check)")
-        }
+        // Тихая проверка всех условий (в лог, без диалогов)
+        val issues = PreflightChecker.issues(this)
+        InAppLogger.d("MainActivity",
+            "preflight (silent): ${PreflightChecker.summary(issues)}")
         if (permissionAsked) return
         if (!AtomController.hasName()) return  // сначала имя
         val missing = PermissionsHelper.missing(this)

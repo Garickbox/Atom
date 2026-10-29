@@ -20,15 +20,36 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ShareTargetActivity : AppCompatActivity() {
-    private var pendingLocationCallback: (() -> Unit)? = null
+    private var pendingPreflightCallback: (() -> Unit)? = null
 
     override fun onResume() {
         super.onResume()
-        val cb = pendingLocationCallback ?: return
-        if (LocationHelper.isEnabled(this)) {
-            InAppLogger.d("ShareTarget", "location enabled after prompt, continuing")
-            pendingLocationCallback = null
+        val cb = pendingPreflightCallback ?: return
+        val issues = PreflightChecker.issues(this)
+        if (issues.isEmpty()) {
+            InAppLogger.d("ShareTarget", "preflight cleared, continuing")
+            pendingPreflightCallback = null
             cb.invoke()
+        } else {
+            InAppLogger.d("ShareTarget",
+                "still has issues: ${PreflightChecker.summary(issues)}")
+        }
+    }
+
+    private val permissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        val cb = pendingPreflightCallback ?: return@registerForActivityResult
+        // После grant — перепроверить всё остальное
+        val stillMissing = PreflightChecker.issues(this)
+        if (stillMissing.isEmpty()) {
+            pendingPreflightCallback = null
+            cb.invoke()
+        } else {
+            // Остались системные проблемы — покажем диалог
+            PreflightDialog.check(this, null, { issue ->
+                PreflightChecker.openSettingsFor(this, issue)
+            }, cb)
         }
     }
 
@@ -123,10 +144,10 @@ class ShareTargetActivity : AppCompatActivity() {
         parent.setContentView(b.root)
 
         b.searchRow.setOnClickListener {
-            ensureLocation { startSearch(parent) }
+            preflightCheck(parent) { startSearch(parent) }
         }
         b.wifiDirectRow.setOnClickListener {
-            ensureLocation { startWifiDirectFlow(parent) }
+            preflightCheck(parent) { startWifiDirectFlow(parent) }
         }
         b.scanRow.setOnClickListener {
             Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
@@ -318,33 +339,34 @@ class ShareTargetActivity : AppCompatActivity() {
 
 
     /**
-     * Проверка геолокации. Если выключена — диалог с объяснением и кнопкой "Включить".
-     * После возврата с настроек onResume продолжит flow автоматически.
+     * Единая проверка всего перед поиском:
+     * разрешения, режим полёта, Wi-Fi, геолокация.
+     * Если всё ок — onReady(). Иначе — диалог + открыть настройки.
+     * После возврата из настроек onResume продолжит автоматически.
      */
-    private fun ensureLocation(onOk: () -> Unit) {
-        if (LocationHelper.isEnabled(this)) {
-            onOk()
-            return
-        }
-        InAppLogger.d("ShareTarget", "location disabled, prompting user")
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("📍 Геолокация выключена")
-            .setMessage(
-                "Android требует включённую геолокацию, чтобы искать " +
-                "устройства поблизости по Wi-Fi. Без неё Wi-Fi Direct " +
-                "не найдёт второй телефон.\n\n" +
-                "Включи её — и мы продолжим автоматически."
-            )
-            .setPositiveButton("Включить") { _, _ ->
-                pendingLocationCallback = onOk
-                LocationHelper.openSettings(this)
+    private fun preflightCheck(parent: BottomSheetDialog, onReady: () -> Unit) {
+        pendingPreflightCallback = onReady
+        PreflightDialog.check(
+            activity = this,
+            onRequestPermissions = {
+                val missing = PermissionsHelper.missing(this)
+                if (missing.isEmpty()) {
+                    // Разрешения уже есть, но остались системные проблемы
+                    preflightCheck(parent, onReady)
+                } else {
+                    InAppLogger.d("ShareTarget", "requesting permissions: $missing")
+                    permissionLauncher.launch(missing.toTypedArray())
+                }
+            },
+            onOpenSystemSettings = { issue ->
+                InAppLogger.d("ShareTarget", "opening settings for ${issue.id}")
+                PreflightChecker.openSettingsFor(this, issue)
+            },
+            onReady = {
+                pendingPreflightCallback = null
+                onReady()
             }
-            .setNegativeButton("Всё равно искать") { _, _ ->
-                InAppLogger.d("ShareTarget", "user chose to search without location")
-                onOk()
-            }
-            .setCancelable(true)
-            .show()
+        )
     }
 
 }

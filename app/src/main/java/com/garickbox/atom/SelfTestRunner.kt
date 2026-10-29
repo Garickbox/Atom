@@ -27,6 +27,8 @@ object SelfTestRunner {
             checkStorage(),
             checkOta(),
             checkFgs(ctx),
+            checkWifiEnabled(ctx),
+            checkAirplane(ctx),
             checkLocationEnabled(ctx),
             checkP2p(ctx)
         )
@@ -124,6 +126,25 @@ object SelfTestRunner {
             TestResult("Геолокация", false,
                 "Выключена — Wi-Fi Direct не найдёт устройства. " +
                 "Включи в шторке (иконка геолокации)")
+        }
+    }
+
+
+    private fun checkWifiEnabled(ctx: Context): TestResult {
+        return if (PreflightChecker.isWifiEnabled(ctx)) {
+            TestResult("Wi-Fi", true, "Включён")
+        } else {
+            TestResult("Wi-Fi", false,
+                "Выключен — включи в шторке (иконка Wi-Fi)")
+        }
+    }
+
+    private fun checkAirplane(ctx: Context): TestResult {
+        return if (!PreflightChecker.isAirplaneMode(ctx)) {
+            TestResult("Режим полёта", true, "Выключен")
+        } else {
+            TestResult("Режим полёта", false,
+                "Включён — выключи в шторке (иконка самолёта)")
         }
     }
 
