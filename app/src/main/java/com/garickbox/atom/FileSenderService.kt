@@ -356,20 +356,21 @@ class FileSenderService : Service() {
                         dos.flush()
 
                         // Данные
-                        val input = contentResolver.openInputStream(uri)
+                        val pfd = contentResolver.openFileDescriptor(uri, "r")
                             ?: throw java.io.FileNotFoundException("cannot open $uri")
-                        input.use { ins ->
-                            ins.channel.position(start)
-                            val buf = ByteArray(512 * 1024)
-                            var pos = start
-                            var lastNotif = 0L
-                            while (pos < end && currentCoroutineContext().isActive) {
-                                val toRead = minOf(buf.size.toLong(), end - pos).toInt()
-                                val read = ins.read(buf, 0, toRead)
-                                if (read < 0) break
-                                dos.write(buf, 0, read)
-                                pos += read
-                                val total = progress.addAndGet(read.toLong())
+                        pfd.use { descriptor ->
+                            java.io.FileInputStream(descriptor.fileDescriptor).use { ins ->
+                                ins.channel.position(start)
+                                val buf = ByteArray(512 * 1024)
+                                var pos = start
+                                var lastNotif = 0L
+                                while (pos < end && currentCoroutineContext().isActive) {
+                                    val toRead = minOf(buf.size.toLong(), end - pos).toInt()
+                                    val read = ins.read(buf, 0, toRead)
+                                    if (read < 0) break
+                                    dos.write(buf, 0, read)
+                                    pos += read
+                                    val total = progress.addAndGet(read.toLong())
 
                                 val now = System.currentTimeMillis()
                                 if (now - lastNotif > 500) {
@@ -386,9 +387,10 @@ class FileSenderService : Service() {
                                         bytesPerSecond = bps, isReceiver = false)
                                 }
                             }
-                            dos.flush()
-                            InAppLogger.d("FileSenderService",
-                                "thread $i done: ${pos - start} bytes")
+                                dos.flush()
+                                InAppLogger.d("FileSenderService",
+                                    "thread $i done: ${pos - start} bytes")
+                            }
                         }
                     } finally {
                         try { socket.close() } catch (_: Exception) {}
