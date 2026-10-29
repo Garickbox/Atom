@@ -51,8 +51,19 @@ object FileReceiver {
             "offer from ${offer.peerName}: ${offer.name} (${offer.size} b), busy=${isBusy}")
 
         if (_isBusy.get()) {
-            sendDecline(ctx, offer, "busy")
-            return
+            // Self-heal: если нет активных приёмов — busy застрял, сбрасываем
+            val anyReceiving = activeSessions.values.any {
+                it.finished.get() < it.threadCount
+            }
+            if (!anyReceiving) {
+                InAppLogger.d("FileReceiver", "busy stuck (no active receive) — self-heal to false")
+                _isBusy.set(false)
+                // Не return — продолжаем приём
+            } else {
+                InAppLogger.d("FileReceiver", "decline busy — active session still receiving")
+                sendDecline(ctx, offer, "busy")
+                return
+            }
         }
 
         val required = offer.size + 5 * 1024 * 1024
@@ -189,9 +200,8 @@ object FileReceiver {
                     InAppLogger.d("FileReceiver",
                         "thread $threadIdx finished, $done/${session.threadCount}")
                     if (done >= session.threadCount) {
-                        // ВАЖНО: освобождаем busy ДО finalize.
-                        // SHA-256 + MediaStore идут в фоне, не блокируют приём следующего файла.
-                        // busy уже освобождён в handleIncomingSocket
+                        InAppLogger.d("FileReceiver", "all threads done, releasing busy")
+                        _isBusy.set(false)
                         scope.launch { finalizeSession(session, ctx) }
                     }
                 }
@@ -227,6 +237,7 @@ object FileReceiver {
     }
 
     private fun finalizeSession(session: ReceiveSession, ctx: Context) {
+        InAppLogger.d("FileReceiver", "finalize START tid=${session.tid.take(8)}")
         try {
             InAppLogger.d("FileReceiver",
                 "finalize: ${session.received.get()}/${session.totalSize} received, failed=${session.failed.get()}")
