@@ -232,29 +232,28 @@ class WifiDirectManager(private val ctx: Context) {
     }
 
     @SuppressLint("MissingPermission")
+    @SuppressLint("MissingPermission")
     fun connect(mac: String) {
         if (manager == null || channel == null) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
             return
         }
         try {
-            // Пытаемся force 5 GHz через WifiP2pConfig.Builder (API 29+)
-            val config = try {
+            val config = android.net.wifi.p2p.WifiP2pConfig().apply {
+                deviceAddress = mac
+            }
+            // API 29+ — попросить 5 GHz
+            try {
                 if (Build.VERSION.SDK_INT >= 29) {
-                    android.net.wifi.p2p.WifiP2pConfig.Builder()
-                        .setDeviceAddress(mac)
-                        .setGroupOperatingFrequency(5180)  // ch 36, 5 GHz
-                        .build()
-                } else {
-                    android.net.wifi.p2p.WifiP2pConfig().apply { deviceAddress = mac }
+                    config.groupOperatingFrequency = 5180  // ch 36
+                    InAppLogger.d("WifiDirect", "requesting 5 GHz (5180 MHz)")
                 }
             } catch (e: Exception) {
                 InAppLogger.d("WifiDirect",
-                    "5GHz config failed (fallback 2.4): ${e.message}")
-                android.net.wifi.p2p.WifiP2pConfig().apply { deviceAddress = mac }
+                    "groupOperatingFrequency failed: ${e.message}")
             }
 
-            InAppLogger.d("WifiDirect", "connect to $mac (5GHz requested)")
+            InAppLogger.d("WifiDirect", "connect to $mac")
             manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     InAppLogger.d("WifiDirect", "connect initiated")
