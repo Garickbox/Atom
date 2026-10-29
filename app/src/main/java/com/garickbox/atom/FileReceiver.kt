@@ -110,7 +110,8 @@ object FileReceiver {
     ) {
         var registered = false
         try {
-            socket.receiveBufferSize = 4 * 1024 * 1024
+            socket.receiveBufferSize = 1024 * 1024
+            socket.tcpNoDelay = true
             val dis = DataInputStream(BufferedInputStream(socket.getInputStream(), 512 * 1024))
 
             // Header
