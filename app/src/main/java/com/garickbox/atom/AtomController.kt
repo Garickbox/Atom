@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 object AtomController {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var foregroundWifiLock: android.net.wifi.WifiManager.WifiLock? = null
 
 
     private lateinit var prefs: SharedPreferences
@@ -91,11 +92,13 @@ object AtomController {
                 object : androidx.lifecycle.DefaultLifecycleObserver {
                     override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                         appForeground = true
+                        acquireForegroundWifiLock()
                         InAppLogger.d("AtomController", "app foreground → start discover loop")
                         startContinuousP2P()
                     }
                     override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                         appForeground = false
+                        releaseForegroundWifiLock()
                         InAppLogger.d("AtomController", "app background → stop discover loop")
                         stopContinuousP2P()
                     }
@@ -155,6 +158,35 @@ object AtomController {
         } else if (appForeground) {
             wifiDirect?.startContinuousDiscover()
         }
+    }
+
+
+    private fun acquireForegroundWifiLock() {
+        if (foregroundWifiLock?.isHeld == true) return
+        try {
+            val wm = appContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                as? android.net.wifi.WifiManager ?: return
+            val lock = wm.createWifiLock(
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "atom-foreground"
+            )
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            foregroundWifiLock = lock
+            InAppLogger.d("AtomController", "foreground WiFiLock acquired")
+        } catch (e: Exception) {
+            InAppLogger.d("AtomController", "foreground WiFiLock error: ${e.message}")
+        }
+    }
+
+    private fun releaseForegroundWifiLock() {
+        try {
+            if (foregroundWifiLock?.isHeld == true) {
+                foregroundWifiLock?.release()
+                InAppLogger.d("AtomController", "foreground WiFiLock released")
+            }
+        } catch (_: Exception) {}
+        foregroundWifiLock = null
     }
 
 }

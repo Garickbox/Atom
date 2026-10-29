@@ -151,12 +151,13 @@ class FileSenderService : Service() {
                 return@launch
             }
 
-            // Probe
-            val alive = node.probePeer(peerIp, 1500)
-            if (!alive) {
-                InAppLogger.d("FileSenderService", "probe failed for $peerIp")
-                finishWithError(peerName, "Получатель не в сети")
-                return@launch
+            // Quick probe (500ms) — только для лога, не блокирует
+            val alive = node.probePeer(peerIp, 500)
+            if (alive) {
+                InAppLogger.d("FileSenderService", "probe OK for $peerIp")
+            } else {
+                InAppLogger.d("FileSenderService",
+                    "probe timeout — но продолжаем FILE_OFFER retry")
             }
 
             AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
@@ -247,11 +248,11 @@ class FileSenderService : Service() {
         pendingAccepts[transferId] = acceptDeferred
 
         var acceptResult: Result<Long>? = null
-        for (attempt in 1..5) {
+        for (attempt in 1..10) {
             node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
-            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/5 for $name")
+            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/10 for $name")
             acceptResult = try {
-                kotlinx.coroutines.withTimeoutOrNull(2_000L) { acceptDeferred.await() }
+                kotlinx.coroutines.withTimeoutOrNull(1_000L) { acceptDeferred.await() }
             } catch (e: Exception) { null }
             if (acceptResult != null) break
         }

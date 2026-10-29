@@ -36,6 +36,8 @@ class MeshNode(private val ctx: Context) {
     private var udpSocket: DatagramSocket? = null
     private var tcpServer: ServerSocket? = null
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+    @Volatile private var pulseWifiLock: android.net.wifi.WifiManager.WifiLock? = null
+    @Volatile private var pulseWifiLockUntil: Long = 0L
 
     private val hereAwaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
 
@@ -171,6 +173,7 @@ class MeshNode(private val ctx: Context) {
                 val hp = HelloPayload.fromJson(packet.payload)
                 if (hp.peerId == myId) return
                 InAppLogger.d("MeshNode", "received HELLO from ${hp.name} @ $fromIp")
+                pulseWifiLock()
                 onHello?.invoke(HelloInfo(hp.peerId, hp.name, fromIp))
                 sendPacket(fromIp, MeshPacket(PacketType.HERE, hp.toJson()))
             }
@@ -407,4 +410,41 @@ class MeshNode(private val ctx: Context) {
             "tcp open → $ip, snd=${s.sendBufferSize} rcv=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
         return s
     }
+
+    /** Кратковременный WiFiLock на 30 сек — чтобы не уйти в power save
+     *  и получить следующие пакеты (FILE_OFFER, ACK). */
+    private fun pulseWifiLock() {
+        val now = System.currentTimeMillis()
+        if (now < pulseWifiLockUntil) return  // уже активен
+        try {
+            val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE)
+                as? android.net.wifi.WifiManager ?: return
+            // Освобождаем старый
+            try {
+                if (pulseWifiLock?.isHeld == true) pulseWifiLock?.release()
+            } catch (_: Exception) {}
+            val lock = wm.createWifiLock(
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "atom-pulse"
+            )
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            pulseWifiLock = lock
+            pulseWifiLockUntil = now + 30_000
+            InAppLogger.d("MeshNode", "pulse WiFiLock 30s")
+            // Отложенный release
+            scope.launch {
+                kotlinx.coroutines.delay(30_000)
+                if (System.currentTimeMillis() >= pulseWifiLockUntil) {
+                    try {
+                        if (pulseWifiLock?.isHeld == true) pulseWifiLock?.release()
+                        InAppLogger.d("MeshNode", "pulse WiFiLock released")
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("MeshNode", "pulseWifiLock error: ${e.message}")
+        }
+    }
+
 }
