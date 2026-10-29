@@ -5,10 +5,18 @@ import android.content.SharedPreferences
 import com.mesh.core.InAppLogger
 import com.mesh.core.MeshNode
 import com.mesh.core.WifiDirectManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 object AtomController {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
 
     private lateinit var prefs: SharedPreferences
     private var _meshNode: MeshNode? = null
@@ -73,11 +81,12 @@ object AtomController {
 
         // Автоматически делаем устройство видимым через Wi-Fi Direct
         // чтобы второй телефон мог нас найти
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            kotlinx.coroutines.delay(3000)
+        scope.launch {
+            delay(3000)
             wd.passiveDiscover()
             InAppLogger.d("AtomController", "auto passive discover triggered")
         }
+
 
         InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
     }
