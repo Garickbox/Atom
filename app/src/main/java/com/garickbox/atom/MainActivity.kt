@@ -175,6 +175,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        UpdateChecker.checkPending(this)
         if (permissionAsked) return
         if (!AtomController.hasName()) return  // сначала имя
         val missing = PermissionsHelper.missing(this)
