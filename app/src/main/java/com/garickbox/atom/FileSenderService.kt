@@ -20,6 +20,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.DataInputStream
@@ -219,19 +221,19 @@ class FileSenderService : Service() {
         transferId: String,
         peerName: String
     ): Long {
-        // 1) Считаем SHA-256 контента (для целостности и будущего dedup)
+        // 1) SHA-256 до отправки
         val notifPrep = TransferNotification.buildRunning(
             this, transferId, peerName, "$name (хэш…)", 0, size
         )
         TransferNotification.update(this, NOTIF_ID, notifPrep)
 
-        senderSpeedTracker.reset()
         val contentHash = computeSha256(uri)
         if (contentHash == null) {
             InAppLogger.d("FileSenderService", "hash compute failed for $name")
             return -1
         }
-        InAppLogger.d("FileSenderService", "hash($name)=${contentHash.take(16)}… size=$size")
+        InAppLogger.d("FileSenderService",
+            "hash($name)=${contentHash.take(16)}… size=$size")
 
         // 2) FILE_OFFER
         val offerJson = JSONObject().apply {
@@ -242,14 +244,14 @@ class FileSenderService : Service() {
             put("peer_id", AtomController.myId)
             put("peer_name", AtomController.myName)
         }
-        // FILE_OFFER с retry: 3 попытки × 3 сек = 9 сек
+
         val acceptDeferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
         pendingAccepts[transferId] = acceptDeferred
 
         var acceptResult: Result<Long>? = null
         for (attempt in 1..10) {
             node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
-            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/10 for $name")
+            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/10")
             acceptResult = try {
                 kotlinx.coroutines.withTimeoutOrNull(1_000L) { acceptDeferred.await() }
             } catch (e: Exception) { null }
@@ -258,7 +260,7 @@ class FileSenderService : Service() {
         pendingAccepts.remove(transferId)
 
         if (acceptResult == null) {
-            InAppLogger.d("FileSenderService", "accept timeout for $name")
+            InAppLogger.d("FileSenderService", "accept timeout")
             AtomController.transferState.value = TransferState.Failed(
                 transferId, peerName, name, "Получатель не ответил", peerIp, contentHash
             )
@@ -267,16 +269,13 @@ class FileSenderService : Service() {
             return -1
         }
 
-        val startOffset = acceptResult.getOrNull()
-        if (startOffset == null) {
+        if (acceptResult.isFailure) {
             val reason = (acceptResult.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
             val humanReason = when (reason) {
-                "busy" -> "занят — принимает другой файл"
-                "no_space" -> "нет места на устройстве"
-                "user_declined" -> "отклонил передачу"
-                else -> "отклонил: $reason"
+                "busy" -> "занят"
+                "no_space" -> "нет места"
+                else -> reason
             }
-            InAppLogger.d("FileSenderService", "declined: $reason → $humanReason")
             AtomController.transferState.value = TransferState.Failed(
                 transferId, peerName, name, humanReason, peerIp, contentHash
             )
@@ -285,86 +284,207 @@ class FileSenderService : Service() {
             return -1
         }
 
-        if (startOffset > 0) {
-            InAppLogger.d("FileSenderService", "resume from offset=$startOffset for $name")
-        }
+        // 3) Multi-thread или single
+        val threadCount = if (size >= 8 * 1024 * 1024) 4 else 1
+        InAppLogger.d("FileSenderService",
+            "start transfer: ${threadCount} thread(s) for $size bytes")
 
-        // 3) TCP-сессия
-        try {
-            val socket: Socket = node.openTcpTo(peerIp, 5000)
-            try {
-                // socket опции уже установлены в openTcpTo (до connect)
-                // НЕ используем BufferedOutputStream — данные должны уходить сразу
-                // (BufferedOutputStream копит и даёт ложную скорость 0.1 МБ/с в UI)
-                val dos = DataOutputStream(socket.getOutputStream())
-                val tidBytes = transferId.toByteArray(Charsets.UTF_8)
-                val hashBytes = contentHash.toByteArray(Charsets.UTF_8)
-                val nameBytes = name.toByteArray(Charsets.UTF_8)
-                dos.writeInt(tidBytes.size); dos.write(tidBytes)
-                dos.writeInt(hashBytes.size); dos.write(hashBytes)
-                dos.writeLong(startOffset)
-                dos.writeLong(size)
-                dos.writeInt(nameBytes.size); dos.write(nameBytes)
-
-                var sent = 0L
-                val input = contentResolver.openInputStream(uri)
-                    ?: throw FileNotFoundException("cannot open $uri")
-                input.use {
-                    // skip startOffset для resume
-                    if (startOffset > 0) {
-                        var toSkip = startOffset
-                        while (toSkip > 0) {
-                            val skipped = it.skip(toSkip)
-                            if (skipped <= 0) break
-                            toSkip -= skipped
-                        }
-                        sent = startOffset
-                        InAppLogger.d("FileSenderService", "skipped $startOffset bytes for resume")
-                    }
-                    val buf = ByteArray(CHUNK)
-                    var lastNotif = 0L
-                    while (currentCoroutineContext().isActive) {
-                        val read = it.read(buf)
-                        if (read <= 0) break
-                        dos.write(buf, 0, read)
-                        sent += read
-                        val now = System.currentTimeMillis()
-                        if (now - lastNotif > 500) {  // 500 мс вместо 300 — меньше overhead notify
-                            lastNotif = now
-                            dos.flush()  // принудительно вытолкнуть из user-space буфера
-                            senderSpeedTracker.onProgress(sent)
-                            val bps = senderSpeedTracker.bytesPerSecond()
-                            val notif = TransferNotification.buildRunning(
-                                this, transferId, peerName, name, sent, size, bps
-                            )
-                            TransferNotification.update(this, NOTIF_ID, notif)
-                            AtomController.transferState.value =
-                                TransferState.Running(
-                                    transferId, peerName, name, sent, size,
-                                    bytesPerSecond = bps,
-                                    isReceiver = false
-                                )
-                            InAppLogger.d("FileSenderService",
-                                "progress: ${sent}/${size} bytes = ${"%.1f".format(sent*100.0/size)}% @ ${"%.1f".format(bps/1024.0/1024.0)} МБ/с")
-                        }
-                    }
-                }
-                dos.flush()
-                InAppLogger.d("FileSenderService", "sent $sent/$size bytes for $name")
-                return sent
-            } finally {
-                try { socket.close() } catch (_: Exception) {}
+        return try {
+            if (threadCount == 1) {
+                sendSingleThread(node, peerIp, uri, name, size, transferId, peerName, contentHash)
+            } else {
+                sendMultiThread(node, peerIp, uri, name, size, transferId, peerName, contentHash, threadCount)
             }
         } catch (e: Exception) {
             InAppLogger.d("FileSenderService", "send error: ${e.message}")
-            val notif = TransferNotification.buildFailed(
-                this, transferId, peerName, name, e.message ?: "соединение"
-            )
-            TransferNotification.update(this, NOTIF_ID, notif)
             AtomController.transferState.value = TransferState.Failed(
-                transferId, peerName, name, e.message ?: "соединение", peerIp, contentHash
+                transferId, peerName, name, e.message ?: "ошибка", peerIp, contentHash
             )
-            return -1
+            TransferNotification.update(this, NOTIF_ID,
+                TransferNotification.buildFailed(this, transferId, peerName, name,
+                    e.message ?: "соединение"))
+            -1L
+        }
+    }
+
+    private suspend fun sendMultiThread(
+        node: MeshNode,
+        peerIp: String,
+        uri: Uri,
+        name: String,
+        size: Long,
+        transferId: String,
+        peerName: String,
+        contentHash: String,
+        threadCount: Int
+    ): Long = kotlinx.coroutines.coroutineScope {
+        senderSpeedTracker.reset()
+        val progress = java.util.concurrent.atomic.AtomicLong(0L)
+        val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val sockets = java.util.concurrent.CopyOnWriteArrayList<Socket>()
+
+        val chunkSize = (size + threadCount - 1) / threadCount
+        val startTime = System.currentTimeMillis()
+
+        val jobs = (0 until threadCount).map { i ->
+            val start = i * chunkSize
+            val end = minOf(start + chunkSize, size)
+            if (start >= end) return@map null
+
+            async(Dispatchers.IO) {
+                if (failed.get()) return@async
+                try {
+                    val socket = node.openTcpTo(peerIp, 5000)
+                    sockets.add(socket)
+                    try {
+                        val dos = DataOutputStream(
+                            java.io.BufferedOutputStream(socket.getOutputStream(), 512 * 1024)
+                        )
+
+                        // Header: tid, hash, name, totalSize, offset, end, threadIdx, threadCount
+                        val tidB = transferId.toByteArray(Charsets.UTF_8)
+                        val hashB = contentHash.toByteArray(Charsets.UTF_8)
+                        val nameB = name.toByteArray(Charsets.UTF_8)
+                        dos.writeInt(tidB.size); dos.write(tidB)
+                        dos.writeInt(hashB.size); dos.write(hashB)
+                        dos.writeInt(nameB.size); dos.write(nameB)
+                        dos.writeLong(size)
+                        dos.writeLong(start)
+                        dos.writeLong(end)
+                        dos.writeInt(i)
+                        dos.writeInt(threadCount)
+                        dos.flush()
+
+                        // Данные
+                        val input = contentResolver.openInputStream(uri)
+                            ?: throw java.io.FileNotFoundException("cannot open $uri")
+                        input.use { ins ->
+                            ins.channel.position(start)
+                            val buf = ByteArray(512 * 1024)
+                            var pos = start
+                            var lastNotif = 0L
+                            while (pos < end && currentCoroutineContext().isActive) {
+                                val toRead = minOf(buf.size.toLong(), end - pos).toInt()
+                                val read = ins.read(buf, 0, toRead)
+                                if (read < 0) break
+                                dos.write(buf, 0, read)
+                                pos += read
+                                val total = progress.addAndGet(read.toLong())
+
+                                val now = System.currentTimeMillis()
+                                if (now - lastNotif > 500) {
+                                    lastNotif = now
+                                    dos.flush()
+                                    senderSpeedTracker.onProgress(total)
+                                    val bps = senderSpeedTracker.bytesPerSecond()
+                                    TransferNotification.update(this@FileSenderService, NOTIF_ID,
+                                        TransferNotification.buildRunning(
+                                            this@FileSenderService, transferId, peerName,
+                                            name, total, size, bps))
+                                    AtomController.transferState.value = TransferState.Running(
+                                        transferId, peerName, name, total, size,
+                                        bytesPerSecond = bps, isReceiver = false)
+                                }
+                            }
+                            dos.flush()
+                            InAppLogger.d("FileSenderService",
+                                "thread $i done: ${pos - start} bytes")
+                        }
+                    } finally {
+                        try { socket.close() } catch (_: Exception) {}
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    InAppLogger.d("FileSenderService",
+                        "thread $i error: ${e.javaClass.simpleName}: ${e.message}")
+                    failed.set(true)
+                    throw e
+                }
+            }
+        }.filterNotNull()
+
+        try {
+            jobs.forEach {
+                try { it.await() } catch (_: Exception) { /* уже в failed */ }
+            }
+        } finally {
+            if (failed.get()) {
+                sockets.forEach { try { it.close() } catch (_: Exception) {} }
+            }
+        }
+
+        val elapsed = System.currentTimeMillis() - startTime
+        val totalSent = progress.get()
+        InAppLogger.d("FileSenderService",
+            "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(totalSent / 1024.0 / 1024.0 / (elapsed / 1000.0))} MB/s")
+
+        if (failed.get() || totalSent < size) {
+            throw Exception("Transfer failed: $totalSent/$size")
+        }
+        totalSent
+    }
+
+    private suspend fun sendSingleThread(
+        node: MeshNode,
+        peerIp: String,
+        uri: Uri,
+        name: String,
+        size: Long,
+        transferId: String,
+        peerName: String,
+        contentHash: String
+    ): Long {
+        senderSpeedTracker.reset()
+        val socket = node.openTcpTo(peerIp, 5000)
+        try {
+            val dos = DataOutputStream(
+                java.io.BufferedOutputStream(socket.getOutputStream(), 512 * 1024)
+            )
+            val tidB = transferId.toByteArray(Charsets.UTF_8)
+            val hashB = contentHash.toByteArray(Charsets.UTF_8)
+            val nameB = name.toByteArray(Charsets.UTF_8)
+            dos.writeInt(tidB.size); dos.write(tidB)
+            dos.writeInt(hashB.size); dos.write(hashB)
+            dos.writeInt(nameB.size); dos.write(nameB)
+            dos.writeLong(size)
+            dos.writeLong(0L)
+            dos.writeLong(size)
+            dos.writeInt(0)
+            dos.writeInt(1)
+            dos.flush()
+
+            var sent = 0L
+            val input = contentResolver.openInputStream(uri)
+                ?: throw java.io.FileNotFoundException("cannot open $uri")
+            input.use {
+                val buf = ByteArray(512 * 1024)
+                var lastNotif = 0L
+                while (currentCoroutineContext().isActive) {
+                    val read = it.read(buf)
+                    if (read <= 0) break
+                    dos.write(buf, 0, read)
+                    sent += read
+                    val now = System.currentTimeMillis()
+                    if (now - lastNotif > 500) {
+                        lastNotif = now
+                        dos.flush()
+                        senderSpeedTracker.onProgress(sent)
+                        val bps = senderSpeedTracker.bytesPerSecond()
+                        TransferNotification.update(this, NOTIF_ID,
+                            TransferNotification.buildRunning(
+                                this, transferId, peerName, name, sent, size, bps))
+                        AtomController.transferState.value = TransferState.Running(
+                            transferId, peerName, name, sent, size,
+                            bytesPerSecond = bps, isReceiver = false)
+                    }
+                }
+            }
+            dos.flush()
+            InAppLogger.d("FileSenderService", "single done: $sent/$size bytes")
+            return sent
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
         }
     }
 
