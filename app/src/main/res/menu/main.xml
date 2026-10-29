@@ -6,7 +6,7 @@
         android:id="@+id/action_check_update"
         android:title="Обновить"
         android:icon="@drawable/ic_update"
-        app:showAsAction="always" />
+        app:showAsAction="always|withText" />
 
     <item
         android:id="@+id/action_self_test"

@@ -2,6 +2,10 @@ package com.garickbox.atom
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import android.view.MenuItem
+import android.view.Menu
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -26,16 +30,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, NameSetupActivity::class.java))
         }
 
-        b.toolbar.inflateMenu(R.menu.main)
-        b.toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_self_test -> { startActivity(Intent(this, SelfTestActivity::class.java)); true }
-                R.id.action_check_update -> { checkUpdate(); true }
-                R.id.action_about -> { showAbout(); true }
-                else -> false
-            }
-        }
-        b.fab.setOnClickListener { openFilePicker() }
+        b.fab.setOnClickListener { showSendPicker() }
 
         // OTA через 5 сек
         lifecycleScope.launch {
@@ -96,6 +91,63 @@ class MainActivity : AppCompatActivity() {
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
         filePicker.launch(intent)
+    }
+
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_check_update -> { checkUpdate(); true }
+            R.id.action_self_test -> {
+                startActivity(Intent(this, SelfTestActivity::class.java)); true
+            }
+            R.id.action_about -> { showAbout(); true }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private val mediaPicker = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) startShareForUris(uris, null)
+    }
+
+    private fun showSendPicker() {
+        val options = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Что отправить?")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    1 -> pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    2 -> openFilePicker()
+                }
+            }
+            .show()
+    }
+
+    private fun pickMedia(type: ActivityResultContracts.PickVisualMedia.VisualMediaType) {
+        try {
+            mediaPicker.launch(PickVisualMediaRequest(type))
+        } catch (e: Exception) {
+            InAppLogger.d("MainActivity", "PickVisualMedia failed: ${e.message}")
+            openFilePicker()
+        }
+    }
+
+    private fun startShareForUris(uris: List<android.net.Uri>, mime: String?) {
+        if (uris.isEmpty()) return
+        val share = Intent(this, ShareTargetActivity::class.java).apply {
+            action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
+            type = mime ?: "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(share)
     }
 
 }
