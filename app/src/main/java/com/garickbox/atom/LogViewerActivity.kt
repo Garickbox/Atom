@@ -10,7 +10,6 @@ import com.garickbox.atom.databinding.ActivityLogViewerBinding
 import com.mesh.core.InAppLogger
 
 class LogViewerActivity : AppCompatActivity() {
-
     private lateinit var b: ActivityLogViewerBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,7 +22,6 @@ class LogViewerActivity : AppCompatActivity() {
 
         b.btnShare.setOnClickListener { shareLog() }
         b.btnClear.setOnClickListener { clearLog() }
-
         loadLog()
     }
 
@@ -33,22 +31,14 @@ class LogViewerActivity : AppCompatActivity() {
             b.logText.text = "Лог пуст.\n\nЛоги появятся после действий в приложении."
             return
         }
-        val text = try {
-            file.readText()
-        } catch (e: Exception) {
-            "Ошибка чтения: ${e.message}"
-        }
+        val text = try { file.readText() } catch (e: Exception) { "Ошибка: ${e.message}" }
         b.logText.text = if (text.isBlank()) "Лог пуст." else text
-        b.scrollView.post {
-            b.scrollView.fullScroll(ScrollView.FOCUS_DOWN)
-        }
+        b.scrollView.post { b.scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     private fun shareLog() {
-        val file = InAppLogger.getLogFile()
-        if (file == null) {
-            Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show()
-            return
+        val file = InAppLogger.getLogFile() ?: run {
+            Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show(); return
         }
         try {
             val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
@@ -56,8 +46,6 @@ class LogViewerActivity : AppCompatActivity() {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, "Atom log")
-                putExtra(Intent.EXTRA_TEXT,
-                    "Лог Atom v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(intent, "Поделиться логом"))
