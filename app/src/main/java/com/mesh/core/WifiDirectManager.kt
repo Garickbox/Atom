@@ -156,15 +156,24 @@ class WifiDirectManager(private val ctx: Context) {
                 )
                 InAppLogger.d("WifiDirect",
                     "connected: isGO=${conn.isGroupOwner} goIp=$ip")
-                // Log group frequency — проверка 5/2.4 GHz
-                try {
-                    manager?.requestGroupInfo(channel) { group ->
-                        if (group != null) {
-                            InAppLogger.d("WifiDirect",
-                                "GROUP freq=${group.frequency} MHz (${if (group.frequency > 4000) "5 GHz" else "2.4 GHz"}) ssid=${group.networkName}")
-                        }
+                // Force log group frequency с retry (часто приходит с задержкой)
+                scope.launch {
+                    for (i in 1..6) {
+                        kotlinx.coroutines.delay(1500)
+                        try {
+                            var logged = false
+                            manager?.requestGroupInfo(channel) { group ->
+                                if (group != null && group.frequency > 0) {
+                                    val band = if (group.frequency > 4000) "5 GHz ✅" else "2.4 GHz ❌"
+                                    InAppLogger.d("WifiDirect",
+                                        "GROUP freq=${group.frequency} MHz ($band) ssid=${group.networkName} try#$i")
+                                    logged = true
+                                }
+                            }
+                            if (logged) break
+                        } catch (_: Exception) {}
                     }
-                } catch (_: Exception) {}
+                }
                 onConnected?.invoke(conn)
             }
         } catch (e: Exception) {
@@ -240,6 +249,7 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             val config = android.net.wifi.p2p.WifiP2pConfig().apply {
                 deviceAddress = mac
+                groupOwnerIntent = 15  // max приоритет быть GO (важно для 5 GHz)
             }
             // API 29+ — попросить 5 GHz через reflection
             // (setGroupOperatingFrequency @SystemApi в SDK, недоступен компилятору)
