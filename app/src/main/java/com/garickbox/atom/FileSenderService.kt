@@ -288,7 +288,7 @@ class FileSenderService : Service() {
         }
 
         // 3) Multi-thread: 4 потока если size >= 8 MB, иначе 1
-        val threadCount = if (size >= 8 * 1024 * 1024) 4 else 1
+        val threadCount = if (size >= 8 * 1024 * 1024) 2 else 1
         InAppLogger.d("FileSenderService",
             "start transfer: ${threadCount} thread(s) for $size bytes")
 
