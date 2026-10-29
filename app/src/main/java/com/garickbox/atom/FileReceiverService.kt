@@ -77,7 +77,7 @@ class FileReceiverService : Service() {
         super.onCreate()
         instance = this
         // Немедленный startForeground — иначе ANR на Android 12+
-        startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0))
+        startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0, 0L))
         wifiLock = PowerLocks.acquireWifi(this, "atom-recv-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-recv-wake")
         InAppLogger.d("FileReceiverService", "onCreate, locks acquired")
