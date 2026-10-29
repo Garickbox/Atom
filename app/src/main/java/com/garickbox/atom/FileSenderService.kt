@@ -288,7 +288,7 @@ class FileSenderService : Service() {
         }
 
         // 3) Multi-thread: 4 потока если size >= 8 MB, иначе 1
-        val threadCount = if (size >= 8 * 1024 * 1024) 4 else 1
+        val threadCount = 1  // single-thread как build-37 — быстрее на 2.4 GHz
         InAppLogger.d("FileSenderService",
             "start transfer: ${threadCount} thread(s) for $size bytes")
 
@@ -341,9 +341,7 @@ class FileSenderService : Service() {
                 try {
                     socket = node.openTcpTo(peerIp, 5000)
                     sockets.add(socket)
-                    val dos = DataOutputStream(
-                        java.io.BufferedOutputStream(socket.getOutputStream(), 512 * 1024)
-                    )
+                    val dos = DataOutputStream(socket.getOutputStream())  // прямой socket — build-37
 
                     // Header: tid, hash, name, totalSize, offset, end, threadIdx, threadCount
                     val tidB = transferId.toByteArray(Charsets.UTF_8)
