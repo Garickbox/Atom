@@ -124,28 +124,13 @@ object AtomController {
 
 
     private fun startContinuousP2P() {
-        if (discoverLoopJob?.isActive == true) return
-        discoverLoopJob = scope.launch {
-            // Первый discover сразу
-            delay(2000)
-            while (true) {  // delay() бросит CancellationException при отмене
-                try {
-                    wifiDirect?.passiveDiscover()
-                    InAppLogger.d("AtomController", "passiveDiscover tick (видимы для других)")
-                } catch (e: Exception) {
-                    InAppLogger.d("AtomController", "passiveDiscover error: ${e.message}")
-                }
-                // Каждые 90 сек — B "живёт" в эфире
-                delay(90_000)
-            }
-        }
-        InAppLogger.d("AtomController", "passiveDiscover loop started")
+        InAppLogger.d("AtomController", "app foreground → start continuous P2P discover")
+        wifiDirect?.startContinuousDiscover()
     }
 
     private fun stopContinuousP2P() {
-        discoverLoopJob?.cancel()
-        discoverLoopJob = null
-        InAppLogger.d("AtomController", "passiveDiscover loop stopped")
+        InAppLogger.d("AtomController", "app background → stop continuous P2P discover")
+        wifiDirect?.stopContinuousDiscover()
     }
 
 }

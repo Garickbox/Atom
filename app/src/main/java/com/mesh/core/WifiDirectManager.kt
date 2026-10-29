@@ -1,4 +1,10 @@
 package com.mesh.core
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
@@ -30,9 +36,9 @@ class WifiDirectManager(private val ctx: Context) {
     private var channel: WifiP2pManager.Channel? = null
     private var receiver: BroadcastReceiver? = null
     private var initialized = false
-    private var continuousJob: kotlinx.coroutines.Job? = null
-    private val scope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    private var continuousJob: Job? = null
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO
     )
 
     fun isP2pEnabled(): Boolean {
@@ -116,7 +122,6 @@ class WifiDirectManager(private val ctx: Context) {
         }
     }
 
-    @SuppressLint("MissingPermission")
     @SuppressLint("MissingPermission")
     private fun requestPeers() {
         try {
@@ -265,14 +270,14 @@ class WifiDirectManager(private val ctx: Context) {
         if (continuousJob?.isActive == true) return
         continuousJob = scope.launch {
             InAppLogger.d("WifiDirect", "continuousDiscover started")
-            kotlinx.coroutines.delay(500)
+            delay(500)
             while (true) {
                 try {
                     doDiscoverTick()
                 } catch (e: Exception) {
                     InAppLogger.d("WifiDirect", "tick error: ${e.javaClass.simpleName}: ${e.message}")
                 }
-                kotlinx.coroutines.delay(12_000)
+                delay(12_000)
             }
         }
     }
