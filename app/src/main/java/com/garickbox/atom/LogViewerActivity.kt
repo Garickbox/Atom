@@ -3,7 +3,6 @@ package com.garickbox.atom
 import android.content.Intent
 import android.os.Bundle
 import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -22,15 +21,8 @@ class LogViewerActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         b.toolbar.setNavigationOnClickListener { finish() }
 
-        b.toolbar.menu.clear()
-        b.toolbar.inflateMenu(R.menu.log_viewer)
-        b.toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_share_log -> { shareLog(); true }
-                R.id.action_clear_log -> { clearLog(); true }
-                else -> false
-            }
-        }
+        b.btnShare.setOnClickListener { shareLog() }
+        b.btnClear.setOnClickListener { clearLog() }
 
         loadLog()
     }
@@ -39,7 +31,6 @@ class LogViewerActivity : AppCompatActivity() {
         val file = InAppLogger.getLogFile()
         if (file == null) {
             b.logText.text = "Лог пуст.\n\nЛоги появятся после действий в приложении."
-            b.logText.setTextIsSelectable(false)
             return
         }
         val text = try {
@@ -48,8 +39,6 @@ class LogViewerActivity : AppCompatActivity() {
             "Ошибка чтения: ${e.message}"
         }
         b.logText.text = if (text.isBlank()) "Лог пуст." else text
-        b.logText.setTextIsSelectable(true)
-        // Скролл вниз
         b.scrollView.post {
             b.scrollView.fullScroll(ScrollView.FOCUS_DOWN)
         }
@@ -67,7 +56,8 @@ class LogViewerActivity : AppCompatActivity() {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, "Atom log")
-                putExtra(Intent.EXTRA_TEXT, "Лог Atom v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+                putExtra(Intent.EXTRA_TEXT,
+                    "Лог Atom v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(intent, "Поделиться логом"))
