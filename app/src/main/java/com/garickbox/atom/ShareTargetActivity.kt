@@ -162,8 +162,6 @@ class ShareTargetActivity : AppCompatActivity() {
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
         AtomController.peers.value = emptyList()
-        // Стоп continuous — не мешаем ручному поиску
-        AtomController.wifiDirect?.stopContinuousDiscover()
 
         lifecycleScope.launch {
             val node = AtomController.meshNode
@@ -312,8 +310,6 @@ class ShareTargetActivity : AppCompatActivity() {
             return
         }
 
-        InAppLogger.d("ShareTarget", "stop continuous before manual discover")
-        wd.stopContinuousDiscover()
 
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
@@ -411,7 +407,6 @@ class ShareTargetActivity : AppCompatActivity() {
             setOnClickListener {
                 progressJob.cancel()
                 parent.dismiss()
-                AtomController.wifiDirect?.startContinuousDiscover()
             }
         }
         b.peersContainer.addView(retryBtn)
@@ -531,12 +526,5 @@ class ShareTargetActivity : AppCompatActivity() {
         )
     }
 
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Если continuous был остановлен — возобновим
-        AtomController.wifiDirect?.startContinuousDiscover()
-        InAppLogger.d("ShareTarget", "onDestroy — continuous resumed")
-    }
 
 }

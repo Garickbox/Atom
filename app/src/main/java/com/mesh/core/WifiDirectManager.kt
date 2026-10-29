@@ -36,7 +36,6 @@ class WifiDirectManager(private val ctx: Context) {
     private var channel: WifiP2pManager.Channel? = null
     private var receiver: BroadcastReceiver? = null
     private var initialized = false
-    private var continuousJob: Job? = null
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO
     )
@@ -204,8 +203,6 @@ class WifiDirectManager(private val ctx: Context) {
             startDiscover()
         }
     }
-
-    /** removeGroup с retry — reason=2 (BUSY) повторяем с задержкой. */
     @SuppressLint("MissingPermission")
     private fun startDiscover() {
         try {
@@ -227,25 +224,7 @@ class WifiDirectManager(private val ctx: Context) {
         }
     }
     /** Force reset: close channel, re-init. Спасает от вечных BUSY. */
-    /** Пассивный discover — делает устройство видимым для других. */
-    fun passiveDiscover() {
-        if (manager == null || channel == null) return
-        InAppLogger.d("WifiDirect", "passive discover starting")
-        try {
-            manager!!.discoverPeers(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "passive discover started (we are visible)")
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "passive discover failed: $reason")
-                }
-            })
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "passiveDiscover error: ${e.javaClass.simpleName}")
-        }
-    }
-
-    @SuppressLint("MissingPermission")
+@SuppressLint("MissingPermission")
     fun connect(mac: String) {
         if (manager == null || channel == null) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
@@ -296,48 +275,7 @@ class WifiDirectManager(private val ctx: Context) {
      * изменении списка — если peers=0 всегда, broadcast не приходит вообще.
      * Принудительный requestPeers решает проблему.
      */
-    fun startContinuousDiscover() {
-        if (continuousJob?.isActive == true) return
-        continuousJob = scope.launch {
-            InAppLogger.d("WifiDirect", "continuousDiscover started")
-            delay(500)
-            while (true) {
-                try {
-                    doDiscoverTick()
-                } catch (e: Exception) {
-                    InAppLogger.d("WifiDirect", "tick error: ${e.javaClass.simpleName}: ${e.message}")
-                }
-                delay(60_000)
-            }
-        }
-    }
-
-    fun stopContinuousDiscover() {
-        continuousJob?.cancel()
-        continuousJob = null
-        InAppLogger.d("WifiDirect", "continuousDiscover stopped")
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun doDiscoverTick() {
-        try {
-            manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "discover tick ok → requestPeers")
-                    // ВАЖНО: сразу запрашиваем peers, не ждём broadcast
-                    requestPeers()
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discover tick fail: $reason → requestPeers anyway")
-                    requestPeers()
-                }
-            })
-        } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "doDiscoverTick error: ${e.message}")
-        }
-    }
-
-    fun cleanup() {
+fun cleanup() {
         try {
             receiver?.let { ctx.unregisterReceiver(it) }
         } catch (_: Exception) {}

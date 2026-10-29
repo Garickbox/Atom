@@ -21,7 +21,6 @@ object AtomController {
 
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var foregroundWifiLock: android.net.wifi.WifiManager.WifiLock? = null
 
 
     private lateinit var prefs: SharedPreferences
@@ -32,7 +31,6 @@ object AtomController {
     val peers = MutableStateFlow<List<Peer>>(emptyList())
     private var _transferActive: Boolean = false
     val transferActive: Boolean get() = _transferActive
-    private var appForeground: Boolean = false
     val transferState = MutableStateFlow<TransferState>(TransferState.Idle)
 
     var myName: String = ""
@@ -91,32 +89,7 @@ object AtomController {
             }
         }
         wifiDirect = wd
-
-        // Подписываемся на lifecycle: пока Атом открыт — периодически
-        // делаем себя видимым через Wi-Fi Direct
-        try {
-            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
-                object : androidx.lifecycle.DefaultLifecycleObserver {
-                    override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
-                        appForeground = true
-                        acquireForegroundWifiLock()
-                        InAppLogger.d("AtomController", "app foreground → start discover loop")
-                        startContinuousP2P()
-                    }
-                    override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
-                        appForeground = false
-                        releaseForegroundWifiLock()
-                        InAppLogger.d("AtomController", "app background → stop discover loop")
-                        stopContinuousP2P()
-                    }
-                }
-            )
-        } catch (e: Exception) {
-            InAppLogger.d("AtomController", "lifecycle observer error: ${e.message}")
-        }
-
-
-        InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
+InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
     }
 
     fun saveMyName(name: String) {
@@ -141,7 +114,7 @@ object AtomController {
     fun hasName(): Boolean = myName.isNotBlank()
 
 
-    private fun startContinuousP2P() {
+    private fun // (continuous removed) {
         if (_transferActive) {
             InAppLogger.d("AtomController", "skip continuous discover — transfer active")
             return
@@ -150,7 +123,7 @@ object AtomController {
         wifiDirect?.startContinuousDiscover()
     }
 
-    private fun stopContinuousP2P() {
+    private fun // (continuous removed) {
         InAppLogger.d("AtomController", "app background → stop continuous P2P discover")
         wifiDirect?.stopContinuousDiscover()
     }
@@ -170,33 +143,5 @@ object AtomController {
         }
     }
 
-
-    private fun acquireForegroundWifiLock() {
-        if (foregroundWifiLock?.isHeld == true) return
-        try {
-            val wm = appContext.getSystemService(android.content.Context.WIFI_SERVICE)
-                as? android.net.wifi.WifiManager ?: return
-            val lock = wm.createWifiLock(
-                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                "atom-foreground"
-            )
-            lock.setReferenceCounted(false)
-            lock.acquire()
-            foregroundWifiLock = lock
-            InAppLogger.d("AtomController", "foreground WiFiLock acquired")
-        } catch (e: Exception) {
-            InAppLogger.d("AtomController", "foreground WiFiLock error: ${e.message}")
-        }
-    }
-
-    private fun releaseForegroundWifiLock() {
-        try {
-            if (foregroundWifiLock?.isHeld == true) {
-                foregroundWifiLock?.release()
-                InAppLogger.d("AtomController", "foreground WiFiLock released")
-            }
-        } catch (_: Exception) {}
-        foregroundWifiLock = null
-    }
 
 }

@@ -69,7 +69,6 @@ class FileSenderService : Service() {
         startForeground(NOTIF_ID, TransferNotification.buildRunning(
             this, "prep", "…", "Подготовка", 0, 0
         ))
-        AtomController.setTransferActive(true)
         wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
 
@@ -551,7 +550,6 @@ class FileSenderService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        AtomController.setTransferActive(false)
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         scope.cancel()
