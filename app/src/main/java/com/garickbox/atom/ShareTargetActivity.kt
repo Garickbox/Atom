@@ -311,7 +311,7 @@ class ShareTargetActivity : AppCompatActivity() {
             Toast.makeText(this, "Wi-Fi Direct не инициализирован", Toast.LENGTH_SHORT).show()
             return
         }
-        // СТОП continuous — чтобы не было BUSY при removeGroup/discoverPeers
+
         InAppLogger.d("ShareTarget", "stop continuous before manual discover")
         wd.stopContinuousDiscover()
 
@@ -320,42 +320,59 @@ class ShareTargetActivity : AppCompatActivity() {
         b.spinner.visibility = View.VISIBLE
         b.emptyText.visibility = View.GONE
 
-        // Wi-Fi Direct ищет бесконечно, пока пользователь не отменит
-        // или пока не найдёт пира. Без таймаута.
-        var found = false
+        val startTime = System.currentTimeMillis()
+        var peerShown = false
 
-        // Кнопка «Отмена» сразу
-        b.emptyText.visibility = View.VISIBLE
-        b.emptyText.text = "Ищу через Wi-Fi Direct…\n\n" +
-            "На втором телефоне достаточно:\n" +
-            "просто открыть Атом\n\n" +
-            "Он сам станет видимым через несколько секунд."
-        val cancelBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
-            text = "Отмена"
-            setOnClickListener {
-                parent.dismiss()
-                // Возобновляем continuous discover после отмены
-                AtomController.wifiDirect?.startContinuousDiscover()
+        // Прогресс-таймер каждые 5 сек: обновляет hint "Ищу X сек (первый раз ~2 мин)"
+        val progressJob = lifecycleScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(5000)
+                if (peerShown) break
+                val sec = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+                if (sec > 15 && b.peersContainer.childCount == 0) {
+                    // Показываем прогресс в emptyText
+                    b.emptyText.visibility = View.VISIBLE
+                    b.emptyText.text = "Ищу через Wi-Fi Direct... ${sec} сек\n\n" +
+                        "Первый поиск после перезагрузки занимает 60-120 сек\n" +
+                        "(это особенность HyperOS, не баг приложения)\n\n" +
+                        "Подожди ещё немного — пир появится автоматически."
+                }
             }
         }
-        b.peersContainer.addView(cancelBtn)
 
         wd.onPeersChanged = onPeersChanged@ { peers ->
-            if (found) return@onPeersChanged
             val filtered = peers.filter { it.deviceName.isNotBlank() }
-            InAppLogger.d("ShareTarget", "p2p peers: ${filtered.map { "${it.deviceName}/${it.deviceAddress}" }}")
-            if (filtered.isNotEmpty()) {
-                found = true
+            InAppLogger.d("ShareTarget",
+                "onPeersChanged: ${filtered.size} peer(s) → ${filtered.map { "${it.deviceName}/${it.deviceAddress}" }}")
+
+            if (filtered.isEmpty()) return@onPeersChanged
+
+            if (peerShown) {
+                // Уже показали, просто обновим если что-то изменилось
+                InAppLogger.d("ShareTarget", "peers already shown, updating...")
+            }
+            peerShown = true
+
+            runOnUiThread {
                 b.spinner.visibility = View.GONE
                 b.emptyText.visibility = View.GONE
                 b.peersContainer.removeAllViews()
+                b.peersContainer.addView(TextView(this@ShareTargetActivity).apply {
+                    text = "📶 Выбери получателя:"
+                    textSize = 14f
+                    setPadding(0, 8, 0, 16)
+                })
                 for (p in filtered) {
+                    InAppLogger.d("ShareTarget", "показ пира: ${p.deviceName} (${p.deviceAddress})")
                     val row = TextView(this@ShareTargetActivity).apply {
                         text = "📶 ${p.deviceName}\n     ${p.deviceAddress}"
-                        textSize = 15f
-                        setPadding(24, 24, 24, 24)
+                        textSize = 16f
+                        setPadding(32, 24, 32, 24)
                         isClickable = true
+                        isFocusable = true
                         setOnClickListener {
+                            InAppLogger.d("ShareTarget",
+                                "TAP на пира: ${p.deviceName}/${p.deviceAddress}")
                             connectP2p(p.deviceAddress, p.deviceName, parent)
                         }
                     }
@@ -366,12 +383,44 @@ class ShareTargetActivity : AppCompatActivity() {
 
         wd.onError = { err ->
             InAppLogger.d("ShareTarget", "p2p error: $err")
-            Toast.makeText(this, err, Toast.LENGTH_SHORT).show()
-            b.spinner.visibility = View.GONE
+            runOnUiThread {
+                b.emptyText.visibility = View.VISIBLE
+                b.emptyText.text = "Ошибка: $err\n\nПопробуй:\n1. Подожди 30 сек и нажми «Повторить»\n2. Или кнопку «Через Wi-Fi роутер»"
+            }
         }
+
+        // Кнопки
+        val retryBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = "🔄 Повторить поиск"
+            setOnClickListener {
+                progressJob.cancel()
+                peerShown = false
+                startWifiDirectFlow(parent)
+            }
+        }
+        val lanBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = "🌐 Через Wi-Fi роутер"
+            setOnClickListener {
+                progressJob.cancel()
+                startSearch(parent)
+            }
+        }
+        val cancelBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = "Отмена"
+            style = com.google.android.material.R.style.Widget_Material3_Button_TextButton
+            setOnClickListener {
+                progressJob.cancel()
+                parent.dismiss()
+                AtomController.wifiDirect?.startContinuousDiscover()
+            }
+        }
+        b.peersContainer.addView(retryBtn)
+        b.peersContainer.addView(lanBtn)
+        b.peersContainer.addView(cancelBtn)
 
         wd.discoverPeers()
     }
+
 
     private fun connectP2p(mac: String, name: String, parent: BottomSheetDialog) {
         val wd = AtomController.wifiDirect ?: return
