@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.DataInputStream
@@ -110,7 +112,7 @@ class FileSenderService : Service() {
             var filesOk = 0
 
             for ((idx, uri) in uris.withIndex()) {
-                if (!isActive()) break
+                if (!isActive) break
                 val name = displayName(uri) ?: "file_${idx}"
                 val size = fileSize(uri)
                 val transferId = UUID.randomUUID().toString()
@@ -190,7 +192,7 @@ class FileSenderService : Service() {
                 input.use {
                     val buf = ByteArray(CHUNK)
                     var lastNotif = 0L
-                    while (isActive()) {
+                    while (currentCoroutineContext().isActive) {
                         val read = it.read(buf)
                         if (read <= 0) break
                         dos.write(buf, 0, read)
