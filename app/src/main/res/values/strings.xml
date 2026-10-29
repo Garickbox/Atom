@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Атом</string>
+    <string name="self_test_title">Самопроверка</string>
+    <string name="menu_self_test">Самопроверка</string>
+    <string name="menu_check_update">🔄 Проверить обновление</string>
+    <string name="menu_about">О программе</string>
+    <string name="empty_state">Пока нет передач.\nНажмите + или поделитесь файлом из другого приложения.</string>
+    <string name="fab_content_desc">Отправить файл</string>
+    <string name="name_setup_title">Имя устройства</string>
+    <string name="share_send_files">Отправить</string>
+    <string name="share_other_peer">➕  Другой получатель…</string>
+    <string name="share_how_to_find">Как найти получателя?</string>
+    <string name="share_search_network">🔍  Поиск в сети</string>
+    <string name="share_scan_qr">📷  Сканировать QR</string>
+    <string name="share_show_qr">📱  Показать свой QR</string>
+    <string name="share_back">← Назад</string>
+    <string name="share_searching">Ищу…</string>
+    <string name="share_search_hint">Включите Атом на другом устройстве</string>
+    <string name="share_nobody">Никого не нашли. Попробуйте QR</string>
+    <string name="share_wifi_direct">📶  Wi-Fi Direct (без роутера)</string>
+</resources>
