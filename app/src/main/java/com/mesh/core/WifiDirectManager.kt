@@ -188,27 +188,118 @@ class WifiDirectManager(private val ctx: Context) {
             return
         }
         try {
-            // НЕ рвём группу если идёт передача — иначе убиваем текущую TCP сессию
+            // НЕ рвём группу если идёт передача
             if (MeshBridge.isTransferActive()) {
-                InAppLogger.d("WifiDirect",
-                    "SKIP removeGroup — transfer active, only discover")
+                InAppLogger.d("WifiDirect", "SKIP removeGroup — transfer active")
                 startDiscover()
                 return
             }
-            // removeGroup перед новым поиском — иначе залипает
-            manager!!.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "removed group before discover")
-                    startDiscover()
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "removeGroup failed: $reason (продолжаем)")
-                    startDiscover()
-                }
-            })
+            // removeGroup с retry (reason=2 = BUSY → ждём)
+            removeGroupWithRetry(maxAttempts = 6, delayMs = 500L) {
+                startDiscoverWithRetry(maxAttempts = 3, delayMs = 1000L)
+            }
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "discoverPeers error: ${e.message}")
             onError?.invoke("Ошибка поиска: ${e.message}")
+        }
+    }
+
+    /** removeGroup с retry — reason=2 (BUSY) повторяем с задержкой. */
+    @SuppressLint("MissingPermission")
+    private fun removeGroupWithRetry(
+        maxAttempts: Int,
+        delayMs: Long,
+        attempt: Int = 1,
+        onDone: () -> Unit
+    ) {
+        InAppLogger.d("WifiDirect", "removeGroup attempt $attempt/$maxAttempts")
+        try {
+            manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "removeGroup OK")
+                    onDone()
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "removeGroup fail reason=$reason")
+                    if (attempt < maxAttempts) {
+                        scope.launch {
+                            kotlinx.coroutines.delay(delayMs)
+                            removeGroupWithRetry(maxAttempts, delayMs, attempt + 1, onDone)
+                        }
+                    } else {
+                        InAppLogger.d("WifiDirect",
+                            "removeGroup gave up after $maxAttempts attempts — forceReset")
+                        forceResetInternal(onDone)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "removeGroup exception: ${e.message}")
+            if (attempt < maxAttempts) {
+                scope.launch {
+                    kotlinx.coroutines.delay(delayMs)
+                    removeGroupWithRetry(maxAttempts, delayMs, attempt + 1, onDone)
+                }
+            } else {
+                onDone()
+            }
+        }
+    }
+
+    /** discoverPeers с retry — reason=2 повторяем. */
+    @SuppressLint("MissingPermission")
+    private fun startDiscoverWithRetry(
+        maxAttempts: Int,
+        delayMs: Long,
+        attempt: Int = 1
+    ) {
+        InAppLogger.d("WifiDirect", "discoverPeers attempt $attempt/$maxAttempts")
+        try {
+            manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "discoverPeers OK")
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "discoverPeers fail reason=$reason")
+                    if (attempt < maxAttempts) {
+                        scope.launch {
+                            kotlinx.coroutines.delay(delayMs)
+                            startDiscoverWithRetry(maxAttempts, delayMs, attempt + 1)
+                        }
+                    } else {
+                        onError?.invoke("Поиск не запускается (код $reason). Сбрось Wi-Fi Direct.")
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "startDiscover exception: ${e.message}")
+        }
+    }
+
+    /** Force reset: close channel, re-init. Спасает от вечных BUSY. */
+    @SuppressLint("MissingPermission")
+    private fun forceResetInternal(onDone: () -> Unit) {
+        InAppLogger.d("WifiDirect", "forceReset: closing channel, re-init")
+        try {
+            try { channel?.close() } catch (_: Exception) {}
+            channel = null
+            manager = null
+            initialized = false
+        } catch (_: Exception) {}
+        scope.launch {
+            kotlinx.coroutines.delay(1500)
+            init()
+            kotlinx.coroutines.delay(500)
+            InAppLogger.d("WifiDirect", "forceReset: re-init done, retrying discover")
+            onDone()
+        }
+    }
+
+    /** Публичный forceReset — для кнопки «Сбросить Wi-Fi Direct». */
+    fun forceReset() {
+        InAppLogger.d("WifiDirect", "public forceReset called")
+        forceResetInternal {
+            InAppLogger.d("WifiDirect", "public forceReset done")
         }
     }
 
@@ -273,15 +364,7 @@ class WifiDirectManager(private val ctx: Context) {
             }
 
             InAppLogger.d("WifiDirect", "connect to $mac")
-            manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "connect initiated")
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "connect failed: $reason")
-                    onError?.invoke("Connect failed (код $reason)")
-                }
-            })
+            connectWithRetry(config, mac, maxAttempts = 5, attempt = 1)
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "connect error: ${e.message}")
             onError?.invoke("Ошибка connect: ${e.message}")
@@ -355,4 +438,36 @@ class WifiDirectManager(private val ctx: Context) {
         initialized = false
         InAppLogger.d("WifiDirect", "cleanup")
     }
+
+    @SuppressLint("MissingPermission")
+    private fun connectWithRetry(
+        config: android.net.wifi.p2p.WifiP2pConfig,
+        mac: String,
+        maxAttempts: Int,
+        attempt: Int
+    ) {
+        InAppLogger.d("WifiDirect", "connect attempt $attempt/$maxAttempts to $mac")
+        try {
+            manager?.connect(channel, config, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "connect initiated (attempt $attempt)")
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "connect fail reason=$reason attempt=$attempt")
+                    if (reason == 2 && attempt < maxAttempts) {  // 2 = BUSY
+                        scope.launch {
+                            kotlinx.coroutines.delay(1000)
+                            connectWithRetry(config, mac, maxAttempts, attempt + 1)
+                        }
+                    } else {
+                        onError?.invoke("Connect failed (код $reason)")
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "connect exception: ${e.message}")
+            onError?.invoke("Connect error: ${e.message}")
+        }
+    }
+
 }

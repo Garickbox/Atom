@@ -162,6 +162,8 @@ class ShareTargetActivity : AppCompatActivity() {
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
         AtomController.peers.value = emptyList()
+        // Стоп continuous — не мешаем ручному поиску
+        AtomController.wifiDirect?.stopContinuousDiscover()
 
         lifecycleScope.launch {
             val node = AtomController.meshNode
@@ -309,6 +311,9 @@ class ShareTargetActivity : AppCompatActivity() {
             Toast.makeText(this, "Wi-Fi Direct не инициализирован", Toast.LENGTH_SHORT).show()
             return
         }
+        // СТОП continuous — чтобы не было BUSY при removeGroup/discoverPeers
+        InAppLogger.d("ShareTarget", "stop continuous before manual discover")
+        wd.stopContinuousDiscover()
 
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
@@ -328,9 +333,9 @@ class ShareTargetActivity : AppCompatActivity() {
         val cancelBtn = com.google.android.material.button.MaterialButton(this@ShareTargetActivity).apply {
             text = "Отмена"
             setOnClickListener {
-                // НЕ вызываем cleanup() — он ломает channel и receiver
-                // Просто закрываем диалог, continuous discover продолжает работать
                 parent.dismiss()
+                // Возобновляем continuous discover после отмены
+                AtomController.wifiDirect?.startContinuousDiscover()
             }
         }
         b.peersContainer.addView(cancelBtn)
@@ -475,6 +480,14 @@ class ShareTargetActivity : AppCompatActivity() {
                 onReady()
             }
         )
+    }
+
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Если continuous был остановлен — возобновим
+        AtomController.wifiDirect?.startContinuousDiscover()
+        InAppLogger.d("ShareTarget", "onDestroy — continuous resumed")
     }
 
 }
