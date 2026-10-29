@@ -362,11 +362,11 @@ class FileSenderService : Service() {
                     // Данные
                     val pfd = contentResolver.openFileDescriptor(uri, "r")
                         ?: throw java.io.FileNotFoundException("cannot open $uri")
+                    var pos = start
                     pfd.use { descriptor ->
                         java.io.FileInputStream(descriptor.fileDescriptor).use { ins ->
                             ins.channel.position(start)
                             val buf = ByteArray(512 * 1024)
-                            var pos = start
                             while (pos < end && currentCoroutineContext().isActive) {
                                 if (failed.get()) break
                                 val toRead = minOf(buf.size.toLong(), end - pos).toInt()
