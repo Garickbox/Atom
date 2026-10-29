@@ -189,7 +189,10 @@ object FileReceiver {
                     InAppLogger.d("FileReceiver",
                         "thread $threadIdx finished, $done/${session.threadCount}")
                     if (done >= session.threadCount) {
-                        finalizeSession(session, ctx)
+                        // ВАЖНО: освобождаем busy ДО finalize.
+                        // SHA-256 + MediaStore идут в фоне, не блокируют приём следующего файла.
+                        // busy уже освобождён в handleIncomingSocket
+                        scope.launch { finalizeSession(session, ctx) }
                     }
                 }
             }
@@ -217,7 +220,7 @@ object FileReceiver {
                 try { session.raf.close() } catch (_: Exception) {}
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
-                _isBusy.set(false)
+                // busy уже освобождён в handleIncomingSocket
                 FileReceiverService.stop(ctx)
             }
         }
@@ -235,7 +238,7 @@ object FileReceiver {
             if (session.failed.get()) {
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
-                _isBusy.set(false)
+                // busy уже освобождён в handleIncomingSocket
                 AtomController.transferState.value = TransferState.Failed(
                     session.tid, session.peerName, session.name, "Ошибка потока", "", ""
                 )
@@ -248,7 +251,7 @@ object FileReceiver {
                     "size mismatch: ${session.partFile.length()}/${session.totalSize}")
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
-                _isBusy.set(false)
+                // busy уже освобождён в handleIncomingSocket
                 FileReceiverService.stop(ctx)
                 return
             }
@@ -265,7 +268,7 @@ object FileReceiver {
 
             session.partFile.delete()
             activeSessions.remove(session.tid)
-            _isBusy.set(false)
+            // busy уже освобождён в handleIncomingSocket
 
             if (result.uri != null) {
                 InAppLogger.d("FileReceiver", "saved to ${result.displayPath}")
@@ -289,7 +292,7 @@ object FileReceiver {
         } catch (e: Exception) {
             InAppLogger.d("FileReceiver", "finalize error: ${e.message}")
             activeSessions.remove(session.tid)
-            _isBusy.set(false)
+            // busy уже освобождён в handleIncomingSocket
             FileReceiverService.stop(ctx)
         }
     }
@@ -335,7 +338,7 @@ object FileReceiver {
             s.partFile.delete()
         }
         activeSessions.clear()
-        _isBusy.set(false)
+            // busy уже освобождён в handleIncomingSocket
         AtomController.transferState.value = TransferState.Idle
         FileReceiverService.stop(ctx)
     }
@@ -350,7 +353,7 @@ object FileReceiver {
             try { session.raf.close() } catch (_: Exception) {}
             session.partFile.delete()
         }
-        _isBusy.set(false)
+            // busy уже освобождён в handleIncomingSocket
         AtomController.transferState.value = TransferState.Idle
         FileReceiverService.stop(ctx)
     }

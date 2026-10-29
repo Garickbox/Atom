@@ -156,14 +156,13 @@ class FileSenderService : Service() {
                 return@launch
             }
 
-            // Probe
-            val alive = node.probePeer(peerIp, 1500)
-            if (!alive) {
-                InAppLogger.d("FileSenderService", "probe failed for $peerIp")
-                finishWithError(peerName, "Получатель не в сети")
-                return@launch
+            // Probe — только в лог, не блокирует
+            val alive = node.probePeer(peerIp, 500)
+            if (alive) {
+                InAppLogger.d("FileSenderService", "probe OK for $peerIp")
+            } else {
+                InAppLogger.d("FileSenderService", "probe timeout — продолжаем FILE_OFFER")
             }
-
             AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
             val startedAt = System.currentTimeMillis()
             var totalSent = 0L
@@ -248,19 +247,40 @@ class FileSenderService : Service() {
             put("peer_name", AtomController.myName)
         }
 
-        val acceptDeferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
-        pendingAccepts[transferId] = acceptDeferred
-
+        // Серия файлов: FILE_OFFER с retry при busy
         var acceptResult: Result<Long>? = null
-        for (attempt in 1..10) {
+        var lastReason: String? = null
+        for (attempt in 1..30) {
+            val deferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
+            pendingAccepts[transferId] = deferred
             node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
-            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/10")
-            acceptResult = try {
-                kotlinx.coroutines.withTimeoutOrNull(1_000L) { acceptDeferred.await() }
+            val r = try {
+                kotlinx.coroutines.withTimeoutOrNull(1_000L) { deferred.await() }
             } catch (e: Exception) { null }
-            if (acceptResult != null) break
+            pendingAccepts.remove(transferId)
+
+            if (r != null) {
+                if (r.isSuccess) {
+                    acceptResult = r
+                    break
+                }
+                val reason = (r.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
+                if (reason == "busy") {
+                    lastReason = "busy"
+                    InAppLogger.d("FileSenderService",
+                        "busy (attempt $attempt/30) — retry через 1 сек")
+                    kotlinx.coroutines.delay(1000)
+                    continue
+                }
+                acceptResult = r  // no_space, user_declined — не retry
+                break
+            }
+            // timeout — retry
         }
-        pendingAccepts.remove(transferId)
+        if (acceptResult == null && lastReason == "busy") {
+            InAppLogger.d("FileSenderService",
+                "busy timeout 30 сек — сдаюсь")
+        }
 
         if (acceptResult == null) {
             InAppLogger.d("FileSenderService", "accept timeout")
