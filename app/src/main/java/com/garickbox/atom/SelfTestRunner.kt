@@ -31,15 +31,16 @@ object SelfTestRunner {
     }
 
     private fun checkPermissions(ctx: Context): TestResult {
-        val needed = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) needed.add("POST_NOTIFICATIONS")
+        val missing = PermissionsHelper.missing(ctx)
+        if (missing.isEmpty()) {
+            return TestResult("Разрешения", true, "Все выданы")
         }
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) needed.add("ACCESS_FINE_LOCATION")
-        return if (needed.isEmpty()) TestResult("Разрешения", true, "Все выданы")
-        else TestResult("Разрешения", false, "Не выданы: ${needed.joinToString()}")
+        val shortNames = missing.map { it.substringAfterLast(".") }
+        return TestResult(
+            "Разрешения",
+            false,
+            "Не выданы: ${shortNames.joinToString()} (настройки → Атом → Разрешения)"
+        )
     }
 
     private fun checkPorts(): TestResult {

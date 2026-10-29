@@ -150,4 +150,41 @@ class MainActivity : AppCompatActivity() {
         startActivity(share)
     }
 
+
+    // ═══════════════════════════════════════════════════════════
+    //  Permissions: запрос при первом запуске
+    // ═══════════════════════════════════════════════════════════
+    private var permissionAsked = false
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val denied = results.filterValues { !it }.keys.toList()
+        if (denied.isEmpty()) {
+            InAppLogger.d("MainActivity", "all permissions granted")
+        } else {
+            InAppLogger.d("MainActivity", "permissions denied: $denied")
+            android.widget.Toast.makeText(
+                this,
+                "Без этих разрешений Атом не сможет находить устройства.\n" +
+                "Выдайте их в настройках приложения.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (permissionAsked) return
+        if (!AtomController.hasName()) return  // сначала имя
+        val missing = PermissionsHelper.missing(this)
+        if (missing.isEmpty()) {
+            permissionAsked = true
+            return
+        }
+        permissionAsked = true
+        InAppLogger.d("MainActivity", "requesting permissions: $missing")
+        permissionLauncher.launch(missing.toTypedArray())
+    }
+
 }

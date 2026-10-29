@@ -2,6 +2,7 @@ package com.garickbox.atom
 
 import android.graphics.Color
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -22,13 +23,12 @@ class SelfTestActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         b.toolbar.setNavigationOnClickListener { finish() }
 
-        lifecycleScope.launch {
-            val results = SelfTestRunner.runAll(this@SelfTestActivity)
-            b.progress.visibility = android.view.View.GONE
-            val ok = results.count { it.passed }
-            val total = results.size
-            addHeader("$ok/$total проверок пройдено")
-            results.forEach { addRow(it) }
+        if (!PermissionsHelper.allGranted(this)) {
+            val missing = PermissionsHelper.missing(this)
+            InAppLogger.d("SelfTest", "requesting missing: $missing")
+            permissionLauncher.launch(missing.toTypedArray())
+        } else {
+            runSelfTest()
         }
     }
 
@@ -51,4 +51,24 @@ class SelfTestActivity : AppCompatActivity() {
         }
         b.resultsContainer.addView(tv)
     }
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        runSelfTest()
+    }
+
+    private fun runSelfTest() {
+        b.progress.visibility = android.view.View.VISIBLE
+        b.resultsContainer.removeAllViews()
+        lifecycleScope.launch {
+            val results = SelfTestRunner.runAll(this@SelfTestActivity)
+            b.progress.visibility = android.view.View.GONE
+            val ok = results.count { it.passed }
+            val total = results.size
+            addHeader("$ok/$total проверок пройдено")
+            results.forEach { addRow(it) }
+        }
+    }
+
 }
