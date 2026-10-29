@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="logs" path="logs/" />
+    <external-path name="downloads" path="Download/Atom/" />
+    <cache-path name="cache" path="." />
+    <cache-path name="apk" path="apk/" />
+</paths>

@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Атом</string>
+    <string name="self_test_title">Самопроверка</string>
+    <string name="menu_self_test">Самопроверка</string>
+    <string name="menu_check_update">🔄 Проверить обновление</string>
+    <string name="menu_about">О программе</string>
+    <string name="empty_state">Пока нет передач.\nНажмите + или поделитесь файлом из другого приложения.</string>
+    <string name="fab_content_desc">Отправить файл</string>
+</resources>
