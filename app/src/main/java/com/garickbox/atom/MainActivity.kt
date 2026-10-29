@@ -195,6 +195,9 @@ class MainActivity : AppCompatActivity() {
 
         // Обновить историю
         renderHistory()
+
+        // Подписка на текущую передачу
+        observeTransferState()
         if (permissionAsked) return
         if (!AtomController.hasName()) return  // сначала имя
         val missing = PermissionsHelper.missing(this)
@@ -278,6 +281,65 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Позже", null)
             .show()
+    }
+
+
+    private var transferObserverJob: kotlinx.coroutines.Job? = null
+
+    private fun observeTransferState() {
+        transferObserverJob?.cancel()
+        transferObserverJob = lifecycleScope.launch {
+            AtomController.transferState.collect { state ->
+                runOnUiThread { renderTransferPanel(state) }
+            }
+        }
+    }
+
+    private fun renderTransferPanel(state: TransferState) {
+        when (state) {
+            is TransferState.Running -> {
+                b.transferPanel.visibility = android.view.View.VISIBLE
+                val arrow = if (state.isReceiver) "📥 Приём от" else "📤 Отправка →"
+                b.transferTitle.text = "$arrow ${state.peerName}\n${state.fileName}"
+                val pct = if (state.bytesTotal > 0)
+                    ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
+                b.transferProgress.progress = pct
+                val speedText = if (state.bytesPerSecond > 0)
+                    "%.1f МБ/с".format(state.bytesPerSecond / 1024.0 / 1024.0)
+                    else "…"
+                b.transferSpeed.text = speedText
+                b.transferDetail.text = buildString {
+                    append("${formatBytes(state.bytesSent)} / ${formatBytes(state.bytesTotal)}")
+                    append("  ·  $pct%")
+                }
+            }
+            is TransferState.Success -> {
+                b.transferPanel.visibility = android.view.View.VISIBLE
+                b.transferTitle.text = "✅ Готово"
+                b.transferSpeed.text = ""
+                b.transferDetail.text = "${state.peerName} · ${state.fileCount} файл(ов) · ${formatBytes(state.bytesTotal)}"
+                b.transferProgress.progress = 100
+                lifecycleScope.launch {
+                    kotlinx.coroutines.delay(4000)
+                    if (AtomController.transferState.value is TransferState.Success) {
+                        b.transferPanel.visibility = android.view.View.GONE
+                        AtomController.transferState.value = TransferState.Idle
+                    }
+                }
+                renderHistory()
+            }
+            is TransferState.Failed -> {
+                b.transferPanel.visibility = android.view.View.VISIBLE
+                b.transferTitle.text = "⚠️ ${state.peerName}: ${state.reason}"
+                b.transferSpeed.text = ""
+                b.transferDetail.text = state.fileName
+                b.transferProgress.progress = 0
+                renderHistory()
+            }
+            TransferState.Idle -> {
+                b.transferPanel.visibility = android.view.View.GONE
+            }
+        }
     }
 
 }

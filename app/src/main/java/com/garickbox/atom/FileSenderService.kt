@@ -57,6 +57,7 @@ class FileSenderService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val senderSpeedTracker = SpeedTracker()
     private val pendingAccepts = ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Result<Long>>>()
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
@@ -219,6 +220,7 @@ class FileSenderService : Service() {
         )
         TransferNotification.update(this, NOTIF_ID, notifPrep)
 
+        senderSpeedTracker.reset()
         val contentHash = computeSha256(uri)
         if (contentHash == null) {
             InAppLogger.d("FileSenderService", "hash compute failed for $name")
@@ -235,16 +237,20 @@ class FileSenderService : Service() {
             put("peer_id", AtomController.myId)
             put("peer_name", AtomController.myName)
         }
-        node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
-
-        // Ждём FILE_ACCEPT / FILE_DECLINE (таймаут 10 сек)
+        // FILE_OFFER с retry: 3 попытки × 3 сек = 9 сек
         val acceptDeferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
         pendingAccepts[transferId] = acceptDeferred
-        val acceptResult = try {
-            kotlinx.coroutines.withTimeoutOrNull(10_000L) { acceptDeferred.await() }
-        } finally {
-            pendingAccepts.remove(transferId)
+
+        var acceptResult: Result<Long>? = null
+        for (attempt in 1..3) {
+            node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
+            InAppLogger.d("FileSenderService", "FILE_OFFER attempt $attempt/3 for $name")
+            acceptResult = try {
+                kotlinx.coroutines.withTimeoutOrNull(3_000L) { acceptDeferred.await() }
+            } catch (e: Exception) { null }
+            if (acceptResult != null) break
         }
+        pendingAccepts.remove(transferId)
 
         if (acceptResult == null) {
             InAppLogger.d("FileSenderService", "accept timeout for $name")
@@ -322,12 +328,18 @@ class FileSenderService : Service() {
                         val now = System.currentTimeMillis()
                         if (now - lastNotif > 300) {
                             lastNotif = now
+                            senderSpeedTracker.onProgress(sent)
+                            val bps = senderSpeedTracker.bytesPerSecond()
                             val notif = TransferNotification.buildRunning(
-                                this, transferId, peerName, name, sent, size
+                                this, transferId, peerName, name, sent, size, bps
                             )
                             TransferNotification.update(this, NOTIF_ID, notif)
                             AtomController.transferState.value =
-                                TransferState.Running(transferId, peerName, name, sent, size)
+                                TransferState.Running(
+                                    transferId, peerName, name, sent, size,
+                                    bytesPerSecond = senderSpeedTracker.bytesPerSecond(),
+                                    isReceiver = false
+                                )
                         }
                     }
                 }

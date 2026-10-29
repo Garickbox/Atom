@@ -7,7 +7,9 @@ sealed class TransferState {
         val peerName: String,
         val fileName: String,
         val bytesSent: Long,
-        val bytesTotal: Long
+        val bytesTotal: Long,
+        val bytesPerSecond: Long = 0L,
+        val isReceiver: Boolean = false
     ) : TransferState()
     data class Failed(
         val transferId: String,

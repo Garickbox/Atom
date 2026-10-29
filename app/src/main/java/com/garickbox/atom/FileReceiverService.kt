@@ -17,11 +17,14 @@ class FileReceiverService : Service() {
     companion object {
         private const val NOTIF_ID = 2002
 
-        fun start(ctx: Context, fileName: String, totalSize: Long) {
+        fun start(ctx: Context, fileName: String, totalSize: Long,
+                  peerName: String = "?", transferId: String = "") {
             val i = Intent(ctx, FileReceiverService::class.java).apply {
                 action = "START"
                 putExtra("fileName", fileName)
                 putExtra("totalSize", totalSize)
+                putExtra("peerName", peerName)
+                putExtra("transferId", transferId)
             }
             try {
                 ContextCompat.startForegroundService(ctx, i)
@@ -31,8 +34,27 @@ class FileReceiverService : Service() {
         }
 
         fun updateProgress(ctx: Context, fileName: String, written: Long, total: Long) {
-            // Через static instance — без нового Intent (быстро)
-            instance?.updateNotif(fileName, written, total)
+            receiverSpeedTracker.onProgress(written)
+            val bps = receiverSpeedTracker.bytesPerSecond()
+            instance?.updateNotif(fileName, written, total, bps)
+            // Обновляем TransferState — для UI в MainActivity
+            if (currentTransferId.isNotBlank()) {
+                AtomController.transferState.value = TransferState.Running(
+                    transferId = currentTransferId,
+                    peerName = currentPeerName,
+                    fileName = fileName,
+                    bytesSent = written,
+                    bytesTotal = total,
+                    bytesPerSecond = bps,
+                    isReceiver = true
+                )
+            }
+        }
+
+        fun setPeerInfo(peerName: String, transferId: String) {
+            currentPeerName = peerName
+            currentTransferId = transferId
+            receiverSpeedTracker.reset()
         }
 
         fun stop(ctx: Context) {
@@ -43,6 +65,9 @@ class FileReceiverService : Service() {
 
         @Volatile
         private var instance: FileReceiverService? = null
+        private val receiverSpeedTracker = SpeedTracker()
+        private var currentPeerName: String = "?"
+        private var currentTransferId: String = ""
     }
 
     private var wifiLock: WifiManager.WifiLock? = null
@@ -61,22 +86,28 @@ class FileReceiverService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val fileName = intent?.getStringExtra("fileName") ?: "файл"
         val total = intent?.getLongExtra("totalSize", 0L) ?: 0L
+        val peerName = intent?.getStringExtra("peerName") ?: "?"
+        val transferId = intent?.getStringExtra("transferId") ?: ""
+        setPeerInfo(peerName, transferId)
         InAppLogger.d("FileReceiverService", "start: $fileName ($total b)")
         updateNotif(fileName, 0, total)
         return START_STICKY
     }
 
-    private fun updateNotif(fileName: String, written: Long, total: Long) {
+    private fun updateNotif(fileName: String, written: Long, total: Long, bps: Long = 0L) {
         try {
             val nm = androidx.core.app.NotificationManagerCompat.from(this)
-            nm.notify(NOTIF_ID, buildNotif(fileName, written, total))
+            nm.notify(NOTIF_ID, buildNotif(fileName, written, total, bps))
         } catch (_: SecurityException) {}
     }
 
-    private fun buildNotif(fileName: String, written: Long, total: Long): Notification {
+    private fun buildNotif(fileName: String, written: Long, total: Long, bps: Long): Notification {
         val pct = if (total > 0) ((written * 100) / total).toInt() else 0
-        val text = if (total > 0) "${formatBytes(written)} / ${formatBytes(total)}"
-                   else formatBytes(written)
+        val text = buildString {
+            if (total > 0) append("${formatBytes(written)} / ${formatBytes(total)}")
+            else append(formatBytes(written))
+            if (bps > 0) append("  ·  ${formatSpeed(bps)}")
+        }
         return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("📥 Приём: $fileName")
@@ -86,6 +117,11 @@ class FileReceiverService : Service() {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .build()
+    }
+
+    private fun formatSpeed(bps: Long): String {
+        val mbps = bps / 1024.0 / 1024.0
+        return "%.1f МБ/с".format(mbps)
     }
 
     override fun onDestroy() {

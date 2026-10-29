@@ -120,6 +120,7 @@ class MeshNode(private val ctx: Context) {
             PacketType.HELLO -> {
                 val hp = HelloPayload.fromJson(packet.payload)
                 if (hp.peerId == myId) return
+                InAppLogger.d("MeshNode", "received HELLO from ${hp.name} (${hp.peerId.take(8)}) @ $fromIp")
                 val info = HelloInfo(hp.peerId, hp.name, fromIp)
                 onHello?.invoke(info)
                 sendPacket(fromIp, MeshPacket(PacketType.HERE, hp.toJson()))
@@ -178,7 +179,6 @@ class MeshNode(private val ctx: Context) {
     }
 
     fun broadcastHello() {
-        // ВСЕГДА в IO — иначе NetworkOnMainThreadException
         scope.launch {
             try {
                 val sock = udpSocket
@@ -188,13 +188,58 @@ class MeshNode(private val ctx: Context) {
                 }
                 val payload = HelloPayload(myId, myName).toJson()
                 val bytes = MeshPacket(PacketType.HELLO, payload).encode()
-                val addr = InetAddress.getByName("255.255.255.255")
-                sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
-                InAppLogger.d("MeshNode", "broadcast HELLO from :${sock.localPort} to :${LanDiscovery.PORT}")
+
+                // Шлём в 2 адреса: 255.255.255.255 (глобальный) и подсеть (X.X.X.255)
+                val targets = mutableListOf<InetAddress>()
+                try {
+                    targets.add(InetAddress.getByName("255.255.255.255"))
+                } catch (_: Exception) {}
+
+                try {
+                    val subnet = computeSubnetBroadcast()
+                    if (subnet != null) targets.add(subnet)
+                } catch (_: Exception) {}
+
+                for (addr in targets) {
+                    try {
+                        sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
+                        InAppLogger.d("MeshNode",
+                            "broadcast HELLO → ${addr.hostAddress}:${LanDiscovery.PORT}")
+                    } catch (e: Exception) {
+                        InAppLogger.d("MeshNode",
+                            "broadcast to ${addr.hostAddress} failed: ${e.message}")
+                    }
+                }
             } catch (e: Exception) {
                 InAppLogger.d("MeshNode",
                     "broadcast error: ${e.javaClass.simpleName}: ${e.message}")
             }
+        }
+    }
+
+    /** Вычисляет X.X.X.255 из DHCP info. Возвращает null если не удалось. */
+    private fun computeSubnetBroadcast(): InetAddress? {
+        return try {
+            val wm = ctx.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                as? android.net.wifi.WifiManager ?: return null
+            val dhcp = wm.dhcpInfo ?: return null
+            val ip = dhcp.ipAddress
+            val mask = dhcp.netmask
+            if (ip == 0 || mask == 0) return null
+            // Android хранит little-endian
+            val ipBE = Integer.reverseBytes(ip)
+            val maskBE = Integer.reverseBytes(mask)
+            val bcastBE = ipBE or maskBE.inv()
+            val b = byteArrayOf(
+                (bcastBE ushr 24).toByte(),
+                (bcastBE ushr 16).toByte(),
+                (bcastBE ushr 8).toByte(),
+                bcastBE.toByte()
+            )
+            InetAddress.getByAddress(b)
+        } catch (e: Exception) {
+            InAppLogger.d("MeshNode", "computeSubnetBroadcast error: ${e.message}")
+            null
         }
     }
 

@@ -21,7 +21,8 @@ object TransferNotification {
         peerName: String,
         fileName: String,
         bytesSent: Long,
-        bytesTotal: Long
+        bytesTotal: Long,
+        bytesPerSecond: Long = 0L
     ): Notification {
         val pct = if (bytesTotal > 0) ((bytesSent * 100) / bytesTotal).toInt() else 0
         val cancelIntent = Intent(ctx, FileSenderService::class.java).apply {
@@ -35,7 +36,10 @@ object TransferNotification {
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle("📤 Отправка → $peerName")
-            .setContentText("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)}")
+            .setContentText(buildString {
+                append("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)}")
+                if (bytesPerSecond > 0) append("  ·  ${formatSpeed(bytesPerSecond)}")
+            })
             .setProgress(100, pct, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -111,4 +115,10 @@ object TransferNotification {
         if (b < 1024 * 1024 * 1024) return "%.1f МБ".format(b / 1024.0 / 1024.0)
         return "%.1f ГБ".format(b / 1024.0 / 1024.0 / 1024.0)
     }
+
+    private fun formatSpeed(bps: Long): String {
+        if (bps <= 0) return "—"
+        return "%.1f МБ/с".format(bps / 1024.0 / 1024.0)
+    }
+
 }

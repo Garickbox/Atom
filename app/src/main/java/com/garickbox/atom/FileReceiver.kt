@@ -50,7 +50,7 @@ object FileReceiver {
         _isBusy.set(true)
         InAppLogger.d("FileReceiver", "accepted, offset=$offset")
 
-        FileReceiverService.start(ctx, offer.name, offer.size)
+        FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
 
         val node = AtomController.meshNode ?: return
         node.onIncomingTcp = { socket -> handleIncoming(socket, ctx, node, offer) }
