@@ -285,7 +285,8 @@ class FileSenderService : Service() {
         }
 
         // 3) Multi-thread или single
-        val threadCount = if (size >= 8 * 1024 * 1024) 4 else 1
+        // 2 потока — компромисс между параллелизмом и contention на диске
+        val threadCount = if (size >= 8 * 1024 * 1024) 2 else 1
         InAppLogger.d("FileSenderService",
             "start transfer: ${threadCount} thread(s) for $size bytes")
 
@@ -418,8 +419,9 @@ class FileSenderService : Service() {
 
         val elapsed = System.currentTimeMillis() - startTime
         val totalSent = progress.get()
+        val avgMbps = totalSent / 1024.0 / 1024.0 / (elapsed / 1000.0)
         InAppLogger.d("FileSenderService",
-            "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(totalSent / 1024.0 / 1024.0 / (elapsed / 1000.0))} MB/s")
+            "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(avgMbps)} MB/s avg")
 
         if (failed.get() || totalSent < size) {
             throw Exception("Transfer failed: $totalSent/$size")

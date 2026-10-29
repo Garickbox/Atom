@@ -43,6 +43,8 @@ object AtomController {
 
     fun init(ctx: Context) {
         appContext = ctx.applicationContext
+        com.mesh.core.MeshBridge.register { _transferActive }
+        InAppLogger.d("AtomController", "registered MeshBridge for transferActive")
         prefs = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
         myId = prefs.getString("my_id", null) ?: java.util.UUID.randomUUID().toString().also {
             prefs.edit().putString("my_id", it).apply()

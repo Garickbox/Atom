@@ -15,6 +15,8 @@ object TransferNotification {
     const val EXTRA_TRANSFER_ID = "transfer_id"
     const val EXTRA_FILE_NAME = "file_name"
 
+    private val startTimes = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     fun buildRunning(
         ctx: Context,
         transferId: String,
@@ -25,6 +27,10 @@ object TransferNotification {
         bytesPerSecond: Long = 0L
     ): Notification {
         val pct = if (bytesTotal > 0) ((bytesSent * 100) / bytesTotal).toInt() else 0
+        // avg speed с начала передачи
+        val start = startTimes.getOrPut(transferId) { System.currentTimeMillis() }
+        val elapsedMs = System.currentTimeMillis() - start
+        val avgBps = if (elapsedMs > 500) (bytesSent * 1000L) / elapsedMs else 0L
         val cancelIntent = Intent(ctx, FileSenderService::class.java).apply {
             action = ACTION_CANCEL
             putExtra(EXTRA_TRANSFER_ID, transferId)
@@ -38,7 +44,12 @@ object TransferNotification {
             .setContentTitle("📤 Отправка → $peerName")
             .setContentText(buildString {
                 append("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)}")
-                if (bytesPerSecond > 0) append("  ·  ${formatSpeed(bytesPerSecond)}")
+                if (avgBps > 0) {
+                    append("  ·  ${formatSpeed(avgBps)}")
+                    if (bytesPerSecond > 0 && kotlin.math.abs(avgBps - bytesPerSecond) > avgBps / 3) {
+                        append(" (${formatSpeed(bytesPerSecond)} live)")
+                    }
+                }
             })
             .setProgress(100, pct, false)
             .setOngoing(true)
@@ -119,6 +130,11 @@ object TransferNotification {
     private fun formatSpeed(bps: Long): String {
         if (bps <= 0) return "—"
         return "%.1f МБ/с".format(bps / 1024.0 / 1024.0)
+    }
+
+
+    fun clearStartTime(transferId: String) {
+        startTimes.remove(transferId)
     }
 
 }

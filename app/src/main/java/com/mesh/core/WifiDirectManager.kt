@@ -188,6 +188,13 @@ class WifiDirectManager(private val ctx: Context) {
             return
         }
         try {
+            // НЕ рвём группу если идёт передача — иначе убиваем текущую TCP сессию
+            if (MeshBridge.isTransferActive()) {
+                InAppLogger.d("WifiDirect",
+                    "SKIP removeGroup — transfer active, only discover")
+                startDiscover()
+                return
+            }
             // removeGroup перед новым поиском — иначе залипает
             manager!!.removeGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
