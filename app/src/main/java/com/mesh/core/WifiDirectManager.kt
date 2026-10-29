@@ -232,7 +232,6 @@ class WifiDirectManager(private val ctx: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    @SuppressLint("MissingPermission")
     fun connect(mac: String) {
         if (manager == null || channel == null) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
@@ -242,15 +241,18 @@ class WifiDirectManager(private val ctx: Context) {
             val config = android.net.wifi.p2p.WifiP2pConfig().apply {
                 deviceAddress = mac
             }
-            // API 29+ — попросить 5 GHz
+            // API 29+ — попросить 5 GHz через reflection
+            // (setGroupOperatingFrequency @SystemApi в SDK, недоступен компилятору)
             try {
                 if (Build.VERSION.SDK_INT >= 29) {
-                    config.groupOperatingFrequency = 5180  // ch 36
-                    InAppLogger.d("WifiDirect", "requesting 5 GHz (5180 MHz)")
+                    val method = android.net.wifi.p2p.WifiP2pConfig::class.java
+                        .getMethod("setGroupOperatingFrequency", Int::class.javaPrimitiveType)
+                    method.invoke(config, 5180)  // ch 36, 5 GHz
+                    InAppLogger.d("WifiDirect", "5 GHz set via reflection: 5180 MHz")
                 }
             } catch (e: Exception) {
                 InAppLogger.d("WifiDirect",
-                    "groupOperatingFrequency failed: ${e.message}")
+                    "5 GHz reflection failed (fallback 2.4): ${e.javaClass.simpleName}: ${e.message}")
             }
 
             InAppLogger.d("WifiDirect", "connect to $mac")
