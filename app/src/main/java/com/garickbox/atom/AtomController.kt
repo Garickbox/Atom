@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
 
 object AtomController {
 
+    private lateinit var appContext: Context
+
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var foregroundWifiLock: android.net.wifi.WifiManager.WifiLock? = null
 
@@ -39,6 +42,7 @@ object AtomController {
     val meshNode: MeshNode? get() = _meshNode
 
     fun init(ctx: Context) {
+        appContext = ctx.applicationContext
         prefs = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
         myId = prefs.getString("my_id", null) ?: java.util.UUID.randomUUID().toString().also {
             prefs.edit().putString("my_id", it).apply()
