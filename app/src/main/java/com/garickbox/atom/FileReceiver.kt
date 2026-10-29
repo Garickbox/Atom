@@ -11,8 +11,9 @@ object FileReceiver {
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
         InAppLogger.d("FileReceiver", "offer from ${offer.peerName} (${offer.fromIp}): ${offer.name} (${offer.size} b)")
-        // Для MVP: сразу принимаем через TCP сервер MeshNode.
-        // Регистрируем обработчик входящих TCP.
+        // Запустить FGS ПЕРЕД приёмом — чтобы процесс не убили на больших файлах
+        FileReceiverService.start(ctx, offer.name, offer.size)
+
         val node = AtomController.meshNode ?: return
         node.onIncomingTcp = { socket -> handleIncoming(socket, ctx) }
     }
@@ -44,6 +45,7 @@ object FileReceiver {
                     raf.seek(written)
                     val buf = ByteArray(32 * 1024)
                     var remaining = total - written
+                    var lastNotif = 0L
                     while (remaining > 0) {
                         val toRead = minOf(buf.size.toLong(), remaining).toInt()
                         val read = dis.read(buf, 0, toRead)
@@ -51,6 +53,11 @@ object FileReceiver {
                         raf.write(buf, 0, read)
                         written += read
                         remaining -= read
+                        val now = System.currentTimeMillis()
+                        if (now - lastNotif > 300) {
+                            lastNotif = now
+                            FileReceiverService.updateProgress(ctx, name, written, total)
+                        }
                     }
                 }
                 if (part.length() >= total) {
@@ -59,12 +66,14 @@ object FileReceiver {
                 } else {
                     InAppLogger.d("FileReceiver", "partial: $name ($written/$total b)")
                 }
+                FileReceiverService.stop(ctx)
                 AtomController.transferState.value = TransferState.Success(
                     "receiver", 1, written, 0
                 )
             }
         } catch (e: Exception) {
             InAppLogger.d("FileReceiver", "recv error: ${e.message}")
+            FileReceiverService.stop(ctx)
         } finally {
             try { socket.close() } catch (_: Exception) {}
         }

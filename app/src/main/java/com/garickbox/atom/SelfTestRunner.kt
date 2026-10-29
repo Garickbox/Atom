@@ -30,6 +30,7 @@ object SelfTestRunner {
             checkWifiEnabled(ctx),
             checkAirplane(ctx),
             checkLocationEnabled(ctx),
+            checkBattery(ctx),
             checkP2p(ctx)
         )
     }
@@ -145,6 +146,17 @@ object SelfTestRunner {
         } else {
             TestResult("Режим полёта", false,
                 "Включён — выключи в шторке (иконка самолёта)")
+        }
+    }
+
+
+    private fun checkBattery(ctx: Context): TestResult {
+        return if (BatteryOptimizationHelper.isWhitelisted(ctx)) {
+            TestResult("Фоновая работа", true, "Battery whitelist: приложение не усыпляется")
+        } else {
+            TestResult("Фоновая работа", false,
+                "Battery optimization включена — большие передачи могут прерываться. " +
+                "Настройки → Атом → Батарея → Без ограничений")
         }
     }
 

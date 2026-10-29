@@ -183,6 +183,9 @@ class MainActivity : AppCompatActivity() {
         val issues = PreflightChecker.issues(this)
         InAppLogger.d("MainActivity",
             "preflight (silent): ${PreflightChecker.summary(issues)}")
+
+        // Battery optimization prompt (один раз)
+        maybePromptBattery()
         if (permissionAsked) return
         if (!AtomController.hasName()) return  // сначала имя
         val missing = PermissionsHelper.missing(this)
@@ -193,6 +196,29 @@ class MainActivity : AppCompatActivity() {
         permissionAsked = true
         InAppLogger.d("MainActivity", "requesting permissions: $missing")
         permissionLauncher.launch(missing.toTypedArray())
+    }
+
+
+    private fun maybePromptBattery() {
+        val prefs = getSharedPreferences("atom", MODE_PRIVATE)
+        if (prefs.getBoolean("battery_prompt_shown", false)) return
+        if (BatteryOptimizationHelper.isWhitelisted(this)) {
+            prefs.edit().putBoolean("battery_prompt_shown", true).apply()
+            return
+        }
+        prefs.edit().putBoolean("battery_prompt_shown", true).apply()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("🔋 Фоновая работа")
+            .setMessage(
+                "Чтобы большие файлы (5+ ГБ) не обрывались, когда экран " +
+                "выключен — разреши Атому работать в фоне.\n\n" +
+                "Android иначе «усыпляет» приложение через пару минут."
+            )
+            .setPositiveButton("Разрешить") { _, _ ->
+                BatteryOptimizationHelper.requestWhitelist(this)
+            }
+            .setNegativeButton("Позже", null)
+            .show()
     }
 
 }

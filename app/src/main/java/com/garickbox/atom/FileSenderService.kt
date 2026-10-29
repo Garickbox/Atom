@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.provider.OpenableColumns
 import com.mesh.core.InAppLogger
 import com.mesh.core.MeshNode
+import com.mesh.core.PowerLocks
 import com.mesh.core.PacketType
 import com.mesh.core.MeshPacket
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +55,8 @@ class FileSenderService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var currentJob: Job? = null
 
     override fun onCreate() {
@@ -61,7 +64,9 @@ class FileSenderService : Service() {
         startForeground(NOTIF_ID, TransferNotification.buildRunning(
             this, "prep", "…", "Подготовка", 0, 0
         ))
-        InAppLogger.d("FileSenderService", "onCreate")
+        wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
+        wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
+        InAppLogger.d("FileSenderService", "onCreate, locks acquired")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -269,7 +274,10 @@ class FileSenderService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        PowerLocks.releaseWifi(wifiLock)
+        PowerLocks.release(wakeLock)
         scope.cancel()
+        InAppLogger.d("FileSenderService", "onDestroy, locks released")
         super.onDestroy()
     }
 }
