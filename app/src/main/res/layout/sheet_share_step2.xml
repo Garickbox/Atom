@@ -73,5 +73,5 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="@string/share_back"
-        style="?attr/materialButtonTextButtonStyle" />
+        style="@style/Widget.Material3.Button.TextButton" />
 </LinearLayout>
