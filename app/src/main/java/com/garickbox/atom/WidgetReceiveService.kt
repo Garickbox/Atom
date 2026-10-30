@@ -79,7 +79,7 @@ class WidgetReceiveService : Service() {
         isActive = false
         activeUntil = 0L
         try { AtomController.wifiDirect?.stopContinuousDiscover() } catch (_: Exception) {}
-        PowerLocks.release(wifiLock)
+        PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         InAppLogger.d("WidgetReceive", "OFF")
         try { AtomWidgetProvider.refreshNow(this) } catch (_: Exception) {}
