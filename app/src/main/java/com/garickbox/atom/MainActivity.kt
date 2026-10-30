@@ -1,6 +1,10 @@
 package com.garickbox.atom
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.content.Context
+import android.app.UiModeManager
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
@@ -29,6 +33,8 @@ class MainActivity : AppCompatActivity() {
         if (!AtomController.hasName()) {
             startActivity(Intent(this, NameSetupActivity::class.java))
         }
+
+        setupTvIfNeeded()
 
         b.fab.setOnClickListener { showSendPicker() }
 
@@ -337,8 +343,52 @@ class MainActivity : AppCompatActivity() {
             }
             TransferState.Idle -> {
                 b.transferPanel.visibility = android.view.View.GONE
-                b.emptyText.visibility = android.view.View.VISIBLE
+                if (isTv()) {
+                    b.tvPanel.visibility = android.view.View.VISIBLE
+                } else {
+                    b.emptyText.visibility = android.view.View.VISIBLE
+                }
             }
+        }
+    }
+
+
+    private fun setupTvIfNeeded() {
+        if (!isTv()) return
+        InAppLogger.d("MainActivity", "TV mode detected — show receiver panel")
+        // Скрыть FAB — отправка с TV не работает (нет файлового picker)
+        b.fab.visibility = android.view.View.GONE
+        // Скрыть emptyText — заменяем на tvPanel
+        b.emptyText.visibility = android.view.View.GONE
+        // Показать TV-панель
+        b.tvPanel.visibility = android.view.View.VISIBLE
+        b.tvTitle.text = "Готов к приёму"
+        val name = AtomController.myName.ifBlank { "это устройство" }
+        b.tvHint.text = "Имя: $name\n\n" +
+            "Отправьте файлы с телефона — Атом найдёт это устройство " +
+            "в той же Wi-Fi сети или через Wi-Fi Direct."
+
+        b.tvBtnUpdate.setOnClickListener { checkUpdate() }
+        b.tvBtnLog.setOnClickListener {
+            startActivity(Intent(this, LogViewerActivity::class.java))
+        }
+        b.tvBtnSelfTest.setOnClickListener {
+            startActivity(Intent(this, SelfTestActivity::class.java))
+        }
+        b.tvBtnSettings.setOnClickListener {
+            startActivity(Intent(this, NameSetupActivity::class.java))
+        }
+    }
+
+    private fun isTv(): Boolean {
+        return try {
+            val uiMode = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+            val isTvMode = uiMode?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+            val hasLeanback = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+            isTvMode || hasLeanback
+        } catch (e: Exception) {
+            InAppLogger.d("MainActivity", "isTv error: ${e.message}")
+            false
         }
     }
 
