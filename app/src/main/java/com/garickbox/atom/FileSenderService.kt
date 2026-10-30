@@ -341,8 +341,10 @@ class FileSenderService : Service() {
                 val reason = (r.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
                 if (reason == "busy") {
                     lastReason = "busy"
-                    // Backoff: 1с → 2с → 3с → 3с...
-                    val delayMs = 1000L * minOf(attempt, 3)
+                    // Backoff: 200 → 400 → 600 → 600...
+                    // Покрывает finalize (SHA+MediaStore) 400-800ms на receiver.
+                    // 1000ms первый retry всегда «мимо кассы» — receiver ещё busy.
+                    val delayMs = 200L * minOf(attempt, 3)
                     InAppLogger.d("FileSenderService",
                         "busy (attempt $attempt/30) — retry через ${delayMs}ms")
                     kotlinx.coroutines.delay(delayMs)
