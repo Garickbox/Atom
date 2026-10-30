@@ -54,6 +54,16 @@ class FileSenderService : Service() {
                 putExtra(EXTRA_PEER_ID, peer.id)
                 putExtra(EXTRA_PEER_NAME, peer.name)
                 putStringArrayListExtra(EXTRA_URIS, ArrayList(uris.map { it.toString() }))
+                // Android 11+: grant на URI не переходит в сервис через extras.
+                // Только через clipData + флаг FLAG_GRANT_READ_URI_PERMISSION.
+                if (uris.isNotEmpty()) {
+                    val clip = android.content.ClipData.newRawUri("", uris.first())
+                    for (i in 1 until uris.size) {
+                        clip.addItem(android.content.ClipData.Item(uris[i]))
+                    }
+                    clipData = clip
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
             }
             androidx.core.content.ContextCompat.startForegroundService(ctx, intent)
         }
