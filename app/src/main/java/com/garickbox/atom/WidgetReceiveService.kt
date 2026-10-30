@@ -40,6 +40,7 @@ class WidgetReceiveService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        InAppLogger.d("WidgetReceive", "onStartCommand entered, action=" + (intent?.action ?: "null"))
         // B11.4 ANR guard: если сервис стартовал без action (START_STICKY
         // после ребута или аномальный restart) — обязаны вызвать startForeground
         // в течение 5 сек, иначе RemoteServiceException crash.
@@ -52,7 +53,15 @@ class WidgetReceiveService : Service() {
         when (intent.action) {
             ACTION_TOGGLE -> {
                 if (isActive) {
-                    InAppLogger.d("WidgetReceive", "already active — stopping")
+                    // B11.5: debounce — если активен <1.5 сек, это двойной тап, игнорируем
+                    val activeFor = DURATION_MS - (activeUntil - System.currentTimeMillis())
+                    if (activeFor in 0L until 1500L) {
+                        InAppLogger.d("WidgetReceive",
+                            "toggle debounce — ignore quick re-tap (" + activeFor + "ms)")
+                        return START_STICKY
+                    }
+                    InAppLogger.d("WidgetReceive",
+                        "already active — stopping (after " + activeFor + "ms)")
                     stopSelf()
                     return START_NOT_STICKY
                 }

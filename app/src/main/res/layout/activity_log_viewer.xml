@@ -36,14 +36,28 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:text="🔗  Поделиться" />
+            android:layout_marginEnd="3dp"
+            android:text="🔗  Поделиться"
+            android:textSize="12sp"
+            android:maxLines="1" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSaveToDownloads"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="3dp"
+            android:layout_marginEnd="3dp"
+            android:text="📥  Сохранить"
+            android:textSize="12sp"
+            android:maxLines="1" />
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnClear"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:text="🗑  Очистить" />
+            android:layout_marginStart="3dp"
+            android:text="🗑  Очистить"
+            android:textSize="12sp"
+            android:maxLines="1" />
     </LinearLayout>
 </LinearLayout>

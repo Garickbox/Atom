@@ -6,6 +6,10 @@ import android.widget.ScrollView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.garickbox.atom.databinding.ActivityLogViewerBinding
 import com.mesh.core.InAppLogger
 
@@ -24,6 +28,7 @@ class LogViewerActivity : AppCompatActivity() {
         b.toolbar.setNavigationOnClickListener { finish() }
 
         b.btnShare.setOnClickListener { shareLog() }
+        b.btnSaveToDownloads.setOnClickListener { saveLogToDownloads() }
         b.btnClear.setOnClickListener { clearLog() }
         loadLog()
     }
@@ -54,6 +59,33 @@ class LogViewerActivity : AppCompatActivity() {
             startActivity(Intent.createChooser(intent, "Поделиться логом"))
         } catch (e: Exception) {
             Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun saveLogToDownloads() {
+        val file = InAppLogger.getLogFile() ?: run {
+            Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ts = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val fileName = "atom-" + ts + ".log"
+        Toast.makeText(this, "Сохраняю...", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = MediaStoreSaver.save(
+                this@LogViewerActivity, file, fileName, "text/plain"
+            )
+            withContext(Dispatchers.Main) {
+                if (result.displayPath.isNotBlank()) {
+                    Toast.makeText(this@LogViewerActivity,
+                        "Сохранено: " + result.displayPath,
+                        Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@LogViewerActivity,
+                        "Ошибка сохранения лога",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
