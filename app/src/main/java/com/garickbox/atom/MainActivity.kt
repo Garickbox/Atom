@@ -22,6 +22,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
 
+    // B11: обработка виджета
+    private var pendingWidgetSend = false
+
     // B10d: диалог OTA + listener'ы для восстановления при сворачивании
     private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
     private var downloadProgressBar: android.widget.ProgressBar? = null
@@ -83,6 +86,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
+
+        if (intent?.action == AtomWidgetProvider.ACTION_WIDGET_SEND) {
+            pendingWidgetSend = true
+        }
 
         setSupportActionBar(b.toolbar)
 
@@ -190,6 +197,26 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.action == AtomWidgetProvider.ACTION_WIDGET_SEND) {
+            processWidgetSend()
+        }
+    }
+
+    private fun processWidgetSend() {
+        lifecycleScope.launch {
+            val release = UpdateChecker.checkForUpdate(this@MainActivity)
+            if (release != null) {
+                InAppLogger.d("MainActivity", "widget_send: update available")
+                UpdateChecker.promptAndInstall(this@MainActivity, release)
+            } else {
+                InAppLogger.d("MainActivity", "widget_send: no update")
+                openFilePicker()
+            }
+        }
+    }
+
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // На TV меню не нужно — все действия в tvPanel (без дубля «Обновить»)
         if (isTv()) return false
@@ -283,6 +310,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UpdateChecker.checkPending(this)
+        if (pendingWidgetSend) {
+            pendingWidgetSend = false
+            processWidgetSend()
+        }
         // B10d: восстановить OTA-диалог если загрузка идёт
         if (UpdateChecker.isDownloading && downloadDialog == null) {
             showDownloadDialog(UpdateChecker.currentRelease)

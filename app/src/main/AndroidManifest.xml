@@ -59,6 +59,23 @@
             android:exported="false"
             android:label="Лог" />
 
+        <receiver
+            android:name=".AtomWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.garickbox.atom.WIDGET_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_atom_info" />
+        </receiver>
+
+        <service
+            android:name=".WidgetReceiveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <activity
             android:name=".SelfTestActivity"
             android:screenOrientation="portrait"

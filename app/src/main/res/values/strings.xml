@@ -18,4 +18,5 @@
     <string name="share_search_hint">Включите Атом на другом устройстве</string>
     <string name="share_nobody">Никого не нашли. Попробуйте QR</string>
     <string name="share_wifi_direct">📶  Wi-Fi Direct (без роутера)</string>
+    <string name="widget_description">Атом — быстрая передача файлов</string>
 </resources>

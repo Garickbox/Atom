@@ -106,6 +106,17 @@ object AtomController {
 
 
         InAppLogger.d("AtomController", "init, myId=$myId, myName=$myName")
+
+        // B11: обновление виджета при каждом изменении transferState
+        try {
+            scope.launch {
+                transferState.collect {
+                    try { AtomWidgetProvider.refresh(ctx.applicationContext) } catch (_: Exception) {}
+                }
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("AtomController", "widget watch error: ${e.message}")
+        }
     }
 
     fun saveMyName(name: String) {
