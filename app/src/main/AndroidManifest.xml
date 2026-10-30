@@ -41,7 +41,6 @@
 
         <activity
             android:name=".MainActivity"
-            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -55,7 +54,6 @@
 
         <activity
             android:name=".LogViewerActivity"
-            android:screenOrientation="portrait"
             android:exported="false"
             android:label="Лог" />
 
@@ -78,7 +76,6 @@
 
         <activity
             android:name=".SelfTestActivity"
-            android:screenOrientation="portrait"
             android:exported="false"
             android:label="@string/self_test_title" />
 
@@ -100,7 +97,6 @@
 
         <activity
             android:name=".ShareTargetActivity"
-            android:screenOrientation="portrait"
             android:exported="true"
             android:theme="@style/Theme.Atom.Transparent"
             android:excludeFromRecents="true">

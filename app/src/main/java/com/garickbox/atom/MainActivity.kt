@@ -84,6 +84,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!com.garickbox.atom.TvHelper.isTv(this)) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 

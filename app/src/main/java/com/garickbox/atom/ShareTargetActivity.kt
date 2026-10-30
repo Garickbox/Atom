@@ -66,6 +66,9 @@ class ShareTargetActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!com.garickbox.atom.TvHelper.isTv(this)) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         InAppLogger.d("ShareTargetActivity", "onCreate action=${intent?.action}")
 
         if (!AtomController.hasName()) {
