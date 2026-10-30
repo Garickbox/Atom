@@ -51,18 +51,50 @@ object MediaStoreSaver {
         ctx: Context, source: File, fileName: String,
         mime: String, relPath: String
     ): SaveResult {
+        // B11.3: правильный MediaStore-URI по типу.
+        // Downloads не создаёт подкаталоги на некоторых TV (API 29-30).
+        // Video/Audio/Images работают везде.
+        val sdk = android.os.Build.VERSION.SDK_INT
+        val (collection, realRelPath) = when {
+            mime.startsWith("video/") ->
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "Movies/Atom/"
+            mime.startsWith("audio/") ->
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to "Music/Atom/"
+            mime.startsWith("image/") ->
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "Pictures/Atom/"
+            else ->
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Documents/"
+        }
+        InAppLogger.d("MediaStoreSaver",
+            "saveModern: sdk=$sdk file=$fileName mime=$mime rel=$realRelPath")
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, realRelPath)
         }
-        val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: return SaveResult(null, "")
-        ctx.contentResolver.openOutputStream(uri)?.use { out ->
-            source.inputStream().use { input -> input.copyTo(out, 128 * 1024) }
-        } ?: return SaveResult(null, "")
-        val path = "$relPath/$fileName"
-        InAppLogger.d("MediaStoreSaver", "saved: $path ($mime)")
+        val uri = ctx.contentResolver.insert(collection, values)
+        if (uri == null) {
+            InAppLogger.d("MediaStoreSaver", "saveModern: insert null")
+            return SaveResult(null, "")
+        }
+        InAppLogger.d("MediaStoreSaver", "saveModern: insert ok $uri")
+        val out = ctx.contentResolver.openOutputStream(uri)
+        if (out == null) {
+            InAppLogger.d("MediaStoreSaver", "saveModern: openOutputStream null")
+            try { ctx.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+            return SaveResult(null, "")
+        }
+        try {
+            out.use { o ->
+                source.inputStream().use { input -> input.copyTo(o, 128 * 1024) }
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("MediaStoreSaver", "saveModern: copy error: ${e.message}")
+            try { ctx.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+            return SaveResult(null, "")
+        }
+        val path = "$realRelPath$fileName"
+        InAppLogger.d("MediaStoreSaver", "saveModern: saved $path")
         return SaveResult(uri, path)
     }
 
@@ -70,20 +102,42 @@ object MediaStoreSaver {
     private fun saveLegacy(
         ctx: Context, source: File, fileName: String, relPath: String
     ): SaveResult {
-        val downloads = Environment.getExternalStoragePublicDirectory(
-            Environment.DIRECTORY_DOWNLOADS
-        )
-        // relPath = "Download/Atom/Pictures" → "Pictures"
-        val category = relPath.substringAfter("Atom/", "Documents")
-        val dir = File(downloads, "Atom/$category")
-        if (!dir.exists()) dir.mkdirs()
-        val target = File(dir, fileName)
-        source.copyTo(target, overwrite = true)
-        android.media.MediaScannerConnection.scanFile(
-            ctx, arrayOf(target.absolutePath), null, null
-        )
-        InAppLogger.d("MediaStoreSaver", "saved (legacy): ${target.absolutePath}")
-        return SaveResult(null, target.absolutePath)
+        val sdk = android.os.Build.VERSION.SDK_INT
+        val category = relPath.substringAfter("Atom/", "Documents").trimEnd('/')
+        // Сначала пробуем public Downloads
+        try {
+            val downloads = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            )
+            val dir = File(downloads, "Atom/$category")
+            if (!dir.exists()) {
+                val ok = dir.mkdirs()
+                InAppLogger.d("MediaStoreSaver",
+                    "saveLegacy: mkdirs=$ok path=${dir.absolutePath}")
+            }
+            val target = File(dir, fileName)
+            source.copyTo(target, overwrite = true)
+            android.media.MediaScannerConnection.scanFile(
+                ctx, arrayOf(target.absolutePath), null, null
+            )
+            InAppLogger.d("MediaStoreSaver", "saved (legacy public): ${target.absolutePath}")
+            return SaveResult(null, target.absolutePath)
+        } catch (e: Exception) {
+            InAppLogger.d("MediaStoreSaver",
+                "saveLegacy public error (sdk=$sdk): ${e.message} → fallback app-specific")
+        }
+        // Fallback: app-specific Download — доступно всегда, без permissions
+        try {
+            val dir = File(ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Atom/$category")
+            if (!dir.exists()) dir.mkdirs()
+            val target = File(dir, fileName)
+            source.copyTo(target, overwrite = true)
+            InAppLogger.d("MediaStoreSaver", "saved (app-specific): ${target.absolutePath}")
+            return SaveResult(null, target.absolutePath)
+        } catch (e: Exception) {
+            InAppLogger.d("MediaStoreSaver", "saveLegacy app-specific error: ${e.message}")
+            return SaveResult(null, "")
+        }
     }
 
     /** Категория внутри Download/Atom по MIME */

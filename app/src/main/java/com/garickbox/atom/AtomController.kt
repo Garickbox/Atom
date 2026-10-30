@@ -183,8 +183,15 @@ object AtomController {
         synchronized(knownP2pLock) {
             val actualName = name.ifBlank { "Устройство ${mac.takeLast(5)}" }
             val current = getKnownP2pPeers().toMutableList()
+            // B11.3 dedup: не спамить prefs если MAC тот же и прошло <5 мин
+            val existing = current.find { it.mac == mac }
+            val now = System.currentTimeMillis()
+            if (existing != null && existing.name == actualName &&
+                now - existing.lastConnectedMs < 5 * 60 * 1000L) {
+                return
+            }
             current.removeAll { it.mac == mac }
-            current.add(0, KnownP2pPeer(mac, actualName, System.currentTimeMillis()))
+            current.add(0, KnownP2pPeer(mac, actualName, now))
             val top = current.take(10)
             val arr = org.json.JSONArray()
             top.forEach { p ->
