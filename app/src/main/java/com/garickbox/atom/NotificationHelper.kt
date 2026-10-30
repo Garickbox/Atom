@@ -9,6 +9,7 @@ object NotificationHelper {
 
     const val CHANNEL_TRANSFER = "transfer"
     const val CHANNEL_GENERAL = "general"
+    const val CHANNEL_WIDGET = "widget"
 
     fun createChannels(ctx: Context) {
         if (Build.VERSION.SDK_INT < 26) return
@@ -20,6 +21,12 @@ object NotificationHelper {
         )
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_GENERAL, "Общие", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_WIDGET, "Виджет", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Тихие уведомления виджета Атома"
+                setShowBadge(false)
+            }
         )
     }
 }

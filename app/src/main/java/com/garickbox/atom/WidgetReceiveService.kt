@@ -94,10 +94,14 @@ class WidgetReceiveService : Service() {
             Intent(this, WidgetReceiveService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_GENERAL)
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+        return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_WIDGET)
+            .setSmallIcon(R.drawable.ic_notification_receive)
             .setContentTitle(EMOJI_RECV + " Атом принимает")
-            .setContentText("10 минут · другие устройства могут отправить файл")
+            .setContentText("Можно отправить файл · осталось")
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setWhen(activeUntil)
+            .setShowWhen(true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Выключить", stopPi)
