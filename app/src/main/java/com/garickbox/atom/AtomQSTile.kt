@@ -12,6 +12,8 @@ import com.mesh.core.InAppLogger
 class AtomQSTile : TileService() {
 
     companion object {
+        private const val DOUBLE_TAP_MS = 500L
+
         fun requestUpdate(ctx: Context) {
             try {
                 TileService.requestListeningState(
@@ -23,6 +25,10 @@ class AtomQSTile : TileService() {
         }
     }
 
+    private var lastTapAt: Long = 0L
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingToggle: Runnable? = null
+
     override fun onStartListening() {
         super.onStartListening()
         updateTile()
@@ -30,18 +36,60 @@ class AtomQSTile : TileService() {
 
     override fun onClick() {
         super.onClick()
-        InAppLogger.d("AtomQSTile", "onClick → toggle")
+        val now = System.currentTimeMillis()
+        val isDoubleTap = (now - lastTapAt) < DOUBLE_TAP_MS
+        lastTapAt = now
+
+        if (isDoubleTap) {
+            // Двойной тап = file picker
+            pendingToggle?.let { handler.removeCallbacks(it) }
+            pendingToggle = null
+            InAppLogger.d("AtomQSTile", "double-tap → file picker")
+            openFilePicker()
+            return
+        }
+
+        // Одиночный тап = toggle, но ждём DOUBLE_TAP_MS чтобы убедиться, что не двойной
+        pendingToggle?.let { handler.removeCallbacks(it) }
+        pendingToggle = Runnable {
+            InAppLogger.d("AtomQSTile", "single-tap confirmed → toggle")
+            toggleReceive()
+            pendingToggle = null
+        }
+        handler.postDelayed(pendingToggle!!, DOUBLE_TAP_MS)
+    }
+
+    private fun toggleReceive() {
         try {
             val i = Intent(this, WidgetReceiveService::class.java).apply {
                 action = WidgetReceiveService.ACTION_TOGGLE
             }
             ContextCompat.startForegroundService(this, i)
         } catch (e: Exception) {
-            InAppLogger.d("AtomQSTile", "onClick error: " + e.message)
+            InAppLogger.d("AtomQSTile", "toggle error: " + e.message)
         }
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            updateTile()
-        }, 500L)
+        handler.postDelayed({ updateTile() }, 500L)
+    }
+
+    private fun openFilePicker() {
+        try {
+            val pi = android.app.PendingIntent.getActivity(
+                this, 9001,
+                Intent(this, MainActivity::class.java).apply {
+                    action = AtomWidgetProvider.ACTION_WIDGET_SEND
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                },
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                    android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            startActivityAndCollapse(pi)
+        } catch (e: Exception) {
+            InAppLogger.d("AtomQSTile", "openFilePicker error: " + e.message)
+        }
     }
 
     private fun updateTile() {
@@ -58,11 +106,10 @@ class AtomQSTile : TileService() {
                     tile.subtitle = "Приём"
                 }
             } else {
-                tile.subtitle = "Приём выкл"
+                tile.subtitle = "Тап: приём · 2×тап: отправить"
             }
             tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_tile)
             tile.updateTile()
-            InAppLogger.d("AtomQSTile", "updateTile active=" + active)
         } catch (e: Exception) {
             InAppLogger.d("AtomQSTile", "updateTile error: " + e.message)
         }
