@@ -46,7 +46,8 @@ object FileReceiver {
         val paused: AtomicBoolean = AtomicBoolean(false),
         val sockets: CopyOnWriteArrayList<Socket> = CopyOnWriteArrayList(),
         @Volatile var lastProgressAt: Long = System.currentTimeMillis(),
-        @Volatile var watchdogStarted: Boolean = false
+        @Volatile var watchdogStarted: Boolean = false,
+        val relativePath: String? = null   // B15
     )
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
@@ -198,6 +199,7 @@ object FileReceiver {
                     totalSize = totalSize,
                     threadCount = threadCount,
                     peerName = offer.peerName,
+                    relativePath = offer.relativePath,
                     partFile = partFile,
                     raf = raf,
                     channel = raf.channel
@@ -383,7 +385,12 @@ object FileReceiver {
 
             // MediaStore сам уникализирует имя если файл существует
             val msStart = System.currentTimeMillis()
-            val result = MediaStoreSaver.save(ctx, session.partFile, session.name, null)
+            // B15: если файл из папки — сохраняем с подпутём
+            val dirPart = session.relativePath?.substringBeforeLast('/', "")
+                ?.ifBlank { null }
+            val result = MediaStoreSaver.save(
+                ctx, session.partFile, session.name, null, dirPart
+            )
             val msMs = System.currentTimeMillis() - msStart
             InAppLogger.d("FileReceiver", "MediaStore save in ${msMs}ms → ${result.displayPath}")
             val savedName = result.displayPath.substringAfterLast('/')

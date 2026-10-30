@@ -22,16 +22,17 @@ object MediaStoreSaver {
 
     data class SaveResult(val uri: Uri?, val displayPath: String)
 
-    fun save(ctx: Context, source: File, fileName: String, mimeType: String?): SaveResult {
+    fun save(ctx: Context, source: File, fileName: String, mimeType: String?,
+             overrideRelativeDir: String? = null): SaveResult {
         val type = mimeType ?: guessMime(fileName)
-        val category = categoryFor(type)
+        val category = if (overrideRelativeDir.isNullOrBlank()) categoryFor(type) else overrideRelativeDir.trim('/')
         val relPath = "$ROOT_DIR/$category"
 
         // B10a: MediaStore.Downloads на некоторых TV не создаёт RELATIVE_PATH поддиректории.
         // При любой ошибке saveModern → fallback на прямую запись saveLegacy.
         if (Build.VERSION.SDK_INT >= 29) {
             try {
-                val r = saveModern(ctx, source, fileName, type, relPath)
+                val r = saveModern(ctx, source, fileName, type, relPath, overrideRelativeDir)
                 if (r.uri != null) return r
                 InAppLogger.d("MediaStoreSaver", "saveModern: null uri → fallback to legacy")
             } catch (e: Exception) {
@@ -49,21 +50,28 @@ object MediaStoreSaver {
 
     private fun saveModern(
         ctx: Context, source: File, fileName: String,
-        mime: String, relPath: String
+        mime: String, relPath: String,
+        overrideRelativeDir: String? = null
     ): SaveResult {
         // B11.3: правильный MediaStore-URI по типу.
         // Downloads не создаёт подкаталоги на некоторых TV (API 29-30).
         // Video/Audio/Images работают везде.
         val sdk = android.os.Build.VERSION.SDK_INT
-        val (collection, realRelPath) = when {
-            mime.startsWith("video/") ->
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "Movies/Atom/"
-            mime.startsWith("audio/") ->
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to "Music/Atom/"
-            mime.startsWith("image/") ->
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "Pictures/Atom/"
-            else ->
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Documents/"
+        val (collection, realRelPath) = if (!overrideRelativeDir.isNullOrBlank()) {
+            // B15: папка — принудительно Downloads с подпутём
+            val dir = "$ROOT_DIR/${overrideRelativeDir.trim('/')}/"
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI to dir
+        } else {
+            when {
+                mime.startsWith("video/") ->
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "Movies/Atom/"
+                mime.startsWith("audio/") ->
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to "Music/Atom/"
+                mime.startsWith("image/") ->
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "Pictures/Atom/"
+                else ->
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Documents/"
+            }
         }
         InAppLogger.d("MediaStoreSaver",
             "saveModern: sdk=$sdk file=$fileName mime=$mime rel=$realRelPath")

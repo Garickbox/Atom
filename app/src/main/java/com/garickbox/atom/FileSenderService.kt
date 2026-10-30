@@ -47,13 +47,20 @@ class FileSenderService : Service() {
         private const val NOTIF_ID = 1001
         private const val CHUNK = 128 * 1024
 
-        fun startTransfer(ctx: Context, peer: Peer, uris: List<Uri>) {
+        const val EXTRA_RELATIVE_PATHS = "atom_relative_paths"
+
+        fun startTransfer(ctx: Context, peer: Peer, uris: List<Uri>,
+                          relativePaths: List<String?> = emptyList()) {
             val intent = Intent(ctx, FileSenderService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_PEER_IP, peer.ip)
                 putExtra(EXTRA_PEER_ID, peer.id)
                 putExtra(EXTRA_PEER_NAME, peer.name)
                 putStringArrayListExtra(EXTRA_URIS, ArrayList(uris.map { it.toString() }))
+                if (relativePaths.isNotEmpty()) {
+                    putStringArrayListExtra(EXTRA_RELATIVE_PATHS,
+                        ArrayList(relativePaths.map { it ?: "" }))
+                }
                 // Android 11+: grant на URI не переходит в сервис через extras.
                 // Только через clipData + флаг FLAG_GRANT_READ_URI_PERMISSION.
                 if (uris.isNotEmpty()) {
@@ -132,13 +139,16 @@ class FileSenderService : Service() {
                 val peerName = intent.getStringExtra(EXTRA_PEER_NAME) ?: "?"
                 val uris = intent.getStringArrayListExtra(EXTRA_URIS)?.map { Uri.parse(it) } ?: emptyList()
                 if (uris.isEmpty()) { stopSelf(); return START_NOT_STICKY }
+                val pathsRaw = intent.getStringArrayListExtra(EXTRA_RELATIVE_PATHS) ?: arrayListOf()
+                val paths = pathsRaw.map { if (it.isBlank()) null else it }
                 lastPeerIp = peerIp
                 lastPeerId = peerId
                 lastPeerName = peerName
                 lastUris = uris.map { it.toString() }
+                lastRelativePaths = paths
                 lastUriIndex = 0
                 currentProgressBytes = 0L
-                runTransfer(peerIp, peerId, peerName, uris)
+                runTransfer(peerIp, peerId, peerName, uris, relativePaths = paths)
             }
             TransferNotification.ACTION_CANCEL -> {
                 val curStateBefore = AtomController.transferState.value
@@ -207,6 +217,7 @@ class FileSenderService : Service() {
                 pausedFileIndex = cur.fileIndex
                 pausedFileCount = cur.fileCount
                 pausedRemainingUris = lastUris.drop(lastUriIndex)
+                pausedRemainingRelativePaths = lastRelativePaths.drop(lastUriIndex)
                 InAppLogger.d("FileSenderService",
                     "pause: offset=$pausedOffset/${cur.bytesTotal} remaining=${pausedRemainingUris.size}")
 
@@ -255,7 +266,9 @@ class FileSenderService : Service() {
                 lastUris = uris.map { it.toString() }
                 lastUriIndex = 0
                 currentProgressBytes = off
-                runTransfer(ip, id, name, uris, resumeFirstOffset = off, resumeFirstTid = tid, fileIndexOffset = fi - 1, totalFileCount = fc)
+                val resumePaths = pausedRemainingRelativePaths
+                pausedRemainingRelativePaths = emptyList()
+                runTransfer(ip, id, name, uris, resumeFirstOffset = off, resumeFirstTid = tid, fileIndexOffset = fi - 1, totalFileCount = fc, relativePaths = resumePaths)
             }
             else -> {
                 // null (после ребута системы) или неизвестный action — не держим lock'и
@@ -272,7 +285,8 @@ class FileSenderService : Service() {
         resumeFirstOffset: Long = 0L,
         resumeFirstTid: String? = null,
         fileIndexOffset: Int = 0,
-        totalFileCount: Int = -1
+        totalFileCount: Int = -1,
+        relativePaths: List<String?> = emptyList()
     ) {
         currentJob = scope.launch {
             val node = AtomController.meshNode
@@ -333,7 +347,8 @@ class FileSenderService : Service() {
                 )
                 TransferNotification.update(this@FileSenderService, NOTIF_ID, notif)
 
-                val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName, realIdx, finalFileCount, resumeOffset)
+                val relPath = relativePaths.getOrNull(idx)
+                val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName, realIdx, finalFileCount, resumeOffset, relPath)
                 // B11.1: если pause/cancel — не считаем как failed, не пишем history
                 if (!isActive) {
                     InAppLogger.d("FileSenderService",
@@ -402,7 +417,8 @@ class FileSenderService : Service() {
         peerName: String,
         fileIndex: Int = 0,
         fileCount: Int = 0,
-        resumeOffset: Long = 0L
+        resumeOffset: Long = 0L,
+        relativePath: String? = null
     ): Long {
         // 1) SHA-256 до отправки
         val notifPrep = TransferNotification.buildRunning(
@@ -436,6 +452,7 @@ class FileSenderService : Service() {
             put("peer_id", AtomController.myId)
             put("peer_name", AtomController.myName)
             put("resume_offset", resumeOffset)
+            put("relative_path", relativePath ?: "")
         }
 
         // ВАЖНО: CompletableDeferred одноразовый. Новый на каждую попытку,

@@ -291,7 +291,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSendPicker() {
-        val options = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл")
+        val options = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Что отправить?")
             .setItems(options) { _, which ->
@@ -299,6 +299,7 @@ class MainActivity : AppCompatActivity() {
                     0 -> pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     1 -> pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly)
                     2 -> openFilePicker()
+                    3 -> openFolderPicker()
                 }
             }
             .show()

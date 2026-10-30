@@ -55,6 +55,7 @@ class ShareTargetActivity : AppCompatActivity() {
 
 
     private var uris: List<Uri> = emptyList()
+    private var urisRelativePaths: List<String?> = emptyList()
     private var dialog: BottomSheetDialog? = null
     private var tvDialog: androidx.appcompat.app.AlertDialog? = null
 
@@ -78,6 +79,11 @@ class ShareTargetActivity : AppCompatActivity() {
         }
 
         uris = collectUris(intent)
+        // B15: читаем relative paths (parallel list)
+        val pathsRaw = intent?.getStringArrayListExtra("atom_relative_paths") ?: arrayListOf()
+        urisRelativePaths = uris.mapIndexed { i, _ ->
+            pathsRaw.getOrNull(i)?.ifBlank { null }
+        }
         if (uris.isEmpty()) {
             Toast.makeText(this, "Нет файлов", Toast.LENGTH_SHORT).show()
             finish()
@@ -243,13 +249,13 @@ class ShareTargetActivity : AppCompatActivity() {
                 try { dialog.dismiss() } catch (_: Exception) {}
                 if (peer != null) {
                     AtomController.saveKnownP2pPeer(mac, peer.name)
-                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris)
+                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris, urisRelativePaths)
                     finish()
                 } else {
                     val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
                     if (targetIp != null) {
                         val fakePeer = Peer(id = "p2p", name = name, ip = targetIp)
-                        FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris)
+                        FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris, urisRelativePaths)
                         finish()
                     } else {
                         Toast.makeText(this@ShareTargetActivity, "Не получили IP", Toast.LENGTH_LONG).show()
@@ -266,7 +272,7 @@ class ShareTargetActivity : AppCompatActivity() {
         checkBatteryForLarge {
             dialog?.dismiss()
             Toast.makeText(this, "Отправка ${uris.size} файл(ов) → ${peer.name}", Toast.LENGTH_SHORT).show()
-            FileSenderService.startTransfer(this, peer, uris)
+            FileSenderService.startTransfer(this, peer, uris, urisRelativePaths)
             finish()
         }
     }
@@ -452,14 +458,14 @@ class ShareTargetActivity : AppCompatActivity() {
                 tvDialog?.dismiss()
                 if (peer != null) {
                     InAppLogger.d("ShareTarget", "TV peer resolved: ${peer.name} @ ${peer.ip}")
-                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris)
+                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris, urisRelativePaths)
                     finish()
                 } else {
                     val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
                     if (targetIp != null) {
                         val fakePeer = Peer(id = "p2p", name = name, ip = targetIp)
                         FileSenderService.startTransfer(
-                            this@ShareTargetActivity, fakePeer, uris)
+                            this@ShareTargetActivity, fakePeer, uris, urisRelativePaths)
                         finish()
                     } else {
                         Toast.makeText(this@ShareTargetActivity,
@@ -592,7 +598,7 @@ class ShareTargetActivity : AppCompatActivity() {
                     parent.dismiss()
                     Toast.makeText(this@ShareTargetActivity,
                         "Wi-Fi Direct → ${peer.name}", Toast.LENGTH_SHORT).show()
-                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris)
+                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris, urisRelativePaths)
                     finish()
                 } else {
                     InAppLogger.d("ShareTarget", "p2p peer not in list, falling back to ping")
@@ -603,7 +609,7 @@ class ShareTargetActivity : AppCompatActivity() {
                         parent.dismiss()
                         Toast.makeText(this@ShareTargetActivity,
                             "Wi-Fi Direct → $name", Toast.LENGTH_SHORT).show()
-                        FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris)
+                        FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris, urisRelativePaths)
                         finish()
                     } else {
                         Toast.makeText(this@ShareTargetActivity,

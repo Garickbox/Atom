@@ -53,7 +53,8 @@ class MeshNode(private val ctx: Context) {
         val peerId: String,
         val peerName: String,
         val fromIp: String,
-        val resumeOffset: Long = 0L
+        val resumeOffset: Long = 0L,
+        val relativePath: String? = null   // B15
     )
 
     // ═══════════════════════════════════════════════════════════
@@ -161,7 +162,8 @@ class MeshNode(private val ctx: Context) {
                     peerId = packet.payload.optString("peer_id"),
                     peerName = packet.payload.optString("peer_name"),
                     fromIp = fromIp,
-                    resumeOffset = packet.payload.optLong("resume_offset", 0L)
+                    resumeOffset = packet.payload.optLong("resume_offset", 0L),
+                    relativePath = packet.payload.optString("relative_path", "").ifBlank { null }
                 )
                 onFileOffer?.invoke(offer)
             }
