@@ -324,6 +324,11 @@ object FileReceiver {
             val result = MediaStoreSaver.save(ctx, session.partFile, session.name, null)
             val msMs = System.currentTimeMillis() - msStart
             InAppLogger.d("FileReceiver", "MediaStore save in ${msMs}ms → ${result.displayPath}")
+            val savedName = result.displayPath.substringAfterLast('/')
+            if (savedName != session.name) {
+                InAppLogger.d("FileReceiver",
+                    "name collision: requested='" + session.name + "' saved='" + savedName + "'")
+            }
 
             session.partFile.delete()
             activeSessions.remove(session.tid)

@@ -170,9 +170,13 @@ class FileSenderService : Service() {
     private fun runTransfer(peerIp: String, peerId: String, peerName: String, uris: List<Uri>) {
         currentJob = scope.launch {
             val node = AtomController.meshNode
-            if (node == null) {
-                InAppLogger.d("FileSenderService", "no mesh node")
-                finishWithError(peerName, "Сеть недоступна")
+            // Defensive: callbacks могли не установиться, если meshNode был null в onCreate.
+            // Тогда FILE_ACCEPT придёт в пустоту → 30 retry впустую. Лучше упасть сразу.
+            if (node == null || node.onFileAccept == null) {
+                InAppLogger.d("FileSenderService",
+                    "meshNode not ready: node=" + (node != null) +
+                        " callbacks=" + (node?.onFileAccept != null))
+                finishWithError(peerName, "Сеть не инициализирована")
                 return@launch
             }
 
