@@ -371,6 +371,27 @@ class MainActivity : AppCompatActivity() {
                 }
                 renderHistory()
             }
+            is TransferState.UpdatePending -> {
+                b.transferPanel.visibility = android.view.View.VISIBLE
+                b.transferTitle.text = "⬆️ Обновление Атома build-${state.versionCode}"
+                b.transferSpeed.text = ""
+                b.transferDetail.text = "От ${state.peerName} · тап для установки"
+                b.transferProgress.progress = 100
+                b.transferPanel.setOnClickListener {
+                    try {
+                        UpdateChecker.installApkFromUri(
+                            this@MainActivity,
+                            android.net.Uri.parse(state.apkUri)
+                        )
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity,
+                            "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                    b.transferPanel.setOnClickListener(null)
+                    AtomController.transferState.value = TransferState.Idle
+                }
+                renderHistory()
+            }
             is TransferState.Failed -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
                 b.transferTitle.text = "⚠️ ${state.peerName}: ${state.reason}"

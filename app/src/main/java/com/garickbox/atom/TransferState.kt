@@ -25,4 +25,11 @@ sealed class TransferState {
         val bytesTotal: Long,
         val durationMs: Long
     ) : TransferState()
+    data class UpdatePending(
+        val apkUri: String,
+        val versionCode: Int,
+        val peerName: String,
+        val fileName: String,
+        val bytesTotal: Long
+    ) : TransferState()
 }

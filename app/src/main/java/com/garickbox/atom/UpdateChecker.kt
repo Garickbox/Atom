@@ -144,6 +144,7 @@ object UpdateChecker {
                 if (!ok) throw IllegalStateException("download failed")
                 InAppLogger.d("UpdateChecker",
                     "download done: ${out.length()} bytes")
+                try { saveApkToDownloads(activity, out, release.tag) } catch (_: Exception) {}
                 if (onProgress == null) hideNotification(activity)
                 activity.runOnUiThread {
                     if (onFinish != null) {
@@ -357,6 +358,36 @@ object UpdateChecker {
             InAppLogger.d("UpdateChecker", "install error: ${e.message}")
             Toast.makeText(ctx, "Не удалось открыть установщик: ${e.message}",
                 Toast.LENGTH_LONG).show()
+        }
+    }
+
+    internal fun installApkFromUri(ctx: Context, apkUri: android.net.Uri) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            InAppLogger.d("UpdateChecker", "installer started from uri: $apkUri")
+        } catch (e: Exception) {
+            InAppLogger.d("UpdateChecker", "installApkFromUri error: ${e.message}")
+            Toast.makeText(ctx, "Не удалось открыть установщик: ${e.message}",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
+    internal fun saveApkToDownloads(ctx: Context, apk: File, tag: String): android.net.Uri? {
+        return try {
+            val result = com.garickbox.atom.MediaStoreSaver.save(
+                ctx, apk, "Atom.apk", "application/vnd.android.package-archive"
+            )
+            InAppLogger.d("UpdateChecker",
+                "apk saved to downloads: ${result.displayPath}, uri=${result.uri}")
+            result.uri
+        } catch (e: Exception) {
+            InAppLogger.d("UpdateChecker", "saveApkToDownloads error: ${e.message}")
+            null
         }
     }
 

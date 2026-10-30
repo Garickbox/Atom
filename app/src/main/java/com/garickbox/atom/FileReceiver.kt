@@ -250,6 +250,28 @@ object FileReceiver {
         return b
     }
 
+    private fun checkAtomUpdate(ctx: Context, apkFile: File, fileName: String): Int? {
+        if (!fileName.endsWith(".apk", ignoreCase = true)) return null
+        return try {
+            @Suppress("DEPRECATION")
+            val info = ctx.packageManager.getPackageArchiveInfo(
+                apkFile.absolutePath, 0
+            ) ?: return null
+            if (info.packageName != "com.garickbox.atom") return null
+            val newVc = if (android.os.Build.VERSION.SDK_INT >= 28)
+                info.longVersionCode.toInt()
+            else @Suppress("DEPRECATION") info.versionCode
+            if (newVc > com.garickbox.atom.BuildConfig.VERSION_CODE) {
+                InAppLogger.d("FileReceiver",
+                    "update apk detected: newVc=$newVc currentVc=${com.garickbox.atom.BuildConfig.VERSION_CODE}")
+                newVc
+            } else null
+        } catch (e: Exception) {
+            InAppLogger.d("FileReceiver", "checkAtomUpdate error: ${e.message}")
+            null
+        }
+    }
+
     private fun startWatchdogOnce(session: ReceiveSession, ctx: Context) {
         // Один watchdog на сессию — не на поток
         if (session.watchdogStarted) return
@@ -319,6 +341,9 @@ object FileReceiver {
             InAppLogger.d("FileReceiver",
                 "SHA-256: ${if (hashOk) "OK" else "MISMATCH"} in ${shaMs}ms actual=${actualHash.take(16)}… expected=${session.hash.take(16)}…")
 
+            // Детект apk-обновления Атома (до сохранения)
+            val updateVc = checkAtomUpdate(ctx, session.partFile, session.name)
+
             // MediaStore сам уникализирует имя если файл существует
             val msStart = System.currentTimeMillis()
             val result = MediaStoreSaver.save(ctx, session.partFile, session.name, null)
@@ -346,13 +371,23 @@ object FileReceiver {
                     timestamp = System.currentTimeMillis(),
                     savedPath = result.displayPath
                 ))
-                // ВСЕГДА ставим Success. Если идёт следующий Running — UI переключится
-                // на него через FileReceiverService.updateProgress. Раньше при серии
-                // файлов Success не ставился вовсе → UI висел на Running(100%).
-                AtomController.transferState.value = TransferState.Success(
-                    session.peerName, 1, session.totalSize, 0
-                )
-                InAppLogger.d("FileReceiver", "Success state set (always)")
+                if (updateVc != null && result.uri != null) {
+                    AtomController.transferState.value = TransferState.UpdatePending(
+                        apkUri = result.uri.toString(),
+                        versionCode = updateVc,
+                        peerName = session.peerName,
+                        fileName = session.name,
+                        bytesTotal = session.totalSize
+                    )
+                    InAppLogger.d("FileReceiver",
+                        "UpdatePending: build=$updateVc, uri=${result.uri}")
+                } else {
+                    // Обычный успех: если идёт следующий Running — UI переключится
+                    AtomController.transferState.value = TransferState.Success(
+                        session.peerName, 1, session.totalSize, 0
+                    )
+                    InAppLogger.d("FileReceiver", "Success state set (always)")
+                }
             } else {
                 InAppLogger.d("FileReceiver", "MediaStore save failed")
             }
