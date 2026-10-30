@@ -139,6 +139,8 @@ class MainActivity : AppCompatActivity() {
 
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        // На TV меню не нужно — все действия в tvPanel (без дубля «Обновить»)
+        if (isTv()) return false
         menuInflater.inflate(R.menu.main, menu)
         return true
     }

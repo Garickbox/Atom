@@ -13,6 +13,13 @@ object ApkShareHelper {
 
     /** Ищет последний Atom*.apk в Download/Atom (через MediaStore.Downloads). */
     fun findLatestApk(ctx: Context): Uri? {
+        // MediaStore.Downloads появился в API 29. На API<29 (старые TV)
+        // обращение к MediaStore.Downloads.* бросает NoSuchFieldError.
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            InAppLogger.d("ApkShare",
+                "MediaStore.Downloads requires API 29+, current=${android.os.Build.VERSION.SDK_INT}")
+            return null
+        }
         return try {
             val projection = arrayOf(MediaStore.Downloads._ID)
             val selection = MediaStore.Downloads.DISPLAY_NAME + " LIKE ?"
