@@ -101,7 +101,11 @@ class FileSenderService : Service() {
                 runTransfer(peerIp, peerId, peerName, uris)
             }
             TransferNotification.ACTION_CANCEL -> {
-                InAppLogger.d("FileSenderService", "cancel requested")
+                val curStateBefore = AtomController.transferState.value
+                val cancelInfo = if (curStateBefore is TransferState.Running) {
+                    "file=${curStateBefore.fileName} progress=${curStateBefore.bytesSent}/${curStateBefore.bytesTotal}"
+                } else "state=$curStateBefore"
+                InAppLogger.d("FileSenderService", "cancel requested ($cancelInfo)")
                 keepAliveJob?.cancel()
                 keepAliveJob = null
                 val curState = AtomController.transferState.value
@@ -173,6 +177,8 @@ class FileSenderService : Service() {
                 InAppLogger.d("FileSenderService", "probe timeout — продолжаем FILE_OFFER")
             }
             AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
+            InAppLogger.d("FileSenderService",
+                "═══ transfer START: ${uris.size} files, peer=$peerName($peerIp)")
             val startedAt = System.currentTimeMillis()
             var totalSent = 0L
             var filesOk = 0
@@ -193,6 +199,8 @@ class FileSenderService : Service() {
                 val name = displayName(uri) ?: "file_${idx}"
                 val size = fileSize(uri)
                 val transferId = UUID.randomUUID().toString()
+                InAppLogger.d("FileSenderService",
+                    "file ${idx + 1}/${uris.size}: $name ($size b) tid=${transferId.take(8)}")
                 AtomController.transferState.value = TransferState.Running(
                     transferId, peerName, name, 0, size
                 )
@@ -204,7 +212,7 @@ class FileSenderService : Service() {
                 val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName)
                 if (sent < 0) {
                     InAppLogger.d("FileSenderService",
-                        "file $name failed — продолжаем серию")
+                        "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
                     TransferHistory.add(this@FileSenderService, TransferHistory.Record(
                         id = transferId,
                         peerName = peerName,
@@ -246,7 +254,9 @@ class FileSenderService : Service() {
                 this@FileSenderService, peerName, filesOk, totalSent, duration
             )
             TransferNotification.update(this@FileSenderService, NOTIF_ID, ok)
-            InAppLogger.d("FileSenderService", "DONE: $filesOk files, $totalSent bytes, ${duration}ms")
+            val avgMbps = if (duration > 0) totalSent / 1024.0 / 1024.0 / (duration / 1000.0) else 0.0
+            InAppLogger.d("FileSenderService",
+                "═══ transfer DONE: $filesOk/${uris.size} files, ${duration}ms, avg ${"%.1f".format(avgMbps)} MB/s")
             kotlinx.coroutines.delay(10_000)
             stopSelf()
         }
@@ -267,13 +277,15 @@ class FileSenderService : Service() {
         )
         TransferNotification.update(this, NOTIF_ID, notifPrep)
 
+        val hashStart = System.currentTimeMillis()
         val contentHash = computeSha256(uri)
         if (contentHash == null) {
             InAppLogger.d("FileSenderService", "hash compute failed for $name")
             return -1
         }
+        val hashMs = System.currentTimeMillis() - hashStart
         InAppLogger.d("FileSenderService",
-            "hash($name)=${contentHash.take(16)}… size=$size")
+            "hash($name)=${contentHash.take(16)}… size=$size in ${hashMs}ms")
 
         if (size <= 0) {
             InAppLogger.d("FileSenderService",
@@ -297,6 +309,7 @@ class FileSenderService : Service() {
 
         var acceptResult: Result<Long>? = null
         var lastReason: String? = null
+        val offerStart = System.currentTimeMillis()
         try {
             for (attempt in 1..30) {
                 node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
@@ -307,6 +320,9 @@ class FileSenderService : Service() {
                 if (r != null) {
                     if (r.isSuccess) {
                         acceptResult = r
+                        val offerMs = System.currentTimeMillis() - offerStart
+                        InAppLogger.d("FileSenderService",
+                            "FILE_ACCEPT in ${offerMs}ms (attempt $attempt)")
                         break
                     }
                     val reason = (r.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
@@ -410,11 +426,13 @@ class FileSenderService : Service() {
                 try {
                     // TCP retry при ECONNREFUSED (framework HyperOS BUSY)
                     var lastConnectErr: Exception? = null
+                    val tcpStart = System.currentTimeMillis()
                     for (retry in 1..5) {
                         try {
                             socket = node.openTcpTo(peerIp, 5000)
+                            val tcpMs = System.currentTimeMillis() - tcpStart
                             InAppLogger.d("FileSenderService",
-                                "tcp connect OK (thread $i, attempt $retry)")
+                                "tcp connect OK (thread $i, attempt $retry, ${tcpMs}ms)")
                             break
                         } catch (ce: Exception) {
                             lastConnectErr = ce

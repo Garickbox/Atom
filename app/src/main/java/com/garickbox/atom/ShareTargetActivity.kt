@@ -114,6 +114,7 @@ class ShareTargetActivity : AppCompatActivity() {
 
     private fun showStep1() {
         dialog?.dismiss()
+        InAppLogger.d("ShareTarget", "step1 shown (${uris.size} files)")
         val b = SheetShareStep1Binding.inflate(LayoutInflater.from(this))
         val d = BottomSheetDialog(this)
         d.setContentView(b.root)
@@ -140,6 +141,7 @@ class ShareTargetActivity : AppCompatActivity() {
     }
 
     private fun showStep2(parent: BottomSheetDialog) {
+        InAppLogger.d("ShareTarget", "step2 shown")
         val b = SheetShareStep2Binding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
 
@@ -159,6 +161,7 @@ class ShareTargetActivity : AppCompatActivity() {
     }
 
     private fun startSearch(parent: BottomSheetDialog) {
+        InAppLogger.d("ShareTarget", "LAN search START")
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
         AtomController.peers.value = emptyList()
@@ -271,6 +274,7 @@ class ShareTargetActivity : AppCompatActivity() {
     //  Wi-Fi Direct (P2P)
     // ═══════════════════════════════════════════════════════════
     private fun startWifiDirectFlow(parent: BottomSheetDialog) {
+        InAppLogger.d("ShareTarget", "P2P search START")
         val wd = AtomController.wifiDirect
         if (wd == null) {
             Toast.makeText(this, "Wi-Fi Direct не инициализирован", Toast.LENGTH_SHORT).show()
@@ -337,6 +341,7 @@ class ShareTargetActivity : AppCompatActivity() {
     }
 
     private fun connectP2p(mac: String, name: String, parent: BottomSheetDialog) {
+        InAppLogger.d("ShareTarget", "connect START: mac=$mac name=$name")
         val wd = AtomController.wifiDirect ?: return
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)

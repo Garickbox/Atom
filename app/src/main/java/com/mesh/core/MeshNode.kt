@@ -402,6 +402,8 @@ class MeshNode(private val ctx: Context) {
     }
 
     fun openTcpTo(ip: String, connectTimeoutMs: Int = 5000): Socket {
+        val tcpStart = System.currentTimeMillis()
+        InAppLogger.d("MeshNode", "tcp START → $ip (timeout=${connectTimeoutMs}ms)")
         val s = Socket()
         try {
             s.sendBufferSize = 4 * 1024 * 1024
@@ -410,10 +412,19 @@ class MeshNode(private val ctx: Context) {
         } catch (e: Exception) {
             InAppLogger.d("MeshNode", "socket opts error: ${e.message}")
         }
-        s.connect(InetSocketAddress(ip, LanDiscovery.PORT), connectTimeoutMs)
-        InAppLogger.d("MeshNode",
-            "tcp open → $ip, snd=${s.sendBufferSize} rcv=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
-        return s
+        try {
+            s.connect(InetSocketAddress(ip, LanDiscovery.PORT), connectTimeoutMs)
+            val ms = System.currentTimeMillis() - tcpStart
+            InAppLogger.d("MeshNode",
+                "tcp OK → $ip in ${ms}ms, snd=${s.sendBufferSize} rcv=${s.receiveBufferSize}")
+            return s
+        } catch (e: Exception) {
+            val ms = System.currentTimeMillis() - tcpStart
+            InAppLogger.d("MeshNode",
+                "tcp FAIL → $ip in ${ms}ms: ${e.javaClass.simpleName}: ${e.message}")
+            try { s.close() } catch (_: Exception) {}
+            throw e
+        }
     }
 
     private fun pulseWifiLock() {

@@ -50,7 +50,7 @@ object FileReceiver {
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
         InAppLogger.d("FileReceiver",
-            "offer from ${offer.peerName}: ${offer.name} (${offer.size} b), busy=${isBusy}")
+            "offer: ${offer.name} (${offer.size} b) from ${offer.peerName}, busy=$isBusy, sessions=${activeSessions.size}")
 
         // Self-heal: busy=true но НЕТ активных сессий вообще — сбрасываем.
         // ВАЖНО: не сбрасывать если есть сессии в finalize (finished >= threadCount),
@@ -87,7 +87,8 @@ object FileReceiver {
             AtomController.setTransferActive(true)
             sendAccept(ctx, offer, 0L)
             accepted = true
-            InAppLogger.d("FileReceiver", "accepted (busy CAS), waiting for TCP")
+            InAppLogger.d("FileReceiver",
+                "CAS OK — accepted, waiting TCP (tid=${offer.transferId.take(8)})")
 
             FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
             node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
@@ -158,7 +159,7 @@ object FileReceiver {
             val threadCount = dis.readInt()
 
             InAppLogger.d("FileReceiver",
-                "TCP thread $threadIdx/$threadCount: range=$offset..$end total=$totalSize tid=${tid.take(8)}")
+                "TCP header: tid=${tid.take(8)} thr=$threadIdx/$threadCount range=$offset..$end size=$totalSize")
 
             val session = activeSessions.getOrPut(tid) {
                 val partDir = File(ctx.getExternalFilesDir(null), "received").apply { mkdirs() }
@@ -204,6 +205,11 @@ object FileReceiver {
                         val total = session.received.addAndGet(written.toLong())
                         session.lastProgressAt = System.currentTimeMillis()
                         FileReceiverService.updateProgress(ctx, name, total, totalSize)
+                        val pct = (total * 100 / totalSize).toInt()
+                        if (pct % 10 == 0 && pct > 0) {
+                            InAppLogger.d("FileReceiver",
+                                "progress ${session.tid.take(8)}: ${pct}% (${total / 1024 / 1024} MB)")
+                        }
                     }
                     InAppLogger.d("FileReceiver",
                         "thread $threadIdx done: ${pos - offset} bytes")
@@ -216,7 +222,7 @@ object FileReceiver {
                     session.sockets.remove(socket)
                     val done = session.finished.incrementAndGet()
                     InAppLogger.d("FileReceiver",
-                        "thread $threadIdx finished, $done/${session.threadCount}")
+                        "thread $threadIdx finished, $done/${session.threadCount} (tid=${session.tid.take(8)})")
                     if (done >= session.threadCount) {
                         InAppLogger.d("FileReceiver", "all threads done, releasing busy")
                         _isBusy.set(false)
@@ -253,6 +259,8 @@ object FileReceiver {
                 delay(30_000)  // проверять каждые 30 сек
                 if (session.finished.get() >= session.threadCount) return@launch
                 val idleSec = (System.currentTimeMillis() - session.lastProgressAt) / 1000
+                InAppLogger.d("FileReceiver",
+                    "watchdog tick: ${session.tid.take(8)} idle=${idleSec}s")
                 if (idleSec > 60) {
                     InAppLogger.d("FileReceiver",
                         "watchdog: ${session.tid.take(8)} нет прогресса ${idleSec} сек — abort")
@@ -272,6 +280,7 @@ object FileReceiver {
     }
 
     private fun finalizeSession(session: ReceiveSession, ctx: Context) {
+        val finalizeStart = System.currentTimeMillis()
         InAppLogger.d("FileReceiver", "finalize START tid=${session.tid.take(8)}")
         try {
             InAppLogger.d("FileReceiver",
@@ -303,13 +312,18 @@ object FileReceiver {
             }
 
             // SHA-256
+            val shaStart = System.currentTimeMillis()
             val actualHash = computeSha256(session.partFile)
+            val shaMs = System.currentTimeMillis() - shaStart
             val hashOk = actualHash.equals(session.hash, ignoreCase = true)
             InAppLogger.d("FileReceiver",
-                "SHA-256: ${if (hashOk) "OK" else "MISMATCH"} actual=${actualHash.take(16)}… expected=${session.hash.take(16)}…")
+                "SHA-256: ${if (hashOk) "OK" else "MISMATCH"} in ${shaMs}ms actual=${actualHash.take(16)}… expected=${session.hash.take(16)}…")
 
             // MediaStore сам уникализирует имя если файл существует
+            val msStart = System.currentTimeMillis()
             val result = MediaStoreSaver.save(ctx, session.partFile, session.name, null)
+            val msMs = System.currentTimeMillis() - msStart
+            InAppLogger.d("FileReceiver", "MediaStore save in ${msMs}ms → ${result.displayPath}")
 
             session.partFile.delete()
             activeSessions.remove(session.tid)
@@ -346,6 +360,9 @@ object FileReceiver {
             activeSessions.remove(session.tid)
             // busy уже освобождён в handleIncomingSocket
             // stop → finalizeEnd()
+        } finally {
+            InAppLogger.d("FileReceiver",
+                "finalize DONE in ${System.currentTimeMillis() - finalizeStart}ms")
         }
     }
 
