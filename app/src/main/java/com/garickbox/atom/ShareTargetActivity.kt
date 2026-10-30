@@ -98,14 +98,21 @@ class ShareTargetActivity : AppCompatActivity() {
     private fun collectUris(intent: Intent?): List<Uri> {
         if (intent == null) return emptyList()
         val list = mutableListOf<Uri>()
-        when (intent.action) {
-            Intent.ACTION_SEND -> {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.add(it) }
-            }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                @Suppress("DEPRECATION")
-                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.addAll(it) }
+        // Android не придерживается строгих типов: из FAB может прийти
+        // ACTION_SEND + ArrayList, из внешних приложений — ACTION_SEND + Uri.
+        // Пробуем оба варианта для обоих action.
+        @Suppress("DEPRECATION")
+        intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.addAll(it) }
+        if (list.isEmpty()) {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.add(it) }
+        }
+        // Fallback: clipData (Android 11+ часто использует clipData вместо EXTRA_STREAM)
+        if (list.isEmpty()) {
+            intent.clipData?.let { clip ->
+                for (i in 0 until clip.itemCount) {
+                    clip.getItemAt(i)?.uri?.let { list.add(it) }
+                }
             }
         }
         return list

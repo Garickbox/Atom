@@ -122,7 +122,14 @@ class MainActivity : AppCompatActivity() {
         val share = Intent(this, ShareTargetActivity::class.java).apply {
             action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
             type = data.type ?: "*/*"
-            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            if (uris.size == 1) {
+                putExtra(Intent.EXTRA_STREAM, uris.first())
+            } else {
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            }
+            clipData = android.content.ClipData.newRawUri("", uris.first()).apply {
+                for (i in 1 until uris.size) addItem(android.content.ClipData.Item(uris[i]))
+            }
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(share)
