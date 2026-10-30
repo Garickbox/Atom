@@ -34,6 +34,24 @@ object UpdateChecker {
 
     private val checkMutex = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    // B10d: shared state для OTA-загрузки (выживает сворачивание Activity)
+    @Volatile var isDownloading: Boolean = false
+        private set
+    @Volatile var currentDownloaded: Long = 0L
+        private set
+    @Volatile var currentTotal: Long = 0L
+        private set
+    @Volatile var currentRelease: Release? = null
+        private set
+
+    private val progressListeners = java.util.concurrent.CopyOnWriteArrayList<(Long, Long) -> Unit>()
+    private val finishListeners = java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    fun addProgressListener(l: (Long, Long) -> Unit) { progressListeners.add(l) }
+    fun removeProgressListener(l: (Long, Long) -> Unit) { progressListeners.remove(l) }
+    fun addFinishListener(l: (Boolean) -> Unit) { finishListeners.add(l) }
+    fun removeFinishListener(l: (Boolean) -> Unit) { finishListeners.remove(l) }
+
     suspend fun checkForUpdate(context: Context): Release? = withContext(Dispatchers.IO) {
         if (!checkMutex.compareAndSet(false, true)) {
             InAppLogger.d("UpdateChecker", "check in progress — skip")
@@ -118,9 +136,13 @@ object UpdateChecker {
         onFinish: ((Boolean) -> Unit)? = null
     ) {
         InAppLogger.d("UpdateChecker", "download start: ${release.apkUrl}")
-        // Если callbacks нет — старое поведение (Toast + notification) для
-        // вызовов из promptAndInstall / checkPending (TV, edge-cases)
-        if (onProgress == null) {
+        isDownloading = true
+        currentRelease = release
+        currentDownloaded = 0L
+        currentTotal = 0L
+        // notification-flow только если нет callbacks И нет listeners
+        val useNotification = onProgress == null && progressListeners.isEmpty()
+        if (useNotification) {
             Toast.makeText(activity, "Скачиваю ${release.tag}…", Toast.LENGTH_SHORT).show()
             showNotification(activity, release, 0, 0, true)
         }
@@ -135,9 +157,13 @@ object UpdateChecker {
                     .readTimeout(30, TimeUnit.SECONDS)
                     .build()
                 val ok = downloadWithRanges(client, release.apkUrl, out) { d, t ->
+                    currentDownloaded = d
+                    currentTotal = t
+                    // listeners (без runOnUiThread — вызывающий сам разберётся)
+                    progressListeners.forEach { l -> try { l(d, t) } catch (_: Exception) {} }
                     if (onProgress != null) {
                         activity.runOnUiThread { onProgress.invoke(d, t) }
-                    } else {
+                    } else if (useNotification) {
                         showNotification(activity, release, d, t, false)
                     }
                 }
@@ -145,11 +171,12 @@ object UpdateChecker {
                 InAppLogger.d("UpdateChecker",
                     "download done: ${out.length()} bytes")
                 try { saveApkToDownloads(activity, out, release.tag) } catch (_: Exception) {}
-                if (onProgress == null) hideNotification(activity)
+                if (useNotification) hideNotification(activity)
                 activity.runOnUiThread {
+                    finishListeners.forEach { l -> try { l(true) } catch (_: Exception) {} }
                     if (onFinish != null) {
                         onFinish.invoke(true)
-                    } else {
+                    } else if (!useNotification) {
                         Toast.makeText(activity,
                             "Скачано. Открываю установщик…",
                             Toast.LENGTH_SHORT).show()
@@ -158,16 +185,21 @@ object UpdateChecker {
                 }
             } catch (e: Exception) {
                 InAppLogger.d("UpdateChecker", "download error: ${e.message}")
-                if (onProgress == null) hideNotification(activity)
+                if (useNotification) hideNotification(activity)
                 activity.runOnUiThread {
+                    finishListeners.forEach { l -> try { l(false) } catch (_: Exception) {} }
                     if (onFinish != null) {
                         onFinish.invoke(false)
-                    } else {
+                    } else if (!useNotification) {
                         Toast.makeText(activity,
                             "Ошибка загрузки: ${e.message}",
                             Toast.LENGTH_LONG).show()
                     }
                 }
+            }
+            finally {
+                isDownloading = false
+                currentRelease = null
             }
         }.start()
     }
@@ -378,6 +410,19 @@ object UpdateChecker {
     }
 
     internal fun saveApkToDownloads(ctx: Context, apk: File, tag: String): android.net.Uri? {
+        // B10d: удалить старый Atom.apk перед insert — иначе MediaStore добавит (1), (2)...
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                val deleted = ctx.contentResolver.delete(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    "${android.provider.MediaStore.Downloads.DISPLAY_NAME}=? AND ${android.provider.MediaStore.Downloads.RELATIVE_PATH} LIKE ?",
+                    arrayOf("Atom.apk", "Download/Atom/Documents%")
+                )
+                InAppLogger.d("UpdateChecker", "deleted old Atom.apk count=$deleted")
+            } catch (e: Exception) {
+                InAppLogger.d("UpdateChecker", "delete old Atom.apk error: ${e.message}")
+            }
+        }
         return try {
             val result = com.garickbox.atom.MediaStoreSaver.save(
                 ctx, apk, "Atom.apk", "application/vnd.android.package-archive"

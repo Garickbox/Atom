@@ -22,6 +22,63 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
 
+    // B10d: диалог OTA + listener'ы для восстановления при сворачивании
+    private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
+    private var downloadProgressBar: android.widget.ProgressBar? = null
+
+    private val downloadProgressListener: (Long, Long) -> Unit = { d, t ->
+        try { runOnUiThread { updateDownloadDialog(d, t) } } catch (_: Exception) {}
+    }
+    private val downloadFinishListener: (Boolean) -> Unit = { success ->
+        try {
+            runOnUiThread {
+                try { downloadDialog?.dismiss() } catch (_: Exception) {}
+                downloadDialog = null
+                downloadProgressBar = null
+                if (!success) {
+                    Toast.makeText(this@MainActivity,
+                        "Ошибка загрузки обновления",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun attachDownloadListeners() {
+        UpdateChecker.addProgressListener(downloadProgressListener)
+        UpdateChecker.addFinishListener(downloadFinishListener)
+    }
+    private fun detachDownloadListeners() {
+        UpdateChecker.removeProgressListener(downloadProgressListener)
+        UpdateChecker.removeFinishListener(downloadFinishListener)
+    }
+
+    private fun showDownloadDialog(release: UpdateChecker.Release?) {
+        try { downloadDialog?.dismiss() } catch (_: Exception) {}
+        val bar = android.widget.ProgressBar(
+            this, null, android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            max = 100
+            progress = 0
+            setPadding(64, 48, 64, 48)
+        }
+        downloadProgressBar = bar
+        downloadDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("⬇️ Скачиваю ${release?.tag ?: "обновление"}")
+            .setView(bar)
+            .setCancelable(false)
+            .show()
+        updateDownloadDialog(UpdateChecker.currentDownloaded, UpdateChecker.currentTotal)
+    }
+
+    private fun updateDownloadDialog(d: Long, t: Long) {
+        if (t > 0) {
+            val pct = ((d * 100) / t).toInt()
+            downloadProgressBar?.progress = pct
+            downloadDialog?.setTitle("⬇️ Скачиваю ${UpdateChecker.currentRelease?.tag ?: ""} · $pct%")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
@@ -65,41 +122,12 @@ class MainActivity : AppCompatActivity() {
 
             InAppLogger.d("MainActivity", "update found: ${release.tag}")
 
-            val progressBar = android.widget.ProgressBar(
-                this@MainActivity, null, android.R.attr.progressBarStyleHorizontal
-            ).apply {
-                max = 100
-                progress = 0
-                setPadding(64, 48, 64, 48)
-            }
-
-            dialog.setTitle("⬇️ Скачиваю ${release.tag}")
-            dialog.setMessage(null)
-            dialog.setView(progressBar)
-            dialog.setCancelable(false)
-
+            dialog.dismiss()
+            showDownloadDialog(release)
+            attachDownloadListeners()
             UpdateChecker.downloadAndInstall(
                 activity = this@MainActivity,
-                release = release,
-                onProgress = { downloaded, total ->
-                    if (total > 0) {
-                        val pct = ((downloaded * 100) / total).toInt()
-                        progressBar.progress = pct
-                        dialog.setTitle("⬇️ Скачиваю ${release.tag} · $pct%")
-                    }
-                },
-                onFinish = { success ->
-                    dialog.dismiss()
-                    if (success) {
-                        Toast.makeText(this@MainActivity,
-                            "Скачано, открываю установщик…",
-                            Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@MainActivity,
-                            "Ошибка загрузки обновления",
-                            Toast.LENGTH_LONG).show()
-                    }
-                }
+                release = release
             )
         }
     }
@@ -144,6 +172,23 @@ class MainActivity : AppCompatActivity() {
         filePicker.launch(intent)
     }
 
+
+    override fun onPause() {
+        // B10d: отцепить listener'ы, диалог закрыть (загрузка продолжится в UpdateChecker)
+        detachDownloadListeners()
+        try { downloadDialog?.dismiss() } catch (_: Exception) {}
+        downloadDialog = null
+        downloadProgressBar = null
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        detachDownloadListeners()
+        try { downloadDialog?.dismiss() } catch (_: Exception) {}
+        downloadDialog = null
+        downloadProgressBar = null
+        super.onDestroy()
+    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // На TV меню не нужно — все действия в tvPanel (без дубля «Обновить»)
@@ -238,6 +283,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UpdateChecker.checkPending(this)
+        // B10d: восстановить OTA-диалог если загрузка идёт
+        if (UpdateChecker.isDownloading && downloadDialog == null) {
+            showDownloadDialog(UpdateChecker.currentRelease)
+            attachDownloadListeners()
+        }
         // Тихая проверка всех условий (в лог, без диалогов)
         val issues = PreflightChecker.issues(this)
         InAppLogger.d("MainActivity",
