@@ -85,6 +85,20 @@ object AtomController {
         }
         wifiDirect = wd
 
+        // B11.2-fix: автосохранение MAC всех найденных/подключённых пиров.
+        // Работает всегда: и когда мы инициируем, и когда к нам подключаются.
+        wd.persistentOnPeersChanged = { p2pPeers ->
+            try {
+                p2pPeers.forEach { p ->
+                    if (p.deviceAddress.isNotBlank()) {
+                        saveKnownP2pPeer(p.deviceAddress, p.deviceName)
+                    }
+                }
+            } catch (e: Exception) {
+                InAppLogger.d("AtomController", "persistent peers save error: ${e.message}")
+            }
+        }
+
         // Подписываемся на lifecycle: пока Атом открыт — периодически
         // делаем себя видимым через Wi-Fi Direct
         try {

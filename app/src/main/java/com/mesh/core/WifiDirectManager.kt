@@ -27,6 +27,8 @@ class WifiDirectManager(private val ctx: Context) {
     )
 
     var onPeersChanged: ((List<WifiP2pDevice>) -> Unit)? = null
+    // B11.2-fix: постоянный слушатель — работает даже когда Activity не открыт
+    var persistentOnPeersChanged: ((List<WifiP2pDevice>) -> Unit)? = null
     var onConnected: ((P2PConnection) -> Unit)? = null
     var onDisconnected: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
@@ -137,6 +139,7 @@ class WifiDirectManager(private val ctx: Context) {
                 }
                 if (peers.isNotEmpty()) {
                     onPeersChanged?.invoke(peers)
+                    persistentOnPeersChanged?.invoke(peers)
                 }
             }
         } catch (e: Exception) {
