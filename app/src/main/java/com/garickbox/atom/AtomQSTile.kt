@@ -1,5 +1,6 @@
 package com.garickbox.atom
 
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -42,6 +43,26 @@ class AtomQSTile : TileService() {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             updateTile()
         }, 500L)
+    }
+
+    override fun onLongClick(): Boolean {
+        // B11.8: long press → file picker (тот же flow, что виджет «📤 Отправить»)
+        InAppLogger.d("AtomQSTile", "onLongClick → open MainActivity with SEND action")
+        return try {
+            val pi = PendingIntent.getActivity(this, 9001,
+                Intent(this, MainActivity::class.java).apply {
+                    action = AtomWidgetProvider.ACTION_WIDGET_SEND
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                             Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                             Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            startActivityAndCollapse(pi)
+            true
+        } catch (e: Exception) {
+            InAppLogger.d("AtomQSTile", "onLongClick error: " + e.message)
+            false
+        }
     }
 
     private fun updateTile() {
