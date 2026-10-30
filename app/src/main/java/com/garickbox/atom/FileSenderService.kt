@@ -223,14 +223,16 @@ class FileSenderService : Service() {
                 InAppLogger.d("FileSenderService",
                     "file ${idx + 1}/${uris.size}: $name ($size b) tid=${transferId.take(8)}")
                 AtomController.transferState.value = TransferState.Running(
-                    transferId, peerName, name, 0, size
+                    transferId, peerName, name, 0, size,
+                    fileIndex = idx + 1, fileCount = uris.size
                 )
                 val notif = TransferNotification.buildRunning(
-                    this@FileSenderService, transferId, peerName, name, 0, size
+                    this@FileSenderService, transferId, peerName, name, 0, size,
+                    fileIndex = idx + 1, fileCount = uris.size
                 )
                 TransferNotification.update(this@FileSenderService, NOTIF_ID, notif)
 
-                val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName)
+                val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName, idx + 1, uris.size)
                 if (sent < 0) {
                     InAppLogger.d("FileSenderService",
                         "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
@@ -290,11 +292,14 @@ class FileSenderService : Service() {
         name: String,
         size: Long,
         transferId: String,
-        peerName: String
+        peerName: String,
+        fileIndex: Int = 0,
+        fileCount: Int = 0
     ): Long {
         // 1) SHA-256 до отправки
         val notifPrep = TransferNotification.buildRunning(
-            this, transferId, peerName, "$name (хэш…)", 0, size
+            this, transferId, peerName, "$name (хэш…)", 0, size,
+            fileIndex = fileIndex, fileCount = fileCount
         )
         TransferNotification.update(this, NOTIF_ID, notifPrep)
 
@@ -401,7 +406,7 @@ class FileSenderService : Service() {
             "start transfer: ${threadCount} thread(s) for $size bytes")
 
         return try {
-            sendMultiThread(node, peerIp, uri, name, size, transferId, peerName, contentHash, threadCount)
+            sendMultiThread(node, peerIp, uri, name, size, transferId, peerName, contentHash, threadCount, fileIndex, fileCount)
         } catch (e: kotlinx.coroutines.CancellationException) {
             InAppLogger.d("FileSenderService", "cancelled by coroutine")
             throw e
@@ -430,7 +435,9 @@ class FileSenderService : Service() {
         transferId: String,
         peerName: String,
         contentHash: String,
-        threadCount: Int
+        threadCount: Int,
+        fileIndex: Int = 0,
+        fileCount: Int = 0
     ): Long = coroutineScope {
         senderSpeedTracker.reset()
         val progress = AtomicLong(0L)
@@ -513,10 +520,11 @@ class FileSenderService : Service() {
                                     TransferNotification.updateIfChanged(this@FileSenderService, NOTIF_ID,
                                         TransferNotification.buildRunning(
                                             this@FileSenderService, transferId, peerName,
-                                            name, total, size, bps))
+                                            name, total, size, bps, fileIndex, fileCount))
                                     AtomController.transferState.value = TransferState.Running(
                                         transferId, peerName, name, total, size,
-                                        bytesPerSecond = bps, isReceiver = false)
+                                        bytesPerSecond = bps, isReceiver = false,
+                                        fileIndex = fileIndex, fileCount = fileCount)
                                 }
                             }
                             dos.flush()

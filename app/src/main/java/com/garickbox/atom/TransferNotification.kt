@@ -22,7 +22,9 @@ object TransferNotification {
         fileName: String,
         bytesSent: Long,
         bytesTotal: Long,
-        bytesPerSecond: Long = 0L
+        bytesPerSecond: Long = 0L,
+        fileIndex: Int = 0,
+        fileCount: Int = 0
     ): Notification {
         val pct = if (bytesTotal > 0) ((bytesSent * 100) / bytesTotal).toInt() else 0
         val cancelIntent = Intent(ctx, FileSenderService::class.java).apply {
@@ -35,7 +37,10 @@ object TransferNotification {
         )
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("📤 Отправка → $peerName")
+            .setContentTitle(
+                "📤 Отправка → $peerName" +
+                if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
+            )
             .setContentText(buildString {
                 append("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)}")
                 if (bytesPerSecond > 0) append("  ·  ${formatSpeed(bytesPerSecond)}")
@@ -43,6 +48,7 @@ object TransferNotification {
             .setProgress(100, pct, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setDeleteIntent(cancelPi)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отменить", cancelPi)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .build()

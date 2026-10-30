@@ -38,8 +38,10 @@ class FileReceiverService : Service() {
         fun updateProgress(ctx: Context, fileName: String, written: Long, total: Long) {
             receiverSpeedTracker.onProgress(written)
             val bps = receiverSpeedTracker.bytesPerSecond()
-            instance?.updateNotif(fileName, written, total, bps)
-            // Обновляем TransferState — для UI в MainActivity
+            val cur = AtomController.transferState.value
+            val fi = (cur as? TransferState.Running)?.fileIndex ?: 0
+            val fc = (cur as? TransferState.Running)?.fileCount ?: 0
+            instance?.updateNotif(fileName, written, total, bps, fi, fc)
             if (currentTransferId.isNotBlank()) {
                 AtomController.transferState.value = TransferState.Running(
                     transferId = currentTransferId,
@@ -48,7 +50,9 @@ class FileReceiverService : Service() {
                     bytesSent = written,
                     bytesTotal = total,
                     bytesPerSecond = bps,
-                    isReceiver = true
+                    isReceiver = true,
+                    fileIndex = fi,
+                    fileCount = fc
                 )
             }
         }
@@ -128,11 +132,14 @@ class FileReceiverService : Service() {
     private var lastNotifKey: String = ""
 
     @Synchronized
-    private fun updateNotif(fileName: String, written: Long, total: Long, bps: Long = 0L) {
+    private fun updateNotif(
+        fileName: String, written: Long, total: Long, bps: Long = 0L,
+        fileIndex: Int = 0, fileCount: Int = 0
+    ) {
         try {
             val now = System.currentTimeMillis()
             if (now - lastNotifAt < 500L) return
-            val notif = buildNotif(fileName, written, total, bps)
+            val notif = buildNotif(fileName, written, total, bps, fileIndex, fileCount)
             val title = notif.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
             val text  = notif.extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
             val key = title + "|" + text
@@ -144,7 +151,10 @@ class FileReceiverService : Service() {
         } catch (_: SecurityException) {}
     }
 
-    private fun buildNotif(fileName: String, written: Long, total: Long, bps: Long): Notification {
+    private fun buildNotif(
+        fileName: String, written: Long, total: Long, bps: Long,
+        fileIndex: Int = 0, fileCount: Int = 0
+    ): Notification {
         val pct = if (total > 0) ((written * 100) / total).toInt() else 0
         val text = buildString {
             if (total > 0) append("${formatBytes(written)} / ${formatBytes(total)}")
@@ -163,7 +173,10 @@ class FileReceiverService : Service() {
 
         return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("📥 Приём: $fileName")
+            .setContentTitle(
+                "📥 Приём: $fileName" +
+                if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
+            )
             .setContentText(text)
             .setProgress(100, pct, total <= 0)
             .setOngoing(true)
