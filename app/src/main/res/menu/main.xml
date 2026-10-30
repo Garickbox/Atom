@@ -2,35 +2,29 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <group android:id="@+id/group_action">
-        <item
-            android:id="@+id/action_check_update"
-            android:title="Обновить"
-            android:icon="@drawable/ic_update"
-            app:showAsAction="always|withText" />
-    </group>
+    <item
+        android:id="@+id/action_check_update"
+        android:title="Обновить"
+        android:icon="@drawable/ic_update"
+        app:showAsAction="always|withText" />
 
-    <group android:id="@+id/group_tools">
-        <item
-            android:id="@+id/action_view_log"
-            android:title="📋 Лог"
-            app:showAsAction="never" />
+    <item
+        android:id="@+id/action_self_test"
+        android:title="@string/menu_self_test"
+        app:showAsAction="never" />
 
-        <item
-            android:id="@+id/action_self_test"
-            android:title="🔧 Самопроверка"
-            app:showAsAction="never" />
+    <item
+        android:id="@+id/action_view_log"
+        android:title="📋 Лог"
+        app:showAsAction="never" />
 
-        <item
-            android:id="@+id/action_clear_history"
-            android:title="🗑 Очистить историю"
-            app:showAsAction="never" />
-    </group>
+    <item
+        android:id="@+id/action_clear_history"
+        android:title="🗑 Очистить историю"
+        app:showAsAction="never" />
 
-    <group android:id="@+id/group_info">
-        <item
-            android:id="@+id/action_about"
-            android:title="ℹ️ О программе"
-            app:showAsAction="never" />
-    </group>
+    <item
+        android:id="@+id/action_about"
+        android:title="@string/menu_about"
+        app:showAsAction="never" />
 </menu>

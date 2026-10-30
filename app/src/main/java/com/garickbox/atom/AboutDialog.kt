@@ -31,30 +31,35 @@ object AboutDialog {
         """.trimIndent()
 
         val apkUri = ApkShareHelper.findLatestApk(activity)
-        val items = mutableListOf<String>()
-        if (apkUri != null) items.add("📦 Поделиться APK-файлом")
-        items.add("📤 Поделиться ссылкой")
-        items.add("🌐 Открыть GitHub")
 
         AlertDialog.Builder(activity)
             .setTitle("⚛️ Атом")
             .setMessage(message)
-            .setItems(items.toTypedArray()) { _, which ->
-                var idx = which
+            .setPositiveButton("📤 Поделиться") { _, _ ->
                 if (apkUri != null) {
-                    if (idx == 0) {
-                        ApkShareHelper.shareApk(activity, apkUri)
-                        return@setItems
-                    }
-                    idx--
-                }
-                when (idx) {
-                    0 -> shareLink(activity)
-                    1 -> openGitHub(activity)
-                    else -> {}
+                    showShareChoice(activity, apkUri)
+                } else {
+                    shareLink(activity)
                 }
             }
+            .setNeutralButton("🌐 GitHub") { _, _ -> openGitHub(activity) }
             .setNegativeButton("Закрыть", null)
+            .show()
+    }
+
+    private fun showShareChoice(activity: Activity, apkUri: Uri) {
+        AlertDialog.Builder(activity)
+            .setTitle("Поделиться")
+            .setItems(arrayOf(
+                "📦 APK-файлом (build ${BuildConfig.VERSION_CODE})",
+                "📤 Ссылкой на GitHub"
+            )) { _, which ->
+                when (which) {
+                    0 -> ApkShareHelper.shareApk(activity, apkUri)
+                    1 -> shareLink(activity)
+                }
+            }
+            .setNegativeButton("Отмена", null)
             .show()
     }
 
