@@ -12,6 +12,7 @@ object TransferNotification {
 
     const val ACTION_CANCEL = "com.garickbox.atom.CANCEL_TRANSFER"
     const val ACTION_RESUME = "com.garickbox.atom.RESUME_TRANSFER"
+    const val ACTION_PAUSE = "com.garickbox.atom.PAUSE_TRANSFER"
     const val EXTRA_TRANSFER_ID = "transfer_id"
     const val EXTRA_FILE_NAME = "file_name"
 
@@ -35,6 +36,14 @@ object TransferNotification {
             ctx, transferId.hashCode(), cancelIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val pauseIntent = Intent(ctx, FileSenderService::class.java).apply {
+            action = ACTION_PAUSE
+            putExtra(EXTRA_TRANSFER_ID, transferId)
+        }
+        val pausePi = PendingIntent.getService(
+            ctx, transferId.hashCode() + 3, pauseIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(
@@ -49,6 +58,50 @@ object TransferNotification {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setDeleteIntent(cancelPi)
+            .addAction(android.R.drawable.ic_media_pause, "Пауза", pausePi)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отменить", cancelPi)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .build()
+    }
+
+    fun buildPaused(
+        ctx: Context,
+        transferId: String,
+        peerName: String,
+        fileName: String,
+        bytesSent: Long,
+        bytesTotal: Long,
+        fileIndex: Int = 0,
+        fileCount: Int = 0
+    ): Notification {
+        val pct = if (bytesTotal > 0) ((bytesSent * 100) / bytesTotal).toInt() else 0
+        val resumeIntent = Intent(ctx, FileSenderService::class.java).apply {
+            action = ACTION_RESUME
+            putExtra(EXTRA_TRANSFER_ID, transferId)
+        }
+        val resumePi = PendingIntent.getService(
+            ctx, transferId.hashCode() + 4, resumeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val cancelIntent = Intent(ctx, FileSenderService::class.java).apply {
+            action = ACTION_CANCEL
+            putExtra(EXTRA_TRANSFER_ID, transferId)
+        }
+        val cancelPi = PendingIntent.getService(
+            ctx, transferId.hashCode() + 5, cancelIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle(
+                "⏸ Пауза → $peerName" +
+                if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
+            )
+            .setContentText("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)} · $pct%")
+            .setProgress(100, pct, false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(android.R.drawable.ic_media_play, "Продолжить", resumePi)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отменить", cancelPi)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .build()

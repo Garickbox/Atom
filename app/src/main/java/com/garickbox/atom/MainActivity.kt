@@ -394,6 +394,21 @@ class MainActivity : AppCompatActivity() {
                 }
                 renderHistory()
             }
+            is TransferState.Paused -> {
+                b.transferPanel.visibility = android.view.View.VISIBLE
+                b.transferTitle.text = "⏸ Пауза: ${state.fileName}" +
+                    (if (state.fileCount > 0) " · файл ${state.fileIndex}/${state.fileCount}" else "")
+                b.transferSpeed.text = ""
+                b.transferDetail.text = "${state.peerName} · ${formatBytes(state.bytesSent)} / ${formatBytes(state.bytesTotal)} · тап для продолжения"
+                b.transferProgress.progress = if (state.bytesTotal > 0) ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
+                b.transferPanel.setOnClickListener {
+                    val i = android.content.Intent(this@MainActivity, FileSenderService::class.java).apply {
+                        action = TransferNotification.ACTION_RESUME
+                    }
+                    androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, i)
+                    b.transferPanel.setOnClickListener(null)
+                }
+            }
             is TransferState.Failed -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
                 b.transferTitle.text = "⚠️ ${state.peerName}: ${state.reason}"

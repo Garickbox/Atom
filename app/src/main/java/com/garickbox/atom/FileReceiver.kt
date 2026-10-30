@@ -43,6 +43,7 @@ object FileReceiver {
         val received: AtomicLong = AtomicLong(0),
         val finished: AtomicInteger = AtomicInteger(0),
         val failed: AtomicBoolean = AtomicBoolean(false),
+        val paused: AtomicBoolean = AtomicBoolean(false),
         val sockets: CopyOnWriteArrayList<Socket> = CopyOnWriteArrayList(),
         @Volatile var lastProgressAt: Long = System.currentTimeMillis(),
         @Volatile var watchdogStarted: Boolean = false
@@ -51,6 +52,25 @@ object FileReceiver {
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
         InAppLogger.d("FileReceiver",
             "offer: ${offer.name} (${offer.size} b) from ${offer.peerName}, busy=$isBusy, sessions=${activeSessions.size}")
+
+        // B6b: resume-путь — если есть активная сессия для этого tid и offer.resumeOffset > 0,
+        // отвечаем ACCEPT с фактическим offset из .part (без проверки busy).
+        if (offer.resumeOffset > 0) {
+            val existing = activeSessions[offer.transferId]
+            if (existing != null) {
+                val actualPartSize = existing.partFile.length()
+                val actualOffset = if (actualPartSize > 0 && actualPartSize <= offer.size) actualPartSize else 0L
+                InAppLogger.d("FileReceiver",
+                    "resume: tid=${offer.transferId.take(8)} offer=${offer.resumeOffset} part=$actualPartSize → ACK $actualOffset")
+                existing.paused.set(false)
+                existing.lastProgressAt = System.currentTimeMillis()
+                sendAccept(ctx, offer, actualOffset)
+                return
+            } else {
+                InAppLogger.d("FileReceiver",
+                    "resume: tid=${offer.transferId.take(8)} offer=${offer.resumeOffset} but no session — fresh")
+            }
+        }
 
         // Self-heal: busy=true но НЕТ активных сессий вообще — сбрасываем.
         // ВАЖНО: не сбрасывать если есть сессии в finalize (finished >= threadCount),
@@ -183,6 +203,10 @@ object FileReceiver {
             }
             session.sockets.add(socket)
             registered = true
+            // B6b: при resume установить received на offset (только если session свежая)
+            if (offset > 0 && session.received.get() == 0L) {
+                session.received.set(offset)
+            }
 
             startWatchdogOnce(session, ctx)
 
@@ -222,18 +246,24 @@ object FileReceiver {
                 } finally {
                     try { socket.close() } catch (_: Exception) {}
                     session.sockets.remove(socket)
-                    val done = session.finished.incrementAndGet()
-                    InAppLogger.d("FileReceiver",
-                        "thread $threadIdx finished, $done/${session.threadCount} (tid=${session.tid.take(8)})")
-                    if (done >= session.threadCount) {
-                        InAppLogger.d("FileReceiver", "all threads done, releasing busy")
-                        _isBusy.set(false)
-                        FileReceiverService.finalizeStart()
-                        scope.launch {
-                            try {
-                                finalizeSession(session, ctx)
-                            } finally {
-                                FileReceiverService.finalizeEnd(ctx)
+                    // B6b: если sender поставил паузу — не финализируем, .part оставляем
+                    if (session.paused.get() && !session.failed.get()) {
+                        InAppLogger.d("FileReceiver",
+                            "thread $threadIdx paused — keeping .part (tid=${session.tid.take(8)})")
+                    } else {
+                        val done = session.finished.incrementAndGet()
+                        InAppLogger.d("FileReceiver",
+                            "thread $threadIdx finished, $done/${session.threadCount} (tid=${session.tid.take(8)})")
+                        if (done >= session.threadCount) {
+                            InAppLogger.d("FileReceiver", "all threads done, releasing busy")
+                            _isBusy.set(false)
+                            FileReceiverService.finalizeStart()
+                            scope.launch {
+                                try {
+                                    finalizeSession(session, ctx)
+                                } finally {
+                                    FileReceiverService.finalizeEnd(ctx)
+                                }
                             }
                         }
                     }
@@ -288,7 +318,7 @@ object FileReceiver {
                 val idleSec = (System.currentTimeMillis() - session.lastProgressAt) / 1000
                 InAppLogger.d("FileReceiver",
                     "watchdog tick: ${session.tid.take(8)} idle=${idleSec}s")
-                if (idleSec > 60) {
+                if (idleSec > 300) {
                     InAppLogger.d("FileReceiver",
                         "watchdog: ${session.tid.take(8)} нет прогресса ${idleSec} сек — abort")
                     session.failed.set(true)
@@ -434,6 +464,18 @@ fun cancelActiveReceive(ctx: Context) {
         _isBusy.set(false)
         AtomController.transferState.value = TransferState.Idle
         FileReceiverService.stop(ctx)
+    }
+
+    fun onPause(ctx: Context, transferId: String) {
+        InAppLogger.d("FileReceiver", "FILE_PAUSE tid=${transferId.take(8)}")
+        val session = activeSessions[transferId]
+        if (session != null) {
+            session.paused.set(true)
+            session.lastProgressAt = System.currentTimeMillis()
+            InAppLogger.d("FileReceiver", "session paused: ${transferId.take(8)}")
+        } else {
+            InAppLogger.d("FileReceiver", "onPause: no session for ${transferId.take(8)}")
+        }
     }
 
     fun onCancel(ctx: Context, transferId: String) {

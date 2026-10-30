@@ -24,6 +24,7 @@ class MeshNode(private val ctx: Context) {
     var onHello: ((HelloInfo) -> Unit)? = null
     var onFileOffer: ((FileOffer) -> Unit)? = null
     var onFileCancel: ((String) -> Unit)? = null
+    var onFilePause: ((String) -> Unit)? = null
     var onFileAccept: ((String, Long) -> Unit)? = null
     var onFileDecline: ((String, String) -> Unit)? = null
     var onIncomingTcp: ((Socket) -> Unit)? = null
@@ -51,7 +52,8 @@ class MeshNode(private val ctx: Context) {
         val size: Long,
         val peerId: String,
         val peerName: String,
-        val fromIp: String
+        val fromIp: String,
+        val resumeOffset: Long = 0L
     )
 
     // ═══════════════════════════════════════════════════════════
@@ -158,7 +160,8 @@ class MeshNode(private val ctx: Context) {
                     size = packet.payload.optLong("size", 0L),
                     peerId = packet.payload.optString("peer_id"),
                     peerName = packet.payload.optString("peer_name"),
-                    fromIp = fromIp
+                    fromIp = fromIp,
+                    resumeOffset = packet.payload.optLong("resume_offset", 0L)
                 )
                 onFileOffer?.invoke(offer)
             }
@@ -175,6 +178,10 @@ class MeshNode(private val ctx: Context) {
             PacketType.FILE_CANCEL -> {
                 val tid = packet.payload.optString("tid")
                 if (tid.isNotBlank()) onFileCancel?.invoke(tid)
+            }
+            PacketType.FILE_PAUSE -> {
+                val tid = packet.payload.optString("tid")
+                if (tid.isNotBlank()) onFilePause?.invoke(tid)
             }
             else -> {}
         }

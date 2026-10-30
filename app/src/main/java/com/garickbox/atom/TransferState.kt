@@ -13,6 +13,15 @@ sealed class TransferState {
         val fileIndex: Int = 0,
         val fileCount: Int = 0
     ) : TransferState()
+    data class Paused(
+        val transferId: String,
+        val peerName: String,
+        val fileName: String,
+        val bytesSent: Long,
+        val bytesTotal: Long,
+        val fileIndex: Int = 0,
+        val fileCount: Int = 0
+    ) : TransferState()
     data class Failed(
         val transferId: String,
         val peerName: String,

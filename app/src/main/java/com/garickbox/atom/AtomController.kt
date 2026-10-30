@@ -66,6 +66,9 @@ object AtomController {
             this.onFileCancel = { tid ->
                 FileReceiver.onCancel(ctx.applicationContext, tid)
             }
+            this.onFilePause = { tid ->
+                FileReceiver.onPause(ctx.applicationContext, tid)
+            }
         }
         node.start()
         _meshNode = node

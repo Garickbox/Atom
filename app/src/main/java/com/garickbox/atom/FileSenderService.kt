@@ -73,6 +73,23 @@ class FileSenderService : Service() {
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val senderSpeedTracker = SpeedTracker()
     private val pendingAccepts = ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Result<Long>>>()
+
+    // B6b: state для паузы/докачки
+    @Volatile private var lastPeerIp: String = ""
+    @Volatile private var lastPeerId: String = ""
+    @Volatile private var lastPeerName: String = ""
+    @Volatile private var lastUris: List<String> = emptyList()
+    @Volatile private var lastUriIndex: Int = 0
+    @Volatile private var currentProgressBytes: Long = 0L
+    @Volatile private var pausedOffset: Long = 0L
+    @Volatile private var pausedTid: String? = null
+    @Volatile private var pausedName: String? = null
+    @Volatile private var pausedPeerIp: String = ""
+    @Volatile private var pausedPeerId: String = ""
+    @Volatile private var pausedPeerName: String = ""
+    @Volatile private var pausedFileIndex: Int = 0
+    @Volatile private var pausedFileCount: Int = 0
+    @Volatile private var pausedRemainingUris: List<String> = emptyList()
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var currentJob: Job? = null
@@ -115,6 +132,12 @@ class FileSenderService : Service() {
                 val peerName = intent.getStringExtra(EXTRA_PEER_NAME) ?: "?"
                 val uris = intent.getStringArrayListExtra(EXTRA_URIS)?.map { Uri.parse(it) } ?: emptyList()
                 if (uris.isEmpty()) { stopSelf(); return START_NOT_STICKY }
+                lastPeerIp = peerIp
+                lastPeerId = peerId
+                lastPeerName = peerName
+                lastUris = uris.map { it.toString() }
+                lastUriIndex = 0
+                currentProgressBytes = 0L
                 runTransfer(peerIp, peerId, peerName, uris)
             }
             TransferNotification.ACTION_CANCEL -> {
@@ -161,11 +184,78 @@ class FileSenderService : Service() {
                     InAppLogger.d("FileSenderService", "delayed stopSelf after cancel")
                 }, 800L)
             }
+            TransferNotification.ACTION_PAUSE -> {
+                val cur = AtomController.transferState.value
+                if (cur !is TransferState.Running) {
+                    InAppLogger.d("FileSenderService", "pause: not running (state=$cur)")
+                    return START_STICKY
+                }
+                // Синхронно сообщить receiver до отмены корутины
+                try {
+                    val cancelJson = JSONObject().apply { put("tid", cur.transferId) }
+                    AtomController.meshNode?.sendPacketBlocking(
+                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 800L
+                    )
+                } catch (_: Exception) {}
+
+                pausedOffset = currentProgressBytes
+                pausedTid = cur.transferId
+                pausedName = cur.fileName
+                pausedPeerIp = lastPeerIp
+                pausedPeerId = lastPeerId
+                pausedPeerName = lastPeerName
+                pausedFileIndex = cur.fileIndex
+                pausedFileCount = cur.fileCount
+                pausedRemainingUris = lastUris.drop(lastUriIndex)
+                InAppLogger.d("FileSenderService",
+                    "pause: offset=$pausedOffset/${cur.bytesTotal} remaining=${pausedRemainingUris.size}")
+
+                currentJob?.cancel()
+                keepAliveJob?.cancel()
+                keepAliveJob = null
+                AtomController.transferState.value = TransferState.Paused(
+                    cur.transferId, cur.peerName, cur.fileName,
+                    pausedOffset, cur.bytesTotal, cur.fileIndex, cur.fileCount
+                )
+                TransferNotification.update(this, NOTIF_ID,
+                    TransferNotification.buildPaused(
+                        this, cur.transferId, cur.peerName, cur.fileName,
+                        pausedOffset, cur.bytesTotal, cur.fileIndex, cur.fileCount
+                    ))
+            }
             TransferNotification.ACTION_RESUME -> {
-                InAppLogger.d("FileSenderService", "resume requested — not implemented, stop")
-                // TODO: реализовать resume через MAC. Пока — просто останавливаемся
-                stopSelf()
-                return START_NOT_STICKY
+                if (pausedRemainingUris.isEmpty()) {
+                    InAppLogger.d("FileSenderService", "resume: no paused data")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                val uris = pausedRemainingUris.map { Uri.parse(it) }
+                val off = pausedOffset
+                val tid = pausedTid
+                val ip = pausedPeerIp
+                val id = pausedPeerId
+                val name = pausedPeerName
+                val fi = pausedFileIndex
+                val fc = pausedFileCount
+                InAppLogger.d("FileSenderService",
+                    "resume: offset=$off file=$fi/$fc uris=${uris.size} peer=$ip")
+                // Очистить paused state
+                pausedOffset = 0L
+                pausedTid = null
+                pausedName = null
+                pausedPeerIp = ""
+                pausedPeerId = ""
+                pausedPeerName = ""
+                pausedFileIndex = 0
+                pausedFileCount = 0
+                pausedRemainingUris = emptyList()
+                lastPeerIp = ip
+                lastPeerId = id
+                lastPeerName = name
+                lastUris = uris.map { it.toString() }
+                lastUriIndex = 0
+                currentProgressBytes = off
+                runTransfer(ip, id, name, uris, resumeFirstOffset = off, resumeFirstTid = tid, fileIndexOffset = fi - 1, totalFileCount = fc)
             }
             else -> {
                 // null (после ребута системы) или неизвестный action — не держим lock'и
@@ -177,7 +267,13 @@ class FileSenderService : Service() {
         return START_STICKY
     }
 
-    private fun runTransfer(peerIp: String, peerId: String, peerName: String, uris: List<Uri>) {
+    private fun runTransfer(
+        peerIp: String, peerId: String, peerName: String, uris: List<Uri>,
+        resumeFirstOffset: Long = 0L,
+        resumeFirstTid: String? = null,
+        fileIndexOffset: Int = 0,
+        totalFileCount: Int = -1
+    ) {
         currentJob = scope.launch {
             val node = AtomController.meshNode
             // Defensive: callbacks могли не установиться, если meshNode был null в onCreate.
@@ -215,24 +311,29 @@ class FileSenderService : Service() {
                 }
             }
 
+            val finalFileCount = if (totalFileCount > 0) totalFileCount else uris.size
             for ((idx, uri) in uris.withIndex()) {
                 if (!isActive) break
                 val name = displayName(uri) ?: "file_${idx}"
                 val size = fileSize(uri)
-                val transferId = UUID.randomUUID().toString()
+                val resumeOffset = if (idx == 0) resumeFirstOffset else 0L
+                val transferId = if (idx == 0 && resumeFirstTid != null) resumeFirstTid else UUID.randomUUID().toString()
+                val realIdx = idx + fileIndexOffset + 1
+                lastUriIndex = idx
+                currentProgressBytes = resumeOffset
                 InAppLogger.d("FileSenderService",
-                    "file ${idx + 1}/${uris.size}: $name ($size b) tid=${transferId.take(8)}")
+                    "file $realIdx/$finalFileCount: $name ($size b) resume=$resumeOffset tid=${transferId.take(8)}")
                 AtomController.transferState.value = TransferState.Running(
-                    transferId, peerName, name, 0, size,
-                    fileIndex = idx + 1, fileCount = uris.size
+                    transferId, peerName, name, resumeOffset, size,
+                    fileIndex = realIdx, fileCount = finalFileCount
                 )
                 val notif = TransferNotification.buildRunning(
-                    this@FileSenderService, transferId, peerName, name, 0, size,
-                    fileIndex = idx + 1, fileCount = uris.size
+                    this@FileSenderService, transferId, peerName, name, resumeOffset, size,
+                    fileIndex = realIdx, fileCount = finalFileCount
                 )
                 TransferNotification.update(this@FileSenderService, NOTIF_ID, notif)
 
-                val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName, idx + 1, uris.size)
+                val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName, realIdx, finalFileCount, resumeOffset)
                 if (sent < 0) {
                     InAppLogger.d("FileSenderService",
                         "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
@@ -294,7 +395,8 @@ class FileSenderService : Service() {
         transferId: String,
         peerName: String,
         fileIndex: Int = 0,
-        fileCount: Int = 0
+        fileCount: Int = 0,
+        resumeOffset: Long = 0L
     ): Long {
         // 1) SHA-256 до отправки
         val notifPrep = TransferNotification.buildRunning(
@@ -327,6 +429,7 @@ class FileSenderService : Service() {
             put("size", size)
             put("peer_id", AtomController.myId)
             put("peer_name", AtomController.myName)
+            put("resume_offset", resumeOffset)
         }
 
         // ВАЖНО: CompletableDeferred одноразовый. Новый на каждую попытку,
@@ -400,6 +503,12 @@ class FileSenderService : Service() {
             return -1
         }
 
+        // B6b: используем offset, который реально подтвердил receiver
+        val acceptedOffset = acceptResult.getOrNull() ?: 0L
+        if (acceptedOffset != resumeOffset) {
+            InAppLogger.d("FileSenderService",
+                "acceptedOffset=$acceptedOffset (requested=$resumeOffset)")
+        }
         // 3) Multi-thread: 4 потока если size >= 8 MB, иначе 1
         val threadCount = 1  // single-thread как build-37 — быстрее на 2.4 GHz
         InAppLogger.d("FileSenderService",
@@ -413,7 +522,7 @@ class FileSenderService : Service() {
         var lastErr: String? = null
         for (sendAttempt in 1..3) {
             try {
-                return sendMultiThread(node, peerIp, uri, name, size, finalTid, peerName, contentHash, threadCount, fileIndex, fileCount)
+                return sendMultiThread(node, peerIp, uri, name, size, finalTid, peerName, contentHash, threadCount, fileIndex, fileCount, acceptedOffset)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 InAppLogger.d("FileSenderService", "cancelled by coroutine")
                 throw e
@@ -490,7 +599,8 @@ class FileSenderService : Service() {
         contentHash: String,
         threadCount: Int,
         fileIndex: Int = 0,
-        fileCount: Int = 0
+        fileCount: Int = 0,
+        resumeOffset: Long = 0L
     ): Long = coroutineScope {
         senderSpeedTracker.reset()
         val progress = AtomicLong(0L)
@@ -499,10 +609,11 @@ class FileSenderService : Service() {
         val lastNotif = AtomicLong(0L)
         val startTime = System.currentTimeMillis()
 
-        val chunkSize = (size + threadCount - 1) / threadCount
+        val remaining = size - resumeOffset
+        val chunkSize = (remaining + threadCount - 1) / threadCount
 
         val jobs = (0 until threadCount).map { i ->
-            val start = i * chunkSize
+            val start = resumeOffset + i * chunkSize
             val end = minOf(start + chunkSize, size)
             if (start >= end) return@map null
 
@@ -563,6 +674,8 @@ class FileSenderService : Service() {
                                 dos.write(buf, 0, read)
                                 pos += read
                                 val total = progress.addAndGet(read.toLong())
+                                val displayTotal = resumeOffset + total
+                                currentProgressBytes = displayTotal
 
                                 val now = System.currentTimeMillis()
                                 val prev = lastNotif.get()
@@ -573,9 +686,9 @@ class FileSenderService : Service() {
                                     TransferNotification.updateIfChanged(this@FileSenderService, NOTIF_ID,
                                         TransferNotification.buildRunning(
                                             this@FileSenderService, transferId, peerName,
-                                            name, total, size, bps, fileIndex, fileCount))
+                                            name, displayTotal, size, bps, fileIndex, fileCount))
                                     AtomController.transferState.value = TransferState.Running(
-                                        transferId, peerName, name, total, size,
+                                        transferId, peerName, name, displayTotal, size,
                                         bytesPerSecond = bps, isReceiver = false,
                                         fileIndex = fileIndex, fileCount = fileCount)
                                 }
