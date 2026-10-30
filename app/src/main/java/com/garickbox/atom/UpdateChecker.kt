@@ -147,6 +147,21 @@ object UpdateChecker {
             showNotification(activity, release, 0, 0, true)
         }
 
+        // B10d.1: удалить старые Atom*.apk ДО начала скачивания (не после).
+        // Селект ловит Atom.apk, Atom (1).apk, Atom (2).apk... — всё что в Download/Atom/Documents.
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                val deleted = activity.contentResolver.delete(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    "${android.provider.MediaStore.Downloads.DISPLAY_NAME} LIKE ? AND ${android.provider.MediaStore.Downloads.RELATIVE_PATH} LIKE ?",
+                    arrayOf("Atom%.apk", "Download/Atom/Documents%")
+                )
+                InAppLogger.d("UpdateChecker", "pre-download delete Atom*.apk: $deleted")
+            } catch (e: Exception) {
+                InAppLogger.d("UpdateChecker", "pre-download delete error: ${e.message}")
+            }
+        }
+
         Thread {
             try {
                 val dir = File(activity.cacheDir, "apk").apply { mkdirs() }
@@ -410,19 +425,7 @@ object UpdateChecker {
     }
 
     internal fun saveApkToDownloads(ctx: Context, apk: File, tag: String): android.net.Uri? {
-        // B10d: удалить старый Atom.apk перед insert — иначе MediaStore добавит (1), (2)...
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            try {
-                val deleted = ctx.contentResolver.delete(
-                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    "${android.provider.MediaStore.Downloads.DISPLAY_NAME}=? AND ${android.provider.MediaStore.Downloads.RELATIVE_PATH} LIKE ?",
-                    arrayOf("Atom.apk", "Download/Atom/Documents%")
-                )
-                InAppLogger.d("UpdateChecker", "deleted old Atom.apk count=$deleted")
-            } catch (e: Exception) {
-                InAppLogger.d("UpdateChecker", "delete old Atom.apk error: ${e.message}")
-            }
-        }
+        // B10d.1: delete старых Atom*.apk теперь в downloadAndInstall ДО скачивания.
         return try {
             val result = com.garickbox.atom.MediaStoreSaver.save(
                 ctx, apk, "Atom.apk", "application/vnd.android.package-archive"
