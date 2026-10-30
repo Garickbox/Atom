@@ -405,21 +405,74 @@ class FileSenderService : Service() {
         InAppLogger.d("FileSenderService",
             "start transfer: ${threadCount} thread(s) for $size bytes")
 
-        return try {
-            sendMultiThread(node, peerIp, uri, name, size, transferId, peerName, contentHash, threadCount, fileIndex, fileCount)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            InAppLogger.d("FileSenderService", "cancelled by coroutine")
-            throw e
-        } catch (e: Exception) {
-            InAppLogger.d("FileSenderService", "send error: ${e.message}")
-            AtomController.transferState.value = TransferState.Failed(
-                transferId, peerName, name, e.message ?: "ошибка", peerIp, contentHash
-            )
-            TransferNotification.update(this, NOTIF_ID,
-                TransferNotification.buildFailed(this, transferId, peerName, name,
-                    e.message ?: "соединение"))
-            -1L
+        // B8: retry при connection error (ConnectionReset/Broken pipe).
+        // Receiver иногда "холодный" на первом TCP после P2P connect —
+        // stale socket в backlog → первый connect падает через 20ms.
+        // Файлы 2-N проходят сразу (receiver уже "прогрет").
+        var finalTid = transferId
+        var lastErr: String? = null
+        for (sendAttempt in 1..3) {
+            try {
+                return sendMultiThread(node, peerIp, uri, name, size, finalTid, peerName, contentHash, threadCount, fileIndex, fileCount)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                InAppLogger.d("FileSenderService", "cancelled by coroutine")
+                throw e
+            } catch (e: Exception) {
+                val errClass = e.javaClass.simpleName
+                lastErr = e.message ?: errClass
+                InAppLogger.d("FileSenderService",
+                    "send error (attempt $sendAttempt/3): $errClass: ${e.message}")
+
+                // Retry только при connection errors, не при бизнес-ошибках
+                val isConnErr = e is java.net.SocketException || e is java.io.IOException
+                if (!isConnErr || sendAttempt >= 3) break
+
+                kotlinx.coroutines.delay(300L)
+                finalTid = UUID.randomUUID().toString()
+                InAppLogger.d("FileSenderService",
+                    "retry с новым tid=${finalTid.take(8)} (stale socket в backlog)")
+
+                // Переотправить FILE_OFFER с новым tid
+                val retryOfferJson = JSONObject().apply {
+                    put("tid", finalTid)
+                    put("hash", contentHash)
+                    put("name", name)
+                    put("size", size)
+                    put("peer_id", AtomController.myId)
+                    put("peer_name", AtomController.myName)
+                }
+                var retryAccepted = false
+                for (offerAttempt in 1..10) {
+                    val d = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
+                    pendingAccepts[finalTid] = d
+                    node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, retryOfferJson))
+                    val r = try {
+                        kotlinx.coroutines.withTimeoutOrNull(1_500L) { d.await() }
+                    } catch (_: Exception) { null } finally {
+                        pendingAccepts.remove(finalTid, d)
+                    }
+                    if (r != null && r.isSuccess) { retryAccepted = true; break }
+                    if (r != null && !r.isSuccess) {
+                        val reason = (r.exceptionOrNull() as? DeclineException)?.reason
+                        if (reason != "busy") break
+                        kotlinx.coroutines.delay(200L * minOf(offerAttempt, 3))
+                        continue
+                    }
+                }
+                if (!retryAccepted) {
+                    InAppLogger.d("FileSenderService", "retry offer not accepted — giving up")
+                    break
+                }
+            }
         }
+        // все 3 попытки исчерпаны
+        AtomController.transferState.value = TransferState.Failed(
+            transferId, peerName, name, lastErr ?: "ошибка", peerIp, contentHash
+        )
+        TransferNotification.update(this, NOTIF_ID,
+            TransferNotification.buildFailed(this, transferId, peerName, name,
+                lastErr ?: "соединение"))
+        return -1L
     }
 
     /**

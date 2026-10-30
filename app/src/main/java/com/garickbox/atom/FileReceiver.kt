@@ -138,6 +138,7 @@ object FileReceiver {
         offer: MeshNode.FileOffer
     ) {
         var registered = false
+        var tidForLog: String = "?"
         try {
             socket.receiveBufferSize = 4 * 1024 * 1024
             val dis = DataInputStream(BufferedInputStream(socket.getInputStream(), 512 * 1024))
@@ -145,6 +146,7 @@ object FileReceiver {
             // Header
             val tidLen = dis.readInt()
             val tid = String(readN(dis, tidLen), Charsets.UTF_8)
+            tidForLog = tid
 
             val hashLen = dis.readInt()
             val senderHash = String(readN(dis, hashLen), Charsets.UTF_8)
@@ -238,7 +240,10 @@ object FileReceiver {
                 }
             }
         } catch (e: Exception) {
-            InAppLogger.d("FileReceiver", "header read error: ${e.message}")
+            val errClass = e.javaClass.simpleName
+            val phase = if (tidForLog == "?") "before header" else "after header tid=${tidForLog.take(8)}"
+            InAppLogger.d("FileReceiver",
+                "handleIncomingSocket error ($phase): $errClass: ${e.message}")
             try { socket.close() } catch (_: Exception) {}
             if (!registered) _isBusy.set(false)
         }
