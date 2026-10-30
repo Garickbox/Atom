@@ -30,11 +30,30 @@ object AboutDialog {
             🔗  github.com/Garickbox/Atom
         """.trimIndent()
 
+        val apkUri = ApkShareHelper.findLatestApk(activity)
+        val items = mutableListOf<String>()
+        if (apkUri != null) items.add("📦 Поделиться APK-файлом")
+        items.add("📤 Поделиться ссылкой")
+        items.add("🌐 Открыть GitHub")
+
         AlertDialog.Builder(activity)
             .setTitle("⚛️ Атом")
             .setMessage(message)
-            .setPositiveButton("📤 Поделиться") { _, _ -> shareLink(activity) }
-            .setNeutralButton("🌐 GitHub") { _, _ -> openGitHub(activity) }
+            .setItems(items.toTypedArray()) { _, which ->
+                var idx = which
+                if (apkUri != null) {
+                    if (idx == 0) {
+                        ApkShareHelper.shareApk(activity, apkUri)
+                        return@setItems
+                    }
+                    idx--
+                }
+                when (idx) {
+                    0 -> shareLink(activity)
+                    1 -> openGitHub(activity)
+                    else -> {}
+                }
+            }
             .setNegativeButton("Закрыть", null)
             .show()
     }
