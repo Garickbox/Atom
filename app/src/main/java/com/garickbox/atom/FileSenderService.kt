@@ -225,7 +225,7 @@ class FileSenderService : Service() {
                 ))
             }
 
-            keepAliveJob.cancel()
+            keepAliveJob?.cancel()
             val duration = System.currentTimeMillis() - startedAt
             AtomController.transferState.value = TransferState.Success(
                 peerName, filesOk, totalSent, duration
