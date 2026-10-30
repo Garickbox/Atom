@@ -67,23 +67,36 @@ object FileReceiver {
             return
         }
 
-        val required = offer.size + 5 * 1024 * 1024
-        val free = ctx.getExternalFilesDir(null)?.usableSpace ?: 0L
-        if (free < required) {
-            sendDecline(ctx, offer, "no_space")
-            return
+        var accepted = false
+        try {
+            val required = offer.size + 5 * 1024 * 1024
+            val free = ctx.getExternalFilesDir(null)?.usableSpace ?: 0L
+            if (free < required) {
+                sendDecline(ctx, offer, "no_space")
+                return
+            }
+
+            val node = AtomController.meshNode
+            if (node == null) {
+                InAppLogger.d("FileReceiver", "node null — decline")
+                sendDecline(ctx, offer, "declined")
+                return
+            }
+
+            AtomController.setTransferActive(true)
+            sendAccept(ctx, offer, 0L)
+            accepted = true
+            InAppLogger.d("FileReceiver", "accepted (busy CAS), waiting for TCP")
+
+            FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
+            node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
+        } finally {
+            if (!accepted) {
+                InAppLogger.d("FileReceiver", "releasing busy — не приняли")
+                _isBusy.set(false)
+                AtomController.setTransferActive(false)
+            }
         }
-
-        // transferActive ДО sendAccept — блокирует continuousDiscover
-        AtomController.setTransferActive(true)
-        sendAccept(ctx, offer, 0L)
-        // busy уже захвачен атомарно выше
-        InAppLogger.d("FileReceiver", "accepted (busy CAS), waiting for TCP")
-
-        FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
-
-        val node = AtomController.meshNode ?: return
-        node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
     }
 
     private fun sendAccept(ctx: Context, offer: MeshNode.FileOffer, offset: Long) {
@@ -205,7 +218,14 @@ object FileReceiver {
                     if (done >= session.threadCount) {
                         InAppLogger.d("FileReceiver", "all threads done, releasing busy")
                         _isBusy.set(false)
-                        scope.launch { finalizeSession(session, ctx) }
+                        FileReceiverService.finalizeStart()
+                        scope.launch {
+                            try {
+                                finalizeSession(session, ctx)
+                            } finally {
+                                FileReceiverService.finalizeEnd(ctx)
+                            }
+                        }
                     }
                 }
             }
@@ -234,7 +254,7 @@ object FileReceiver {
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
                 // busy уже освобождён в handleIncomingSocket
-                FileReceiverService.stop(ctx)
+                // stop → finalizeEnd()
             }
         }
     }
@@ -256,7 +276,7 @@ object FileReceiver {
                 AtomController.transferState.value = TransferState.Failed(
                     session.tid, session.peerName, session.name, "Ошибка потока", "", ""
                 )
-                FileReceiverService.stop(ctx)
+                // stop → finalizeEnd()
                 return
             }
 
@@ -266,7 +286,7 @@ object FileReceiver {
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
                 // busy уже освобождён в handleIncomingSocket
-                FileReceiverService.stop(ctx)
+                // stop → finalizeEnd()
                 return
             }
 
@@ -276,9 +296,8 @@ object FileReceiver {
             InAppLogger.d("FileReceiver",
                 "SHA-256: ${if (hashOk) "OK" else "MISMATCH"} actual=${actualHash.take(16)}… expected=${session.hash.take(16)}…")
 
-            // MediaStore
-            val uniqueName = resolveUniqueName(ctx, session.name)
-            val result = MediaStoreSaver.save(ctx, session.partFile, uniqueName, null)
+            // MediaStore сам уникализирует имя если файл существует
+            val result = MediaStoreSaver.save(ctx, session.partFile, session.name, null)
 
             session.partFile.delete()
             activeSessions.remove(session.tid)
@@ -289,25 +308,32 @@ object FileReceiver {
                 TransferHistory.add(ctx, TransferHistory.Record(
                     id = session.tid,
                     peerName = session.peerName,
-                    fileName = uniqueName,
+                    fileName = result.displayPath.substringAfterLast('/').ifBlank { session.name },
                     bytes = session.totalSize,
                     durationMs = 0L,
                     status = if (hashOk) "success" else "corrupted",
                     timestamp = System.currentTimeMillis(),
                     savedPath = result.displayPath
                 ))
-                AtomController.transferState.value = TransferState.Success(
-                    session.peerName, 1, session.totalSize, 0
-                )
+                // Обновляем Success только если никакой другой приём не идёт
+                val currentState = AtomController.transferState.value
+                if (currentState !is TransferState.Running) {
+                    AtomController.transferState.value = TransferState.Success(
+                        session.peerName, 1, session.totalSize, 0
+                    )
+                } else {
+                    InAppLogger.d("FileReceiver",
+                        "finalize: пропускаем Success — идёт другой Running")
+                }
             } else {
                 InAppLogger.d("FileReceiver", "MediaStore save failed")
             }
-            FileReceiverService.stop(ctx)
+            // stop → finalizeEnd()
         } catch (e: Exception) {
             InAppLogger.d("FileReceiver", "finalize error: ${e.message}")
             activeSessions.remove(session.tid)
             // busy уже освобождён в handleIncomingSocket
-            FileReceiverService.stop(ctx)
+            // stop → finalizeEnd()
         }
     }
 
@@ -354,7 +380,7 @@ object FileReceiver {
         activeSessions.clear()
             // busy уже освобождён в handleIncomingSocket
         AtomController.transferState.value = TransferState.Idle
-        FileReceiverService.stop(ctx)
+            // stop → finalizeEnd()
     }
 
     fun onCancel(ctx: Context, transferId: String) {
@@ -369,6 +395,6 @@ object FileReceiver {
         }
             // busy уже освобождён в handleIncomingSocket
         AtomController.transferState.value = TransferState.Idle
-        FileReceiverService.stop(ctx)
+            // stop → finalizeEnd()
     }
 }

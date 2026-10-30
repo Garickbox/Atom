@@ -67,6 +67,16 @@ class FileReceiverService : Service() {
 
         @Volatile
         private var instance: FileReceiverService? = null
+        private val activeFinalizes = java.util.concurrent.atomic.AtomicInteger(0)
+
+        fun finalizeStart() { activeFinalizes.incrementAndGet() }
+        fun finalizeEnd(ctx: Context) {
+            val remaining = activeFinalizes.decrementAndGet()
+            if (remaining <= 0) {
+                activeFinalizes.set(0)
+                stop(ctx)
+            }
+        }
         private val receiverSpeedTracker = SpeedTracker()
         private var currentPeerName: String = "?"
         private var currentTransferId: String = ""
