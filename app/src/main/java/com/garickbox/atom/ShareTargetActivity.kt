@@ -56,6 +56,13 @@ class ShareTargetActivity : AppCompatActivity() {
 
     private var uris: List<Uri> = emptyList()
     private var dialog: BottomSheetDialog? = null
+    private var tvDialog: androidx.appcompat.app.AlertDialog? = null
+
+    override fun onDestroy() {
+        try { tvDialog?.dismiss() } catch (_: Exception) {}
+        tvDialog = null
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +88,10 @@ class ShareTargetActivity : AppCompatActivity() {
             } catch (_: Exception) {}
         }
 
+        if (isTv()) {
+            showTvFlow()
+            return
+        }
         showStep1()
     }
 
@@ -202,7 +213,148 @@ class ShareTargetActivity : AppCompatActivity() {
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  Wi-Fi Direct (P2P)
+    //  TV FLOW: AlertDialog вместо BottomSheet
+    // ═══════════════════════════════════════════════════════════
+
+    private fun isTv(): Boolean {
+        return try {
+            val uiMode = getSystemService(android.content.Context.UI_MODE_SERVICE)
+                as? android.app.UiModeManager
+            val isTvMode = uiMode?.currentModeType ==
+                android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+            val hasLeanback = packageManager.hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_LEANBACK
+            )
+            isTvMode || hasLeanback
+        } catch (e: Exception) {
+            InAppLogger.d("ShareTarget", "isTv error: ${e.message}")
+            false
+        }
+    }
+
+    private fun showTvFlow() {
+        InAppLogger.d("ShareTarget", "TV flow START")
+        preflightCheck(null) { startTvDiscovery() }
+    }
+
+    private fun startTvDiscovery() {
+        InAppLogger.d("ShareTarget", "TV P2P discovery START")
+        val wd = AtomController.wifiDirect
+        if (wd == null) {
+            Toast.makeText(this, "Wi-Fi Direct не инициализирован", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        wd.stopContinuousDiscover()
+
+        tvDialog?.dismiss()
+        tvDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("📡 Поиск получателя…")
+            .setMessage("Ищу устройства через Wi-Fi Direct")
+            .setCancelable(true)
+            .setOnCancelListener { finish() }
+            .show()
+
+        var found = false
+        wd.onPeersChanged = onPeersChanged@ { peers ->
+            if (found) return@onPeersChanged
+            val filtered = peers.filter { it.deviceName.isNotBlank() }
+            InAppLogger.d("ShareTarget",
+                "TV p2p peers: ${filtered.map { "${it.deviceName}/${it.deviceAddress}" }}")
+            if (filtered.isNotEmpty()) {
+                found = true
+                tvDialog?.dismiss()
+                runOnUiThread { showTvPeerPicker(filtered) }
+            }
+        }
+        wd.onError = { err ->
+            InAppLogger.d("ShareTarget", "TV p2p error: $err")
+            tvDialog?.dismiss()
+            Toast.makeText(this, err, Toast.LENGTH_LONG).show()
+            finish()
+        }
+        wd.discoverPeers()
+    }
+
+    private fun showTvPeerPicker(peers: List<android.net.wifi.p2p.WifiP2pDevice>) {
+        val names = peers.map { "📶 ${it.deviceName}" }.toTypedArray()
+        tvDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Куда отправить?")
+            .setItems(names) { _, which ->
+                val p = peers[which]
+                connectP2pTv(p.deviceAddress, p.deviceName)
+            }
+            .setNegativeButton("Отмена") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
+    }
+
+    private fun connectP2pTv(mac: String, name: String) {
+        InAppLogger.d("ShareTarget", "TV connect START: mac=$mac name=$name")
+        val wd = AtomController.wifiDirect ?: return
+
+        tvDialog?.dismiss()
+        tvDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Подключаюсь к $name…")
+            .setMessage("Это займёт 10-20 секунд")
+            .setCancelable(false)
+            .show()
+
+        var done = false
+        val timeoutJob = lifecycleScope.launch {
+            delay(20000)
+            if (!done) {
+                done = true
+                tvDialog?.dismiss()
+                Toast.makeText(this@ShareTargetActivity,
+                    "Не удалось подключиться. Попробуй ещё раз.",
+                    Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+
+        wd.onConnected = onConnected@ { conn ->
+            if (done) return@onConnected
+            done = true
+            timeoutJob.cancel()
+            InAppLogger.d("ShareTarget",
+                "TV p2p connected: isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+
+            val node = AtomController.meshNode
+            if (node != null && !conn.isGroupOwner) {
+                node.sendHello(conn.groupOwnerAddress)
+            }
+
+            lifecycleScope.launch {
+                delay(2500)
+                val peer = AtomController.peers.value.firstOrNull {
+                    it.ip.startsWith("192.168.49.") && it.id != AtomController.myId
+                }
+                tvDialog?.dismiss()
+                if (peer != null) {
+                    InAppLogger.d("ShareTarget", "TV peer resolved: ${peer.name} @ ${peer.ip}")
+                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris)
+                    finish()
+                } else {
+                    val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
+                    if (targetIp != null) {
+                        val fakePeer = Peer(id = "p2p", name = name, ip = targetIp)
+                        FileSenderService.startTransfer(
+                            this@ShareTargetActivity, fakePeer, uris)
+                        finish()
+                    } else {
+                        Toast.makeText(this@ShareTargetActivity,
+                            "Не удалось получить IP пира", Toast.LENGTH_LONG).show()
+                        finish()
+                    }
+                }
+            }
+        }
+        wd.connect(mac)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Wi-Fi Direct (P2P) — мобильный flow
     // ═══════════════════════════════════════════════════════════
     private fun startWifiDirectFlow(parent: BottomSheetDialog) {
         InAppLogger.d("ShareTarget", "P2P search START")
@@ -347,7 +499,7 @@ class ShareTargetActivity : AppCompatActivity() {
      * Если всё ок — onReady(). Иначе — диалог + открыть настройки.
      * После возврата из настроек onResume продолжит автоматически.
      */
-    private fun preflightCheck(parent: BottomSheetDialog, onReady: () -> Unit) {
+    private fun preflightCheck(parent: BottomSheetDialog?, onReady: () -> Unit) {
         pendingPreflightCallback = onReady
         PreflightDialog.check(
             activity = this,
