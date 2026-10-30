@@ -79,8 +79,15 @@ class FileSenderService : Service() {
 
         // Подключаем приём ответов на FILE_OFFER
         AtomController.meshNode?.onFileAccept = { tid, offset ->
-            InAppLogger.d("FileSenderService", "got FILE_ACCEPT tid=$tid offset=$offset")
-            pendingAccepts[tid]?.complete(Result.success(offset))
+            val deferred = pendingAccepts[tid]
+            if (deferred != null) {
+                InAppLogger.d("FileSenderService",
+                    "got FILE_ACCEPT tid=${tid.take(8)} offset=$offset")
+                deferred.complete(Result.success(offset))
+            } else {
+                InAppLogger.d("FileSenderService",
+                    "got FILE_ACCEPT tid=${tid.take(8)} but no awaiter (next attempt)")
+            }
         }
         AtomController.meshNode?.onFileDecline = { tid, reason ->
             InAppLogger.d("FileSenderService", "got FILE_DECLINE tid=$tid reason=$reason")
@@ -303,42 +310,45 @@ class FileSenderService : Service() {
             put("peer_name", AtomController.myName)
         }
 
-        // ОДИН deferred на всю серию — ответ от B всегда попадёт в него
-        val acceptDeferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
-        pendingAccepts[transferId] = acceptDeferred
-
+        // ВАЖНО: CompletableDeferred одноразовый. Новый на каждую попытку,
+        // иначе первый DECLINE{busy} навсегда закроет его, и ACCEPT на следующих
+        // попытках молча игнорируется (await вернёт старое failure).
         var acceptResult: Result<Long>? = null
         var lastReason: String? = null
         val offerStart = System.currentTimeMillis()
-        try {
-            for (attempt in 1..30) {
-                node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
-                val r = try {
-                    kotlinx.coroutines.withTimeoutOrNull(1_000L) { acceptDeferred.await() }
-                } catch (e: Exception) { null }
+        for (attempt in 1..30) {
+            val deferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
+            pendingAccepts[transferId] = deferred
+            node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
+            val r = try {
+                kotlinx.coroutines.withTimeoutOrNull(1_500L) { deferred.await() }
+            } catch (e: Exception) { null } finally {
+                pendingAccepts.remove(transferId, deferred)
+            }
 
-                if (r != null) {
-                    if (r.isSuccess) {
-                        acceptResult = r
-                        val offerMs = System.currentTimeMillis() - offerStart
-                        InAppLogger.d("FileSenderService",
-                            "FILE_ACCEPT in ${offerMs}ms (attempt $attempt)")
-                        break
-                    }
-                    val reason = (r.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
-                    if (reason == "busy") {
-                        lastReason = "busy"
-                        InAppLogger.d("FileSenderService",
-                            "busy (attempt $attempt/30) — retry через 1 сек")
-                        kotlinx.coroutines.delay(1000)
-                        continue
-                    }
+            if (r != null) {
+                if (r.isSuccess) {
                     acceptResult = r
+                    val offerMs = System.currentTimeMillis() - offerStart
+                    InAppLogger.d("FileSenderService",
+                        "accept OK in ${offerMs}ms (attempt $attempt)")
                     break
                 }
+                val reason = (r.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
+                if (reason == "busy") {
+                    lastReason = "busy"
+                    // Backoff: 1с → 2с → 3с → 3с...
+                    val delayMs = 1000L * minOf(attempt, 3)
+                    InAppLogger.d("FileSenderService",
+                        "busy (attempt $attempt/30) — retry через ${delayMs}ms")
+                    kotlinx.coroutines.delay(delayMs)
+                    continue
+                }
+                // no_space / declined — не retry
+                acceptResult = r
+                break
             }
-        } finally {
-            pendingAccepts.remove(transferId)
+            // timeout — retry
         }
         if (acceptResult == null && lastReason == "busy") {
             InAppLogger.d("FileSenderService", "busy timeout 30 сек — сдаюсь")
