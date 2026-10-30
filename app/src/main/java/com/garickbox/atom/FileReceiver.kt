@@ -50,20 +50,21 @@ object FileReceiver {
         InAppLogger.d("FileReceiver",
             "offer from ${offer.peerName}: ${offer.name} (${offer.size} b), busy=${isBusy}")
 
+        // Self-heal: если busy=true но нет активных сессий — сбрасываем
         if (_isBusy.get()) {
-            // Self-heal: если нет активных приёмов — busy застрял, сбрасываем
             val anyReceiving = activeSessions.values.any {
                 it.finished.get() < it.threadCount
             }
             if (!anyReceiving) {
-                InAppLogger.d("FileReceiver", "busy stuck (no active receive) — self-heal to false")
+                InAppLogger.d("FileReceiver", "busy stuck — self-heal")
                 _isBusy.set(false)
-                // Не return — продолжаем приём
-            } else {
-                InAppLogger.d("FileReceiver", "decline busy — active session still receiving")
-                sendDecline(ctx, offer, "busy")
-                return
             }
+        }
+        // АТОМАРНЫЙ захват busy — CAS. Если не получилось — decline
+        if (!_isBusy.compareAndSet(false, true)) {
+            InAppLogger.d("FileReceiver", "decline busy — CAS failed")
+            sendDecline(ctx, offer, "busy")
+            return
         }
 
         val required = offer.size + 5 * 1024 * 1024
@@ -73,9 +74,11 @@ object FileReceiver {
             return
         }
 
+        // transferActive ДО sendAccept — блокирует continuousDiscover
+        AtomController.setTransferActive(true)
         sendAccept(ctx, offer, 0L)
-        _isBusy.set(true)
-        InAppLogger.d("FileReceiver", "accepted, waiting for TCP threads")
+        // busy уже захвачен атомарно выше
+        InAppLogger.d("FileReceiver", "accepted (busy CAS), waiting for TCP")
 
         FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
 

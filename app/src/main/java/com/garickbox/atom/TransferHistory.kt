@@ -5,6 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object TransferHistory {
+    private val lock = Any()
+
     private const val PREFS = "atom"
     private const val KEY = "transfer_history"
     private const val MAX_ITEMS = 50
@@ -34,13 +36,17 @@ object TransferHistory {
     }
 
     fun add(ctx: Context, rec: Record) {
-        val current = list(ctx).toMutableList()
-        current.add(0, rec)
-        save(ctx, current.take(MAX_ITEMS))
+        synchronized(lock) {
+            val current = list(ctx).toMutableList()
+            current.add(0, rec)
+            save(ctx, current.take(MAX_ITEMS))
+        }
     }
 
     fun clear(ctx: Context) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
+        synchronized(lock) {
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
+        }
     }
 
     private fun save(ctx: Context, records: List<Record>) {

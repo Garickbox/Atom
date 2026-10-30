@@ -381,14 +381,21 @@ class MeshNode(private val ctx: Context) {
 
     suspend fun probePeer(ip: String, timeoutMs: Long = 1500): Boolean {
         val future = CompletableDeferred<Boolean>()
-        hereAwaiters[ip] = future
+        // putIfAbsent — не перезаписывать существующий awaiter
+        val existing = hereAwaiters.putIfAbsent(ip, future)
+        if (existing != null) {
+            return withTimeoutOrNull(timeoutMs) {
+                sendHello(ip)
+                existing.await()
+            } ?: false
+        }
         try {
             return withTimeoutOrNull(timeoutMs) {
                 sendHello(ip)
                 future.await()
             } ?: false
         } finally {
-            hereAwaiters.remove(ip)
+            hereAwaiters.remove(ip, future)
         }
     }
 

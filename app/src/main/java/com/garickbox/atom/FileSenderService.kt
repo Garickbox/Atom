@@ -66,6 +66,7 @@ class FileSenderService : Service() {
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var currentJob: Job? = null
+    private var keepAliveJob: Job? = null
 
     override fun onCreate() {
         try { AtomController.setTransferActive(true) } catch (_: Exception) {}
@@ -101,6 +102,8 @@ class FileSenderService : Service() {
             }
             TransferNotification.ACTION_CANCEL -> {
                 InAppLogger.d("FileSenderService", "cancel requested")
+                keepAliveJob?.cancel()
+                keepAliveJob = null
                 val curState = AtomController.transferState.value
                 if (curState is TransferState.Running) {
                     // ВАЖНО: синхронный sendPacketBlocking — иначе scope.cancel убьёт пакет
@@ -169,7 +172,8 @@ class FileSenderService : Service() {
             var filesOk = 0
 
             // Keep-alive: HELLO каждые 10 сек — framework HyperOS не гасит P2P
-            val keepAliveJob = scope.launch {
+            keepAliveJob?.cancel()
+            keepAliveJob = scope.launch {
                 while (true) {
                     kotlinx.coroutines.delay(10_000)
                     try {
