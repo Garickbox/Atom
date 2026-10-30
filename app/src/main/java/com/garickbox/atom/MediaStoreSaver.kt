@@ -23,18 +23,26 @@ object MediaStoreSaver {
     data class SaveResult(val uri: Uri?, val displayPath: String)
 
     fun save(ctx: Context, source: File, fileName: String, mimeType: String?): SaveResult {
-        return try {
-            val type = mimeType ?: guessMime(fileName)
-            val category = categoryFor(type)
-            val relPath = "$ROOT_DIR/$category"
+        val type = mimeType ?: guessMime(fileName)
+        val category = categoryFor(type)
+        val relPath = "$ROOT_DIR/$category"
 
-            if (Build.VERSION.SDK_INT >= 29) {
-                saveModern(ctx, source, fileName, type, relPath)
-            } else {
-                saveLegacy(ctx, source, fileName, relPath)
+        // B10a: MediaStore.Downloads на некоторых TV не создаёт RELATIVE_PATH поддиректории.
+        // При любой ошибке saveModern → fallback на прямую запись saveLegacy.
+        if (Build.VERSION.SDK_INT >= 29) {
+            try {
+                val r = saveModern(ctx, source, fileName, type, relPath)
+                if (r.uri != null) return r
+                InAppLogger.d("MediaStoreSaver", "saveModern: null uri → fallback to legacy")
+            } catch (e: Exception) {
+                InAppLogger.d("MediaStoreSaver", "saveModern error: ${e.message} → fallback to legacy")
             }
+        }
+
+        return try {
+            saveLegacy(ctx, source, fileName, relPath)
         } catch (e: Exception) {
-            InAppLogger.d("MediaStoreSaver", "error: ${e.message}")
+            InAppLogger.d("MediaStoreSaver", "saveLegacy error: ${e.message}")
             SaveResult(null, "")
         }
     }

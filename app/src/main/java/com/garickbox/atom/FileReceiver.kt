@@ -58,10 +58,12 @@ object FileReceiver {
         if (offer.resumeOffset > 0) {
             val existing = activeSessions[offer.transferId]
             if (existing != null) {
-                val actualPartSize = existing.partFile.length()
-                val actualOffset = if (actualPartSize > 0 && actualPartSize <= offer.size) actualPartSize else 0L
+                // B10a: partFile.length() = totalSize всегда (raf.setLength() создаёт файл сразу).
+                // Используем received.get() — реальное число полученных байт.
+                val actualReceived = existing.received.get()
+                val actualOffset = if (actualReceived > 0 && actualReceived <= offer.size) actualReceived else 0L
                 InAppLogger.d("FileReceiver",
-                    "resume: tid=${offer.transferId.take(8)} offer=${offer.resumeOffset} part=$actualPartSize → ACK $actualOffset")
+                    "resume: tid=${offer.transferId.take(8)} offer=${offer.resumeOffset} received=$actualReceived → ACK $actualOffset")
                 existing.paused.set(false)
                 existing.lastProgressAt = System.currentTimeMillis()
                 sendAccept(ctx, offer, actualOffset)
