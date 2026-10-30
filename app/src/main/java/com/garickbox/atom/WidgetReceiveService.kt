@@ -74,6 +74,7 @@ class WidgetReceiveService : Service() {
                 InAppLogger.d("WidgetReceive", "ON until " + activeUntil)
                 scheduleAutoStop()
                 AtomWidgetProvider.refreshNow(this)
+                try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
             }
             ACTION_STOP -> {
                 InAppLogger.d("WidgetReceive", "manual stop from notification")

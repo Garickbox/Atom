@@ -99,6 +99,9 @@ class MainActivity : AppCompatActivity() {
         // Первый запуск — имя
         if (!AtomController.hasName()) {
             startActivity(Intent(this, NameSetupActivity::class.java))
+        } else {
+            // B11.6: онбординг автозапуска HyperOS (только если имя уже есть)
+            maybePromptHyperOsAutostart()
         }
 
         setupTvIfNeeded()
@@ -140,6 +143,40 @@ class MainActivity : AppCompatActivity() {
                 release = release
             )
         }
+    }
+
+    private fun isHyperOsFamily(): Boolean {
+        return try {
+            val brand = (android.os.Build.BRAND ?: "").lowercase()
+            val manufacturer = (android.os.Build.MANUFACTURER ?: "").lowercase()
+            brand in listOf("xiaomi", "redmi", "poco") ||
+                manufacturer in listOf("xiaomi", "redmi", "poco")
+        } catch (_: Exception) { false }
+    }
+
+    private fun maybePromptHyperOsAutostart() {
+        if (!isHyperOsFamily()) return
+        val prefs = getSharedPreferences("atom", MODE_PRIVATE)
+        if (prefs.getBoolean("hyperos_autostart_prompt_shown", false)) return
+        prefs.edit().putBoolean("hyperos_autostart_prompt_shown", true).apply()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Включи Автозапуск")
+            .setMessage(
+                "На HyperOS / MIUI Атом не сможет запускаться в фоне из виджета и плитки в шторке, " +
+                "если не разрешён Автозапуск.\n\n" +
+                "Настройки → Приложения → Атом → Автозапуск → Вкл\n\n" +
+                "Это одноразовая настройка."
+            )
+            .setPositiveButton("Открыть настройки") { _, _ ->
+                try {
+                    startActivity(Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:" + packageName)
+                    ))
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton("Понятно", null)
+            .show()
     }
 
     private fun showAbout() {
