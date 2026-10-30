@@ -98,7 +98,9 @@ class AtomWidgetProvider : AppWidgetProvider() {
 
         private fun piService(ctx: Context, reqCode: Int, action: String): PendingIntent {
             val i = Intent(ctx, FileSenderService::class.java).apply { this.action = action }
-            return PendingIntent.getService(ctx, reqCode, i,
+            // B11.4: getForegroundService — иначе при убитом процессе startService
+            // заблокирован на Android 8+ (Background Service Restriction).
+            return PendingIntent.getForegroundService(ctx, reqCode, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
@@ -106,7 +108,8 @@ class AtomWidgetProvider : AppWidgetProvider() {
             val i = Intent(ctx, WidgetReceiveService::class.java).apply {
                 action = WidgetReceiveService.ACTION_TOGGLE
             }
-            return PendingIntent.getService(ctx, 8004, i,
+            // B11.4: getForegroundService — критично для убитого процесса
+            return PendingIntent.getForegroundService(ctx, 8004, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 

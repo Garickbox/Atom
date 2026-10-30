@@ -40,7 +40,16 @@ class WidgetReceiveService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        // B11.4 ANR guard: если сервис стартовал без action (START_STICKY
+        // после ребута или аномальный restart) — обязаны вызвать startForeground
+        // в течение 5 сек, иначе RemoteServiceException crash.
+        if (intent?.action == null) {
+            InAppLogger.d("WidgetReceive", "onStartCommand intent=null → ANR guard")
+            try { startForeground(NOTIF_ID, buildNotif()) } catch (_: Exception) {}
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        when (intent.action) {
             ACTION_TOGGLE -> {
                 if (isActive) {
                     InAppLogger.d("WidgetReceive", "already active — stopping")
