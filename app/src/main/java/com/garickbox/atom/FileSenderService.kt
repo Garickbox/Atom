@@ -494,7 +494,7 @@ class FileSenderService : Service() {
                                     dos.flush()
                                     senderSpeedTracker.onProgress(total)
                                     val bps = senderSpeedTracker.bytesPerSecond()
-                                    TransferNotification.update(this@FileSenderService, NOTIF_ID,
+                                    TransferNotification.updateIfChanged(this@FileSenderService, NOTIF_ID,
                                         TransferNotification.buildRunning(
                                             this@FileSenderService, transferId, peerName,
                                             name, total, size, bps))
@@ -594,6 +594,7 @@ private fun displayName(uri: Uri): String? {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        TransferNotification.resetCache(NOTIF_ID)
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)

@@ -99,11 +99,25 @@ object TransferNotification {
             .build()
     }
 
+    private val lastKeys = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
     fun update(ctx: Context, id: Int, notification: Notification) {
         try {
             NotificationManagerCompat.from(ctx).notify(id, notification)
         } catch (_: SecurityException) {}
     }
+
+    /** Пропускает notify если title+text не изменились. Для прогресс-пути. */
+    fun updateIfChanged(ctx: Context, id: Int, notification: Notification) {
+        val title = notification.extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+        val text  = notification.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val key = title + "|" + text
+        if (lastKeys[id] == key) return
+        lastKeys[id] = key
+        update(ctx, id, notification)
+    }
+
+    fun resetCache(id: Int) { lastKeys.remove(id) }
 
     fun cancel(ctx: Context, id: Int) {
         NotificationManagerCompat.from(ctx).cancel(id)

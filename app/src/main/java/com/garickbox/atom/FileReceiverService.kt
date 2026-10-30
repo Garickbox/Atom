@@ -124,10 +124,23 @@ class FileReceiverService : Service() {
         return START_STICKY
     }
 
+    @Volatile private var lastNotifAt: Long = 0L
+    private var lastNotifKey: String = ""
+
+    @Synchronized
     private fun updateNotif(fileName: String, written: Long, total: Long, bps: Long = 0L) {
         try {
+            val now = System.currentTimeMillis()
+            if (now - lastNotifAt < 500L) return
+            val notif = buildNotif(fileName, written, total, bps)
+            val title = notif.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
+            val text  = notif.extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
+            val key = title + "|" + text
+            if (key == lastNotifKey) { lastNotifAt = now; return }
+            lastNotifKey = key
+            lastNotifAt = now
             val nm = androidx.core.app.NotificationManagerCompat.from(this)
-            nm.notify(NOTIF_ID, buildNotif(fileName, written, total, bps))
+            nm.notify(NOTIF_ID, notif)
         } catch (_: SecurityException) {}
     }
 
@@ -166,6 +179,8 @@ class FileReceiverService : Service() {
     }
 
     override fun onDestroy() {
+        lastNotifKey = ""
+        lastNotifAt = 0L
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         instance = null
         PowerLocks.releaseWifi(wifiLock)
