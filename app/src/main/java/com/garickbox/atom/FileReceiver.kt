@@ -43,20 +43,21 @@ object FileReceiver {
         val received: AtomicLong = AtomicLong(0),
         val finished: AtomicInteger = AtomicInteger(0),
         val failed: AtomicBoolean = AtomicBoolean(false),
-        val sockets: CopyOnWriteArrayList<Socket> = CopyOnWriteArrayList()
+        val sockets: CopyOnWriteArrayList<Socket> = CopyOnWriteArrayList(),
+        @Volatile var lastProgressAt: Long = System.currentTimeMillis(),
+        @Volatile var watchdogStarted: Boolean = false
     )
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
         InAppLogger.d("FileReceiver",
             "offer from ${offer.peerName}: ${offer.name} (${offer.size} b), busy=${isBusy}")
 
-        // Self-heal: если busy=true но нет активных сессий — сбрасываем
+        // Self-heal: busy=true но НЕТ активных сессий вообще — сбрасываем.
+        // ВАЖНО: не сбрасывать если есть сессии в finalize (finished >= threadCount),
+        // иначе новый приём стартует параллельно MediaStore.save старого.
         if (_isBusy.get()) {
-            val anyReceiving = activeSessions.values.any {
-                it.finished.get() < it.threadCount
-            }
-            if (!anyReceiving) {
-                InAppLogger.d("FileReceiver", "busy stuck — self-heal")
+            if (activeSessions.isEmpty()) {
+                InAppLogger.d("FileReceiver", "busy stuck, no sessions — self-heal")
                 _isBusy.set(false)
             }
         }
@@ -180,7 +181,7 @@ object FileReceiver {
             session.sockets.add(socket)
             registered = true
 
-            startWatchdog(session, ctx)
+            startWatchdogOnce(session, ctx)
 
             scope.launch {
                 var pos = offset
@@ -201,6 +202,7 @@ object FileReceiver {
                         }
                         pos += written
                         val total = session.received.addAndGet(written.toLong())
+                        session.lastProgressAt = System.currentTimeMillis()
                         FileReceiverService.updateProgress(ctx, name, total, totalSize)
                     }
                     InAppLogger.d("FileReceiver",
@@ -242,20 +244,29 @@ object FileReceiver {
         return b
     }
 
-    private fun startWatchdog(session: ReceiveSession, ctx: Context) {
+    private fun startWatchdogOnce(session: ReceiveSession, ctx: Context) {
+        // Один watchdog на сессию — не на поток
+        if (session.watchdogStarted) return
+        session.watchdogStarted = true
         scope.launch {
-            delay(300_000)  // 5 мин
-            if (session.finished.get() < session.threadCount) {
-                InAppLogger.d("FileReceiver", "watchdog: ${session.tid.take(8)} timeout")
-                session.failed.set(true)
-                session.sockets.forEach { try { it.close() } catch (_: Exception) {} }
-                try { session.channel.close() } catch (_: Exception) {}
-                try { session.raf.close() } catch (_: Exception) {}
-                session.partFile.delete()
-                activeSessions.remove(session.tid)
-                _isBusy.set(false)
-                AtomController.transferState.value = TransferState.Idle
-                FileReceiverService.stop(ctx)
+            while (true) {
+                delay(30_000)  // проверять каждые 30 сек
+                if (session.finished.get() >= session.threadCount) return@launch
+                val idleSec = (System.currentTimeMillis() - session.lastProgressAt) / 1000
+                if (idleSec > 60) {
+                    InAppLogger.d("FileReceiver",
+                        "watchdog: ${session.tid.take(8)} нет прогресса ${idleSec} сек — abort")
+                    session.failed.set(true)
+                    session.sockets.forEach { try { it.close() } catch (_: Exception) {} }
+                    try { session.channel.close() } catch (_: Exception) {}
+                    try { session.raf.close() } catch (_: Exception) {}
+                    session.partFile.delete()
+                    activeSessions.remove(session.tid)
+                    _isBusy.set(false)
+                    AtomController.transferState.value = TransferState.Idle
+                    FileReceiverService.stop(ctx)
+                    return@launch
+                }
             }
         }
     }

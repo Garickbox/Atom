@@ -141,10 +141,16 @@ class FileSenderService : Service() {
                 }, 800L)
             }
             TransferNotification.ACTION_RESUME -> {
-                InAppLogger.d("FileSenderService", "resume requested")
-                // Для MVP: resume после провала — пользователь жмёт «Продолжить»,
-                // сервис перезапускает передачу с теми же URIs.
-                // Полный resume через MAC пока не реализован (нужен Wi-Fi Direct).
+                InAppLogger.d("FileSenderService", "resume requested — not implemented, stop")
+                // TODO: реализовать resume через MAC. Пока — просто останавливаемся
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            else -> {
+                // null (после ребута системы) или неизвестный action — не держим lock'и
+                InAppLogger.d("FileSenderService", "onStartCommand null/unknown — stopSelf")
+                stopSelf()
+                return START_NOT_STICKY
             }
         }
         return START_STICKY
@@ -226,6 +232,12 @@ class FileSenderService : Service() {
             }
 
             keepAliveJob?.cancel()
+            // Если отменили — не показывать Success
+            if (!isActive) {
+                InAppLogger.d("FileSenderService",
+                    "cancelled — не показываем Success (${filesOk} файлов успели)")
+                return@launch
+            }
             val duration = System.currentTimeMillis() - startedAt
             AtomController.transferState.value = TransferState.Success(
                 peerName, filesOk, totalSent, duration
@@ -348,6 +360,9 @@ class FileSenderService : Service() {
 
         return try {
             sendMultiThread(node, peerIp, uri, name, size, transferId, peerName, contentHash, threadCount)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            InAppLogger.d("FileSenderService", "cancelled by coroutine")
+            throw e
         } catch (e: Exception) {
             InAppLogger.d("FileSenderService", "send error: ${e.message}")
             AtomController.transferState.value = TransferState.Failed(

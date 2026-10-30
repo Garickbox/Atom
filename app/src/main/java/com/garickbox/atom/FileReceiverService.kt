@@ -112,6 +112,12 @@ class FileReceiverService : Service() {
         val total = intent?.getLongExtra("totalSize", 0L) ?: 0L
         val peerName = intent?.getStringExtra("peerName") ?: "?"
         val transferId = intent?.getStringExtra("transferId") ?: ""
+        // null (после ребута системы) — не держим lock'и
+        if (intent?.action == null && fileName == "файл") {
+            InAppLogger.d("FileReceiverService", "onStartCommand null — stopSelf")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         setPeerInfo(peerName, transferId)
         InAppLogger.d("FileReceiverService", "start: $fileName ($total b)")
         updateNotif(fileName, 0, total)

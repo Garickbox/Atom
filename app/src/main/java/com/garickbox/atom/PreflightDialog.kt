@@ -50,14 +50,19 @@ object PreflightDialog {
             .setTitle("⚠️ Настройки не готовы")
             .setMessage(text.trimEnd())
             .setPositiveButton("Настроить") { _, _ ->
-                // Откроем настройки для первой системной проблемы
-                val firstSystemIssue = issues.firstOrNull {
-                    it.id != PreflightChecker.Id.PERMISSIONS
-                }
-                if (firstSystemIssue != null) {
-                    onOpenSystemSettings?.invoke(firstSystemIssue)
-                } else {
+                // ВАЖНО: сначала разрешения (runtime), потом системные настройки.
+                // Иначе после возврата из настроек окажутся недостающие разрешения —
+                // бесконечный цикл диалогов.
+                val permIssue = issues.firstOrNull { it.id == PreflightChecker.Id.PERMISSIONS }
+                if (permIssue != null) {
                     onRequestPermissions?.invoke()
+                } else {
+                    val firstSystemIssue = issues.firstOrNull {
+                        it.id != PreflightChecker.Id.PERMISSIONS
+                    }
+                    if (firstSystemIssue != null) {
+                        onOpenSystemSettings?.invoke(firstSystemIssue)
+                    }
                 }
             }
             .setNegativeButton("Отмена") { _, _ ->
