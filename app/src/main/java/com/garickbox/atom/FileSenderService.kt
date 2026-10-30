@@ -168,6 +168,16 @@ class FileSenderService : Service() {
             var totalSent = 0L
             var filesOk = 0
 
+            // Keep-alive: HELLO каждые 10 сек — framework HyperOS не гасит P2P
+            val keepAliveJob = scope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(10_000)
+                    try {
+                        node.sendHello(peerIp)
+                    } catch (_: Exception) {}
+                }
+            }
+
             for ((idx, uri) in uris.withIndex()) {
                 if (!isActive) break
                 val name = displayName(uri) ?: "file_${idx}"
@@ -183,8 +193,19 @@ class FileSenderService : Service() {
 
                 val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName)
                 if (sent < 0) {
-                    finishWithError(peerName, "Ошибка отправки $name")
-                    return@launch
+                    InAppLogger.d("FileSenderService",
+                        "file $name failed — продолжаем серию")
+                    TransferHistory.add(this@FileSenderService, TransferHistory.Record(
+                        id = transferId,
+                        peerName = peerName,
+                        fileName = name,
+                        bytes = 0L,
+                        durationMs = 0L,
+                        status = "failed",
+                        timestamp = System.currentTimeMillis(),
+                        savedPath = ""
+                    ))
+                    continue  // НЕ return — продолжаем следующий файл
                 }
                 totalSent += sent
                 filesOk++
@@ -200,6 +221,7 @@ class FileSenderService : Service() {
                 ))
             }
 
+            keepAliveJob.cancel()
             val duration = System.currentTimeMillis() - startedAt
             AtomController.transferState.value = TransferState.Success(
                 peerName, filesOk, totalSent, duration
@@ -359,7 +381,24 @@ class FileSenderService : Service() {
                 if (failed.get()) return@async
                 var socket: Socket? = null
                 try {
-                    socket = node.openTcpTo(peerIp, 5000)
+                    // TCP retry при ECONNREFUSED (framework HyperOS BUSY)
+                    var lastConnectErr: Exception? = null
+                    for (retry in 1..5) {
+                        try {
+                            socket = node.openTcpTo(peerIp, 5000)
+                            InAppLogger.d("FileSenderService",
+                                "tcp connect OK (thread $i, attempt $retry)")
+                            break
+                        } catch (ce: Exception) {
+                            lastConnectErr = ce
+                            InAppLogger.d("FileSenderService",
+                                "tcp connect fail (thread $i, $retry/5): ${ce.javaClass.simpleName}")
+                            if (retry < 5) kotlinx.coroutines.delay(1000)
+                        }
+                    }
+                    if (socket == null) {
+                        throw lastConnectErr ?: Exception("tcp connect failed")
+                    }
                     sockets.add(socket)
                     val dos = DataOutputStream(socket.getOutputStream())  // прямой socket — build-37
 
