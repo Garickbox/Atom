@@ -122,13 +122,19 @@ class WifiDirectManager(private val ctx: Context) {
         }
     }
 
+    @Volatile private var lastPeerKey: String = ""
+
     @SuppressLint("MissingPermission")
     private fun requestPeers() {
         try {
             manager?.requestPeers(channel) { list ->
                 val peers = list?.deviceList?.toList() ?: emptyList()
-                InAppLogger.d("WifiDirect",
-                    "requestPeers → ${peers.size} peer(s): ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+                val key = peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }.sorted().joinToString(",")
+                if (key != lastPeerKey) {
+                    lastPeerKey = key
+                    InAppLogger.d("WifiDirect",
+                        "requestPeers → ${peers.size} peer(s): ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+                }
                 if (peers.isNotEmpty()) {
                     onPeersChanged?.invoke(peers)
                 }
@@ -299,8 +305,7 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "discover tick ok → requestPeers")
-                    // ВАЖНО: сразу запрашиваем peers, не ждём broadcast
+                    // ВАЖНО: сразу запрашиваем peers — requestPeers сам залогирует изменения
                     requestPeers()
                 }
                 override fun onFailure(reason: Int) {

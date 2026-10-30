@@ -145,9 +145,6 @@ class ShareTargetActivity : AppCompatActivity() {
         val b = SheetShareStep2Binding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
 
-        b.searchRow.setOnClickListener {
-            preflightCheck(parent) { startSearch(parent) }
-        }
         b.wifiDirectRow.setOnClickListener {
             preflightCheck(parent) { startWifiDirectFlow(parent) }
         }
@@ -158,72 +155,6 @@ class ShareTargetActivity : AppCompatActivity() {
             Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
         }
         b.backBtn.setOnClickListener { showStep1() }
-    }
-
-    private fun startSearch(parent: BottomSheetDialog) {
-        InAppLogger.d("ShareTarget", "LAN search START")
-        val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
-        parent.setContentView(b.root)
-        AtomController.peers.value = emptyList()
-        AtomController.wifiDirect?.stopContinuousDiscover()
-
-        lifecycleScope.launch {
-            val node = AtomController.meshNode
-            if (node != null) {
-                node.broadcastHello()
-                delay(600)
-                node.broadcastHello()
-            }
-            delay(6500)
-            b.spinner.visibility = View.GONE
-            val peers = AtomController.peers.value.filter { it.id != AtomController.myId }
-            if (peers.isEmpty()) {
-                showEmptySearchDialog(b, parent)
-            } else {
-                for (p in peers) {
-                    val row = TextView(this@ShareTargetActivity).apply {
-                        text = "📱 ${p.name}  (${p.ip})"
-                        textSize = 16f
-                        setPadding(0, 24, 0, 24)
-                        isClickable = true
-                        setOnClickListener { onPeerSelected(p) }
-                    }
-                    b.peersContainer.addView(row)
-                }
-            }
-        }
-    }
-
-    private fun showEmptySearchDialog(b: SheetSearchBinding, parent: BottomSheetDialog) {
-        b.emptyText.visibility = View.VISIBLE
-        b.emptyText.text = "Никого не нашли через Wi-Fi.\n\n" +
-            "Проверь:\n" +
-            "• Оба телефона в одной Wi-Fi сети\n" +
-            "• На роутере не включена изоляция клиентов\n" +
-            "• На втором телефоне открыт Атом\n\n" +
-            "Или попробуй Wi-Fi Direct — он работает " +
-            "без роутера, достаточно открыть Атом на обоих."
-
-        val retryBtn = com.google.android.material.button.MaterialButton(this).apply {
-            text = "🔄 Повторить"
-            setOnClickListener {
-                b.emptyText.visibility = View.GONE
-                b.spinner.visibility = View.VISIBLE
-                b.peersContainer.removeAllViews()
-                startSearch(parent)
-            }
-        }
-        val p2pBtn = com.google.android.material.button.MaterialButton(this).apply {
-            text = "📶 Wi-Fi Direct"
-            setOnClickListener {
-                b.emptyText.visibility = View.GONE
-                b.spinner.visibility = View.VISIBLE
-                b.peersContainer.removeAllViews()
-                startWifiDirectFlow(parent)
-            }
-        }
-        b.peersContainer.addView(retryBtn)
-        b.peersContainer.addView(p2pBtn)
     }
 
     private fun onPeerSelected(peer: Peer) {

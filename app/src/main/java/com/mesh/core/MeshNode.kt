@@ -12,7 +12,6 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
@@ -29,15 +28,19 @@ class MeshNode(private val ctx: Context) {
     var onFileDecline: ((String, String) -> Unit)? = null
     var onIncomingTcp: ((Socket) -> Unit)? = null
 
+    companion object {
+        private const val PORT = 47822
+    }
+
     var isRunning: Boolean = false
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var udpSocket: DatagramSocket? = null
     private var tcpServer: ServerSocket? = null
-    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
     private val hereAwaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+    private val helloSendCounter = java.util.concurrent.atomic.AtomicLong(0)
 
     data class HelloInfo(val peerId: String, val name: String, val ip: String)
 
@@ -59,15 +62,13 @@ class MeshNode(private val ctx: Context) {
         if (isRunning) return
         isRunning = true
 
-        acquireMulticastLock()
-
         try {
             udpSocket = DatagramSocket(null).apply {
                 reuseAddress = true
                 broadcast = true
-                bind(InetSocketAddress(LanDiscovery.PORT))
+                bind(InetSocketAddress(PORT))
             }
-            InAppLogger.d("MeshNode", "UDP bound to ${LanDiscovery.PORT}")
+            InAppLogger.d("MeshNode", "UDP bound to ${PORT}")
         } catch (e: Exception) {
             InAppLogger.d("MeshNode", "UDP bind error: ${e.message}")
             isRunning = false
@@ -77,9 +78,9 @@ class MeshNode(private val ctx: Context) {
         try {
             tcpServer = ServerSocket().apply {
                 reuseAddress = true
-                bind(InetSocketAddress(LanDiscovery.PORT))
+                bind(InetSocketAddress(PORT))
             }
-            InAppLogger.d("MeshNode", "TCP listening on ${LanDiscovery.PORT}")
+            InAppLogger.d("MeshNode", "TCP listening on ${PORT}")
         } catch (e: Exception) {
             InAppLogger.d("MeshNode", "TCP bind error: ${e.message}")
         }
@@ -92,40 +93,7 @@ class MeshNode(private val ctx: Context) {
         isRunning = false
         try { udpSocket?.close() } catch (_: Exception) {}
         try { tcpServer?.close() } catch (_: Exception) {}
-        releaseMulticastLock()
         scope.cancel()
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    //  MULTICAST LOCK (обязательно для broadcast)
-    // ═══════════════════════════════════════════════════════════
-
-    private fun acquireMulticastLock() {
-        try {
-            val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE)
-                as? android.net.wifi.WifiManager
-            if (wm == null) {
-                InAppLogger.d("MeshNode", "no WifiManager — multicast lock skipped")
-                return
-            }
-            val lock = wm.createMulticastLock("atom-multicast")
-            lock.setReferenceCounted(true)
-            lock.acquire()
-            multicastLock = lock
-            InAppLogger.d("MeshNode", "MulticastLock acquired")
-        } catch (e: Exception) {
-            InAppLogger.d("MeshNode", "MulticastLock error: ${e.message}")
-        }
-    }
-
-    private fun releaseMulticastLock() {
-        try {
-            if (multicastLock?.isHeld == true) {
-                multicastLock?.release()
-                InAppLogger.d("MeshNode", "MulticastLock released")
-            }
-            multicastLock = null
-        } catch (_: Exception) {}
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -171,14 +139,16 @@ class MeshNode(private val ctx: Context) {
                 val hp = HelloPayload.fromJson(packet.payload)
                 if (hp.peerId == myId) return
                 InAppLogger.d("MeshNode", "received HELLO from ${hp.name} @ $fromIp")
-                pulseWifiLock()
                 onHello?.invoke(HelloInfo(hp.peerId, hp.name, fromIp))
                 sendPacket(fromIp, MeshPacket(PacketType.HERE, hp.toJson()))
             }
             PacketType.HERE -> {
                 val hp = HelloPayload.fromJson(packet.payload)
-                InAppLogger.d("MeshNode", "received HERE from ${hp.name} @ $fromIp")
-                hereAwaiters[fromIp]?.complete(true)
+                val waiter = hereAwaiters[fromIp]
+                if (waiter != null) {
+                    InAppLogger.d("MeshNode", "received HERE from ${hp.name} @ $fromIp")
+                    waiter.complete(true)
+                }
             }
             PacketType.FILE_OFFER -> {
                 val offer = FileOffer(
@@ -214,120 +184,6 @@ class MeshNode(private val ctx: Context) {
     //  DISCOVERY: broadcast + ARP unicast + subnet unicast
     // ═══════════════════════════════════════════════════════════
 
-    fun broadcastHello() {
-        scope.launch {
-            val localIp = getLocalIpv4()
-            InAppLogger.d("MeshNode", "broadcastHello, localIp=$localIp")
-            if (localIp == null) {
-                InAppLogger.d("MeshNode", "no wlan IPv4 — Wi-Fi off?")
-                return@launch
-            }
-
-            doBroadcastHello()
-            doArpScanAndUnicast()
-            doSubnetUnicastScan(localIp)
-        }
-    }
-
-    private fun doBroadcastHello() {
-        try {
-            val sock = udpSocket ?: return
-            val bytes = MeshPacket(PacketType.HELLO, HelloPayload(myId, myName).toJson()).encode()
-            val targets = listOfNotNull(
-                "255.255.255.255",
-                computeSubnetBroadcast()?.hostAddress
-            ).distinct()
-            for (addr in targets) {
-                try {
-                    sock.send(DatagramPacket(bytes, bytes.size,
-                        InetAddress.getByName(addr), LanDiscovery.PORT))
-                    InAppLogger.d("MeshNode", "broadcast → $addr")
-                } catch (e: Exception) {
-                    InAppLogger.d("MeshNode", "broadcast $addr err: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            InAppLogger.d("MeshNode", "doBroadcastHello error: ${e.message}")
-        }
-    }
-
-    private fun doArpScanAndUnicast() {
-        try {
-            val arp = java.io.File("/proc/net/arp")
-            if (!arp.exists() || !arp.canRead()) {
-                InAppLogger.d("MeshNode", "ARP not readable")
-                return
-            }
-            val localIp = getLocalIpv4()
-            val ips = mutableSetOf<String>()
-            arp.forEachLine { line ->
-                val parts = line.trim().split(Regex("\\s+"))
-                if (parts.size >= 4 && parts[3].matches(Regex("..:..:..:..:..:.."))) {
-                    val ip = parts[0]
-                    if (ip != "0.0.0.0" && ip != localIp) ips.add(ip)
-                }
-            }
-            InAppLogger.d("MeshNode", "ARP: ${ips.size} devices → unicast HELLO")
-            if (ips.isEmpty()) return
-            val bytes = MeshPacket(PacketType.HELLO, HelloPayload(myId, myName).toJson()).encode()
-            val sock = udpSocket ?: return
-            for (ip in ips) {
-                try {
-                    sock.send(DatagramPacket(bytes, bytes.size,
-                        InetAddress.getByName(ip), LanDiscovery.PORT))
-                    InAppLogger.d("MeshNode", "arp unicast → $ip")
-                } catch (_: Exception) {}
-            }
-        } catch (e: Exception) {
-            InAppLogger.d("MeshNode", "arp scan error: ${e.message}")
-        }
-    }
-
-    private fun doSubnetUnicastScan(localIp: String) {
-        try {
-            val parts = localIp.split(".")
-            if (parts.size != 4) return
-            val prefix = "${parts[0]}.${parts[1]}.${parts[2]}"
-            val bytes = MeshPacket(PacketType.HELLO, HelloPayload(myId, myName).toJson()).encode()
-            val sock = udpSocket ?: return
-            InAppLogger.d("MeshNode", "subnet unicast scan: $prefix.1-254")
-            for (i in 1..254) {
-                val ip = "$prefix.$i"
-                if (ip == localIp) continue
-                try {
-                    sock.send(DatagramPacket(bytes, bytes.size,
-                        InetAddress.getByName(ip), LanDiscovery.PORT))
-                } catch (_: Exception) {}
-            }
-            InAppLogger.d("MeshNode", "subnet scan done (253 packets sent)")
-        } catch (e: Exception) {
-            InAppLogger.d("MeshNode", "subnet scan error: ${e.message}")
-        }
-    }
-
-    /** Локальный IPv4 wlan* интерфейса (не p2p-wlan). */
-    fun getLocalIpv4(): String? {
-        return try {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .filter { it.isUp && !it.isLoopback && it.name.startsWith("wlan")
-                          && !it.name.startsWith("p2p") }
-                .flatMap { it.inetAddresses.toList() }
-                .filterIsInstance<java.net.Inet4Address>()
-                .firstOrNull()?.hostAddress
-        } catch (_: Exception) { null }
-    }
-
-    private fun computeSubnetBroadcast(): InetAddress? {
-        return try {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .filter { it.isUp && !it.isLoopback && it.name.startsWith("wlan")
-                          && !it.name.startsWith("p2p") }
-                .flatMap { it.interfaceAddresses.toList() }
-                .firstOrNull { it.address is java.net.Inet4Address && it.broadcast != null }
-                ?.broadcast
-        } catch (_: Exception) { null }
-    }
-
     // ═══════════════════════════════════════════════════════════
     //  SEND
     // ═══════════════════════════════════════════════════════════
@@ -344,8 +200,15 @@ class MeshNode(private val ctx: Context) {
                 if (sock.isClosed) return@launch
                 val bytes = packet.encode()
                 val addr = InetAddress.getByName(ip)
-                sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
-                InAppLogger.d("MeshNode", "send ${packet.type} to $ip:${LanDiscovery.PORT}")
+                sock.send(DatagramPacket(bytes, bytes.size, addr, PORT))
+                if (packet.type == PacketType.HELLO) {
+                    val n = helloSendCounter.incrementAndGet()
+                    if (n == 1L || n % 60L == 0L) {
+                        InAppLogger.d("MeshNode", "send HELLO to $ip (n=$n)")
+                    }
+                } else {
+                    InAppLogger.d("MeshNode", "send ${packet.type} to $ip:$PORT")
+                }
             } catch (e: Exception) {
                 InAppLogger.d("MeshNode", "send ${packet.type} to $ip error: ${e.javaClass.simpleName}: ${e.message}")
             }
@@ -362,7 +225,7 @@ class MeshNode(private val ctx: Context) {
                 if (sock != null && !sock.isClosed) {
                     val bytes = packet.encode()
                     val addr = InetAddress.getByName(ip)
-                    sock.send(DatagramPacket(bytes, bytes.size, addr, LanDiscovery.PORT))
+                    sock.send(DatagramPacket(bytes, bytes.size, addr, PORT))
                     ok = true
                     InAppLogger.d("MeshNode", "sendBlocking ${packet.type} → $ip OK")
                 } else {
@@ -413,7 +276,7 @@ class MeshNode(private val ctx: Context) {
             InAppLogger.d("MeshNode", "socket opts error: ${e.message}")
         }
         try {
-            s.connect(InetSocketAddress(ip, LanDiscovery.PORT), connectTimeoutMs)
+            s.connect(InetSocketAddress(ip, PORT), connectTimeoutMs)
             val ms = System.currentTimeMillis() - tcpStart
             InAppLogger.d("MeshNode",
                 "tcp OK → $ip in ${ms}ms, snd=${s.sendBufferSize} rcv=${s.receiveBufferSize}")
@@ -425,23 +288,6 @@ class MeshNode(private val ctx: Context) {
             try { s.close() } catch (_: Exception) {}
             throw e
         }
-    }
-
-    private fun pulseWifiLock() {
-        try {
-            val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE)
-                as? android.net.wifi.WifiManager ?: return
-            val lock = wm.createWifiLock(
-                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                "atom-pulse"
-            )
-            lock.setReferenceCounted(false)
-            lock.acquire()
-            scope.launch {
-                kotlinx.coroutines.delay(30_000)
-                try { if (lock.isHeld) lock.release() } catch (_: Exception) {}
-            }
-        } catch (_: Exception) {}
     }
 
 }
