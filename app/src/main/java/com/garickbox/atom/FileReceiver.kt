@@ -379,25 +379,7 @@ object FileReceiver {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun resolveUniqueName(ctx: Context, name: String): String {
-        val (base, ext) = splitExt(name)
-        val dir = File(ctx.getExternalFilesDir(null), "received")
-        var candidate = name
-        var n = 1
-        while (File(dir, candidate).exists()) {
-            candidate = "$base ($n)$ext"
-            n++
-        }
-        return candidate
-    }
-
-    private fun splitExt(name: String): Pair<String, String> {
-        val dot = name.lastIndexOf('.')
-        return if (dot <= 0) name to ""
-        else name.substring(0, dot) to name.substring(dot)
-    }
-
-    fun cancelActiveReceive(ctx: Context) {
+fun cancelActiveReceive(ctx: Context) {
         InAppLogger.d("FileReceiver", "cancelActiveReceive")
         activeSessions.values.forEach { s ->
             s.failed.set(true)

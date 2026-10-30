@@ -567,13 +567,7 @@ class FileSenderService : Service() {
         stopSelf()
     }
 
-    private fun simpleHash(name: String, size: Long): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        md.update("$name:$size".toByteArray())
-        return md.digest().joinToString("") { "%02x".format(it) }
-    }
-
-    private fun displayName(uri: Uri): String? {
+private fun displayName(uri: Uri): String? {
         try {
             contentResolver.query(uri, null, null, null, null)?.use { c: Cursor ->
                 if (c.moveToFirst()) {
