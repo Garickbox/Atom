@@ -346,16 +346,13 @@ object FileReceiver {
                     timestamp = System.currentTimeMillis(),
                     savedPath = result.displayPath
                 ))
-                // Обновляем Success только если никакой другой приём не идёт
-                val currentState = AtomController.transferState.value
-                if (currentState !is TransferState.Running) {
-                    AtomController.transferState.value = TransferState.Success(
-                        session.peerName, 1, session.totalSize, 0
-                    )
-                } else {
-                    InAppLogger.d("FileReceiver",
-                        "finalize: пропускаем Success — идёт другой Running")
-                }
+                // ВСЕГДА ставим Success. Если идёт следующий Running — UI переключится
+                // на него через FileReceiverService.updateProgress. Раньше при серии
+                // файлов Success не ставился вовсе → UI висел на Running(100%).
+                AtomController.transferState.value = TransferState.Success(
+                    session.peerName, 1, session.totalSize, 0
+                )
+                InAppLogger.d("FileReceiver", "Success state set (always)")
             } else {
                 InAppLogger.d("FileReceiver", "MediaStore save failed")
             }

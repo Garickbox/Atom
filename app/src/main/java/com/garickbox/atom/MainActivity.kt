@@ -38,15 +38,7 @@ class MainActivity : AppCompatActivity() {
 
         b.fab.setOnClickListener { showSendPicker() }
 
-        // OTA через 5 сек
-        lifecycleScope.launch {
-            delay(5000)
-            val release = UpdateChecker.checkForUpdate(this@MainActivity)
-            if (release != null) {
-                InAppLogger.d("MainActivity", "update available: ${release.tag}")
-                UpdateChecker.promptAndInstall(this@MainActivity, release)
-            }
-        }
+        // Авто-проверка обновления убрана — только manual (меню / кнопка на TV)
 
         InAppLogger.d("MainActivity", "onCreate done")
     }
@@ -54,15 +46,61 @@ class MainActivity : AppCompatActivity() {
     private fun checkUpdate() {
         InAppLogger.d("MainActivity", "manual update check")
         lifecycleScope.launch {
-            Toast.makeText(this@MainActivity, "Проверяю обновление…", Toast.LENGTH_SHORT).show()
+            val dialog = androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle("🔄 Проверка обновлений")
+                .setMessage("Соединяюсь с GitHub…")
+                .setNegativeButton("Отмена", null)
+                .setCancelable(true)
+                .show()
+
             val release = UpdateChecker.checkForUpdate(this@MainActivity)
             if (release == null) {
+                dialog.dismiss()
                 InAppLogger.d("MainActivity", "no update")
-                Toast.makeText(this@MainActivity, "Обновлений нет", Toast.LENGTH_SHORT).show()
-            } else {
-                InAppLogger.d("MainActivity", "update found: ${release.tag}")
-                UpdateChecker.promptAndInstall(this@MainActivity, release)
+                Toast.makeText(this@MainActivity,
+                    "✅ Актуальная версия build-${BuildConfig.VERSION_CODE}",
+                    Toast.LENGTH_SHORT).show()
+                return@launch
             }
+
+            InAppLogger.d("MainActivity", "update found: ${release.tag}")
+
+            val progressBar = android.widget.ProgressBar(
+                this@MainActivity, null, android.R.attr.progressBarStyleHorizontal
+            ).apply {
+                max = 100
+                progress = 0
+                setPadding(64, 48, 64, 48)
+            }
+
+            dialog.setTitle("⬇️ Скачиваю ${release.tag}")
+            dialog.setMessage(null)
+            dialog.setView(progressBar)
+            dialog.setCancelable(false)
+
+            UpdateChecker.downloadAndInstall(
+                activity = this@MainActivity,
+                release = release,
+                onProgress = { downloaded, total ->
+                    if (total > 0) {
+                        val pct = ((downloaded * 100) / total).toInt()
+                        progressBar.progress = pct
+                        dialog.setTitle("⬇️ Скачиваю ${release.tag} · $pct%")
+                    }
+                },
+                onFinish = { success ->
+                    dialog.dismiss()
+                    if (success) {
+                        Toast.makeText(this@MainActivity,
+                            "Скачано, открываю установщик…",
+                            Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity,
+                            "Ошибка загрузки обновления",
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
         }
     }
 

@@ -111,10 +111,19 @@ object UpdateChecker {
         downloadAndInstall(activity, pending)
     }
 
-    private fun downloadAndInstall(activity: Activity, release: Release) {
+    internal fun downloadAndInstall(
+        activity: Activity,
+        release: Release,
+        onProgress: ((Long, Long) -> Unit)? = null,
+        onFinish: ((Boolean) -> Unit)? = null
+    ) {
         InAppLogger.d("UpdateChecker", "download start: ${release.apkUrl}")
-        Toast.makeText(activity, "Скачиваю ${release.tag}…", Toast.LENGTH_SHORT).show()
-        showNotification(activity, release, 0, 0, true)
+        // Если callbacks нет — старое поведение (Toast + notification) для
+        // вызовов из promptAndInstall / checkPending (TV, edge-cases)
+        if (onProgress == null) {
+            Toast.makeText(activity, "Скачиваю ${release.tag}…", Toast.LENGTH_SHORT).show()
+            showNotification(activity, release, 0, 0, true)
+        }
 
         Thread {
             try {
@@ -126,21 +135,37 @@ object UpdateChecker {
                     .readTimeout(30, TimeUnit.SECONDS)
                     .build()
                 val ok = downloadWithRanges(client, release.apkUrl, out) { d, t ->
-                    showNotification(activity, release, d, t, false)
+                    if (onProgress != null) {
+                        activity.runOnUiThread { onProgress.invoke(d, t) }
+                    } else {
+                        showNotification(activity, release, d, t, false)
+                    }
                 }
                 if (!ok) throw IllegalStateException("download failed")
                 InAppLogger.d("UpdateChecker",
                     "download done: ${out.length()} bytes")
-                hideNotification(activity)
+                if (onProgress == null) hideNotification(activity)
                 activity.runOnUiThread {
-                    Toast.makeText(activity, "Скачано. Открываю установщик…", Toast.LENGTH_SHORT).show()
+                    if (onFinish != null) {
+                        onFinish.invoke(true)
+                    } else {
+                        Toast.makeText(activity,
+                            "Скачано. Открываю установщик…",
+                            Toast.LENGTH_SHORT).show()
+                    }
                     installApk(activity, out)
                 }
             } catch (e: Exception) {
                 InAppLogger.d("UpdateChecker", "download error: ${e.message}")
-                hideNotification(activity)
+                if (onProgress == null) hideNotification(activity)
                 activity.runOnUiThread {
-                    Toast.makeText(activity, "Ошибка загрузки: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (onFinish != null) {
+                        onFinish.invoke(false)
+                    } else {
+                        Toast.makeText(activity,
+                            "Ошибка загрузки: ${e.message}",
+                            Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }.start()
