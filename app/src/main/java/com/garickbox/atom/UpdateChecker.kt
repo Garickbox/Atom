@@ -32,7 +32,13 @@ object UpdateChecker {
     /** Ожидание разрешения на установку — если пользователь ушёл в Settings. */
     private var pendingRelease: Release? = null
 
+    private val checkMutex = java.util.concurrent.atomic.AtomicBoolean(false)
+
     suspend fun checkForUpdate(context: Context): Release? = withContext(Dispatchers.IO) {
+        if (!checkMutex.compareAndSet(false, true)) {
+            InAppLogger.d("UpdateChecker", "check in progress — skip")
+            return@withContext null
+        }
         try {
             val client = OkHttpClient()
             val req = Request.Builder()
@@ -60,6 +66,8 @@ object UpdateChecker {
         } catch (e: Exception) {
             InAppLogger.d("UpdateChecker", "check error: ${e.message}")
             null
+        } finally {
+            checkMutex.set(false)
         }
     }
 

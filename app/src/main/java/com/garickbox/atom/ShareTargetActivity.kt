@@ -162,6 +162,7 @@ class ShareTargetActivity : AppCompatActivity() {
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
         AtomController.peers.value = emptyList()
+        AtomController.wifiDirect?.stopContinuousDiscover()
 
         lifecycleScope.launch {
             val node = AtomController.meshNode
@@ -275,6 +276,7 @@ class ShareTargetActivity : AppCompatActivity() {
             Toast.makeText(this, "Wi-Fi Direct не инициализирован", Toast.LENGTH_SHORT).show()
             return
         }
+        wd.stopContinuousDiscover()
 
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)

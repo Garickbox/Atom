@@ -74,7 +74,13 @@ class FileReceiverService : Service() {
             val remaining = activeFinalizes.decrementAndGet()
             if (remaining <= 0) {
                 activeFinalizes.set(0)
-                stop(ctx)
+                // Не убивать сервис если есть активные приёмы
+                if (FileReceiver.isBusy) {
+                    InAppLogger.d("FileReceiverService",
+                        "finalizeEnd: busy=true — keep service alive")
+                } else {
+                    stop(ctx)
+                }
             }
         }
         private val receiverSpeedTracker = SpeedTracker()

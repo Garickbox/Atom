@@ -253,8 +253,9 @@ object FileReceiver {
                 try { session.raf.close() } catch (_: Exception) {}
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
-                // busy уже освобождён в handleIncomingSocket
-                // stop → finalizeEnd()
+                _isBusy.set(false)
+                AtomController.transferState.value = TransferState.Idle
+                FileReceiverService.stop(ctx)
             }
         }
     }
@@ -378,9 +379,9 @@ object FileReceiver {
             s.partFile.delete()
         }
         activeSessions.clear()
-            // busy уже освобождён в handleIncomingSocket
+        _isBusy.set(false)
         AtomController.transferState.value = TransferState.Idle
-            // stop → finalizeEnd()
+        FileReceiverService.stop(ctx)
     }
 
     fun onCancel(ctx: Context, transferId: String) {
@@ -393,8 +394,8 @@ object FileReceiver {
             try { session.raf.close() } catch (_: Exception) {}
             session.partFile.delete()
         }
-            // busy уже освобождён в handleIncomingSocket
+        _isBusy.set(false)
         AtomController.transferState.value = TransferState.Idle
-            // stop → finalizeEnd()
+        FileReceiverService.stop(ctx)
     }
 }

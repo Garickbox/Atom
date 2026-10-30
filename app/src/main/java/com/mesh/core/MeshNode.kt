@@ -171,6 +171,7 @@ class MeshNode(private val ctx: Context) {
                 val hp = HelloPayload.fromJson(packet.payload)
                 if (hp.peerId == myId) return
                 InAppLogger.d("MeshNode", "received HELLO from ${hp.name} @ $fromIp")
+                pulseWifiLock()
                 onHello?.invoke(HelloInfo(hp.peerId, hp.name, fromIp))
                 sendPacket(fromIp, MeshPacket(PacketType.HERE, hp.toJson()))
             }
@@ -413,4 +414,22 @@ class MeshNode(private val ctx: Context) {
             "tcp open → $ip, snd=${s.sendBufferSize} rcv=${s.receiveBufferSize} nodelay=${s.tcpNoDelay}")
         return s
     }
+
+    private fun pulseWifiLock() {
+        try {
+            val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE)
+                as? android.net.wifi.WifiManager ?: return
+            val lock = wm.createWifiLock(
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "atom-pulse"
+            )
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            scope.launch {
+                kotlinx.coroutines.delay(30_000)
+                try { if (lock.isHeld) lock.release() } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+    }
+
 }

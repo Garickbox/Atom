@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         b.emptyText.visibility = android.view.View.GONE
-        b.historyScroll.visibility = android.view.View.GONE
+        b.historyScroll.visibility = android.view.View.VISIBLE
         b.historyContainer.removeAllViews()
         for (r in records) {
             val row = layoutInflater.inflate(android.R.layout.simple_list_item_2, b.historyContainer, false)
