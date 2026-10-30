@@ -136,6 +136,55 @@ object AtomController {
             .apply()
     }
 
+    // B11.2: история известных P2P пиров (Quick Connect)
+    data class KnownP2pPeer(
+        val mac: String,
+        val name: String,
+        val lastConnectedMs: Long
+    )
+
+    private val knownP2pLock = Any()
+
+    fun getKnownP2pPeers(): List<KnownP2pPeer> {
+        synchronized(knownP2pLock) {
+            val raw = prefs.getString("known_p2p_peers", null) ?: return emptyList()
+            return try {
+                val arr = org.json.JSONArray(raw)
+                (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val mac = o.optString("mac", "")
+                    if (mac.isBlank()) return@mapNotNull null
+                    KnownP2pPeer(
+                        mac = mac,
+                        name = o.optString("name", "?"),
+                        lastConnectedMs = o.optLong("ts", 0L)
+                    )
+                }.sortedByDescending { it.lastConnectedMs }
+            } catch (_: Exception) { emptyList() }
+        }
+    }
+
+    fun saveKnownP2pPeer(mac: String, name: String) {
+        if (mac.isBlank()) return
+        synchronized(knownP2pLock) {
+            val actualName = name.ifBlank { "Устройство ${mac.takeLast(5)}" }
+            val current = getKnownP2pPeers().toMutableList()
+            current.removeAll { it.mac == mac }
+            current.add(0, KnownP2pPeer(mac, actualName, System.currentTimeMillis()))
+            val top = current.take(10)
+            val arr = org.json.JSONArray()
+            top.forEach { p ->
+                arr.put(org.json.JSONObject().apply {
+                    put("mac", p.mac)
+                    put("name", p.name)
+                    put("ts", p.lastConnectedMs)
+                })
+            }
+            prefs.edit().putString("known_p2p_peers", arr.toString()).apply()
+            InAppLogger.d("AtomController", "known_peer saved: $actualName ($mac)")
+        }
+    }
+
     fun hasName(): Boolean = myName.isNotBlank()
 
 

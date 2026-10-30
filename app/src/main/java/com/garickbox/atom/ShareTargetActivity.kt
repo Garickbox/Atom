@@ -167,7 +167,14 @@ class ShareTargetActivity : AppCompatActivity() {
         parent.setContentView(b.root)
 
         b.wifiDirectRow.setOnClickListener {
-            preflightCheck(parent) { startWifiDirectFlow(parent) }
+            preflightCheck(parent) {
+                val known = AtomController.getKnownP2pPeers()
+                if (known.isNotEmpty()) {
+                    showKnownP2pDialog(parent)
+                } else {
+                    startWifiDirectFlow(parent)
+                }
+            }
         }
         b.scanRow.setOnClickListener {
             Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
@@ -176,6 +183,82 @@ class ShareTargetActivity : AppCompatActivity() {
             Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
         }
         b.backBtn.setOnClickListener { showStep1() }
+    }
+
+    private fun showKnownP2pDialog(parent: BottomSheetDialog) {
+        val known = AtomController.getKnownP2pPeers()
+        val items = known.map { "📶 ${it.name}" } + "🔍 Найти других"
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Куда отправить?")
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which < known.size) {
+                    parent.dismiss()
+                    connectP2pQuick(known[which].mac, known[which].name)
+                } else {
+                    startWifiDirectFlow(parent)
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun connectP2pQuick(mac: String, name: String) {
+        InAppLogger.d("ShareTarget", "quick connect START: mac=$mac name=$name")
+        val wd = AtomController.wifiDirect ?: return
+
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Подключаюсь к $name…")
+            .setMessage("Это займёт 5-15 секунд")
+            .setCancelable(false)
+            .show()
+
+        var done = false
+        val timeoutJob = lifecycleScope.launch {
+            delay(15000)
+            if (!done) {
+                done = true
+                try { dialog.dismiss() } catch (_: Exception) {}
+                Toast.makeText(this@ShareTargetActivity,
+                    "Не удалось — попробуй через поиск", Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+
+        wd.onConnected = onConnected@ { conn ->
+            if (done) return@onConnected
+            done = true
+            timeoutJob.cancel()
+            InAppLogger.d("ShareTarget",
+                "quick p2p connected: isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            AtomController.saveKnownP2pPeer(mac, name)
+            val node = AtomController.meshNode
+            if (node != null && !conn.isGroupOwner) {
+                node.sendHello(conn.groupOwnerAddress)
+            }
+            lifecycleScope.launch {
+                delay(2500)
+                val peer = AtomController.peers.value.firstOrNull {
+                    it.ip.startsWith("192.168.49.") && it.id != AtomController.myId
+                }
+                try { dialog.dismiss() } catch (_: Exception) {}
+                if (peer != null) {
+                    AtomController.saveKnownP2pPeer(mac, peer.name)
+                    FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris)
+                    finish()
+                } else {
+                    val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
+                    if (targetIp != null) {
+                        val fakePeer = Peer(id = "p2p", name = name, ip = targetIp)
+                        FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris)
+                        finish()
+                    } else {
+                        Toast.makeText(this@ShareTargetActivity, "Не получили IP", Toast.LENGTH_LONG).show()
+                        finish()
+                    }
+                }
+            }
+        }
+        wd.connect(mac)
     }
 
     private fun onPeerSelected(peer: Peer) {
@@ -244,7 +327,32 @@ class ShareTargetActivity : AppCompatActivity() {
 
     private fun showTvFlow() {
         InAppLogger.d("ShareTarget", "TV flow START")
-        preflightCheck(null) { startTvDiscovery() }
+        preflightCheck(null) {
+            val known = AtomController.getKnownP2pPeers()
+            if (known.isNotEmpty()) {
+                showTvKnownPicker()
+            } else {
+                startTvDiscovery()
+            }
+        }
+    }
+
+    private fun showTvKnownPicker() {
+        val known = AtomController.getKnownP2pPeers()
+        val items = known.map { "📶 ${it.name}" } + "🔍 Найти других"
+        tvDialog?.dismiss()
+        tvDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Куда отправить?")
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which < known.size) {
+                    connectP2pTv(known[which].mac, known[which].name)
+                } else {
+                    startTvDiscovery()
+                }
+            }
+            .setNegativeButton("Отмена") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
     }
 
     private fun startTvDiscovery() {
@@ -329,6 +437,7 @@ class ShareTargetActivity : AppCompatActivity() {
             timeoutJob.cancel()
             InAppLogger.d("ShareTarget",
                 "TV p2p connected: isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            AtomController.saveKnownP2pPeer(mac, name)
 
             val node = AtomController.meshNode
             if (node != null && !conn.isGroupOwner) {
@@ -406,6 +515,11 @@ class ShareTargetActivity : AppCompatActivity() {
             InAppLogger.d("ShareTarget", "p2p peers: ${filtered.map { "${it.deviceName}/${it.deviceAddress}" }}")
             if (filtered.isNotEmpty()) {
                 found = true
+                filtered.forEach { p ->
+                    if (p.deviceAddress.isNotBlank()) {
+                        AtomController.saveKnownP2pPeer(p.deviceAddress, p.deviceName)
+                    }
+                }
                 b.spinner.visibility = View.GONE
                 b.emptyText.visibility = View.GONE
                 b.peersContainer.removeAllViews()
@@ -459,6 +573,7 @@ class ShareTargetActivity : AppCompatActivity() {
             done = true
             timeoutJob.cancel()
             InAppLogger.d("ShareTarget", "p2p connected: isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            AtomController.saveKnownP2pPeer(mac, name)
 
             // Отправляем HELLO через GO IP (если мы клиент) — иначе ждём HELLO
             val node = AtomController.meshNode
