@@ -334,6 +334,12 @@ class FileSenderService : Service() {
                 TransferNotification.update(this@FileSenderService, NOTIF_ID, notif)
 
                 val sent = sendOneFile(node, peerIp, uri, name, size, transferId, peerName, realIdx, finalFileCount, resumeOffset)
+                // B11.1: если pause/cancel — не считаем как failed, не пишем history
+                if (!isActive) {
+                    InAppLogger.d("FileSenderService",
+                        "file $realIdx/$finalFileCount CANCELLED: $name (pause/user)")
+                    return@launch
+                }
                 if (sent < 0) {
                     InAppLogger.d("FileSenderService",
                         "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
@@ -527,6 +533,13 @@ class FileSenderService : Service() {
                 InAppLogger.d("FileSenderService", "cancelled by coroutine")
                 throw e
             } catch (e: Exception) {
+                // B11.1: если корутина отменена (pause/cancel) — не retry
+                if (!currentCoroutineContext().isActive) {
+                    InAppLogger.d("FileSenderService",
+                        "send error but coroutine cancelled — propagate")
+                    throw kotlinx.coroutines.CancellationException(
+                        "cancelled: ${e.message}")
+                }
                 val errClass = e.javaClass.simpleName
                 lastErr = e.message ?: errClass
                 InAppLogger.d("FileSenderService",
@@ -726,6 +739,13 @@ class FileSenderService : Service() {
             "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(avgMbps)} MB/s avg (${threadCount} thr)")
 
         if (failed.get() || totalSent < size) {
+            // B11.1: при отмене корутины — CancellationException, не Exception.
+            // Иначе B8-retry в sendOneFile пытается восстановить отменённую передачу
+            // и превращает Pause в Failed.
+            if (!currentCoroutineContext().isActive) {
+                throw kotlinx.coroutines.CancellationException(
+                    "transfer cancelled by pause/user: $totalSent/$size")
+            }
             throw Exception("Transfer failed: $totalSent/$size")
         }
         totalSent
