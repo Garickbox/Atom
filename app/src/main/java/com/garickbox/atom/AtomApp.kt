@@ -7,6 +7,7 @@ class AtomApp : Application() {
     override fun onCreate() {
         super.onCreate()
         InAppLogger.init(this)
+        com.mesh.core.CompactLog.init(this)
         NotificationHelper.createChannels(this)
         AtomController.init(this)
         cleanupOldParts()

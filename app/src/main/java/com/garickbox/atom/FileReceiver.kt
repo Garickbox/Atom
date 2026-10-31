@@ -415,6 +415,11 @@ object FileReceiver {
                 ctx, session.partFile, session.name, null, dirPart
             )
             val msMs = System.currentTimeMillis() - msStart
+            try {
+                com.mesh.core.CompactLog.receiver(
+                    session.totalSize / 1024 / 1024, msMs, shaMs,
+                    result.uri != null)
+            } catch (_: Exception) {}
             InAppLogger.d("FileReceiver", "MediaStore save in ${msMs}ms → ${result.displayPath}")
             val savedName = result.displayPath.substringAfterLast('/')
             if (savedName != session.name) {

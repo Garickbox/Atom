@@ -27,7 +27,11 @@ class LogViewerActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         b.toolbar.setNavigationOnClickListener { finish() }
 
-        b.btnShare.setOnClickListener { shareLog() }
+        b.btnShare.setOnClickListener { shareLog(compact = true) }
+        b.btnShare.setOnLongClickListener {
+            shareLog(compact = false)
+            true
+        }
         b.btnSaveToDownloads.setOnClickListener { saveLogToDownloads() }
         b.btnClear.setOnClickListener { clearLog() }
         loadLog()
@@ -44,8 +48,12 @@ class LogViewerActivity : AppCompatActivity() {
         b.scrollView.post { b.scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
-    private fun shareLog() {
-        val file = InAppLogger.getLogFile() ?: run {
+    private fun shareLog(compact: Boolean = true) {
+        val file = if (compact) {
+            com.mesh.core.CompactLog.getLogFile() ?: InAppLogger.getLogFile()
+        } else {
+            InAppLogger.getLogFile()
+        } ?: run {
             Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show(); return
         }
         try {

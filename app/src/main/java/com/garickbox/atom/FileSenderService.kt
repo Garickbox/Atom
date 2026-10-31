@@ -86,6 +86,12 @@ class FileSenderService : Service() {
     @Volatile private var lastPeerId: String = ""
     @Volatile private var lastPeerName: String = ""
     @Volatile private var lastUris: List<String> = emptyList()
+    // B19: stats для компактного лога
+    @Volatile private var stAcceptMs: Long = 0L
+    @Volatile private var stBusyCnt: Int = 0
+    @Volatile private var stHashMs: Long = 0L
+    @Volatile private var stTransMs: Long = 0L
+    @Volatile private var stSpeedMbps: Double = 0.0
     @Volatile private var lastRelativePaths: List<String?> = emptyList()
     @Volatile private var pausedRemainingRelativePaths: List<String?> = emptyList()
     @Volatile private var lastUriIndex: Int = 0
@@ -157,6 +163,10 @@ class FileSenderService : Service() {
                 val cancelInfo = if (curStateBefore is TransferState.Running) {
                     "file=${curStateBefore.fileName} progress=${curStateBefore.bytesSent}/${curStateBefore.bytesTotal}"
                 } else "state=$curStateBefore"
+                try {
+                    val ci = AtomController.transferState.value
+                    if (ci is TransferState.Running) com.mesh.core.CompactLog.cancel(ci.fileIndex)
+                } catch (_: Exception) {}
                 InAppLogger.d("FileSenderService", "cancel requested ($cancelInfo)")
                 keepAliveJob?.cancel()
                 keepAliveJob = null
@@ -228,6 +238,7 @@ class FileSenderService : Service() {
                 pausedFileCount = cur.fileCount
                 pausedRemainingUris = lastUris.drop(lastUriIndex)
                 pausedRemainingRelativePaths = lastRelativePaths.drop(lastUriIndex)
+                try { com.mesh.core.CompactLog.pause(cur.fileIndex) } catch (_: Exception) {}
                 InAppLogger.d("FileSenderService",
                     "pause: offset=$pausedOffset/${cur.bytesTotal} remaining=${pausedRemainingUris.size}")
 
@@ -318,6 +329,7 @@ class FileSenderService : Service() {
                 InAppLogger.d("FileSenderService", "probe timeout — продолжаем FILE_OFFER")
             }
             AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
+            com.mesh.core.CompactLog.sessionStart(uris.size, resumeFirstOffset > 0)
             InAppLogger.d("FileSenderService",
                 "═══ transfer START: ${uris.size} files, peer=$peerName($peerIp)")
             val startedAt = System.currentTimeMillis()
@@ -366,6 +378,8 @@ class FileSenderService : Service() {
                     return@launch
                 }
                 if (sent < 0) {
+                    com.mesh.core.CompactLog.file(realIdx, size / 1024,
+                        stAcceptMs, stBusyCnt, 0, stHashMs, 0.0, "fail")
                     InAppLogger.d("FileSenderService",
                         "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
                     TransferHistory.add(this@FileSenderService, TransferHistory.Record(
@@ -380,6 +394,8 @@ class FileSenderService : Service() {
                     ))
                     continue  // НЕ return — продолжаем следующий файл
                 }
+                com.mesh.core.CompactLog.file(realIdx, size / 1024,
+                    stAcceptMs, stBusyCnt, stTransMs, stHashMs, stSpeedMbps, null)
                 totalSent += sent
                 filesOk++
                 TransferHistory.add(this@FileSenderService, TransferHistory.Record(
@@ -410,6 +426,7 @@ class FileSenderService : Service() {
             )
             TransferNotification.update(this@FileSenderService, NOTIF_ID, ok)
             val avgMbps = if (duration > 0) totalSent / 1024.0 / 1024.0 / (duration / 1000.0) else 0.0
+            com.mesh.core.CompactLog.sessionEnd(filesOk, uris.size - filesOk, duration, avgMbps)
             InAppLogger.d("FileSenderService",
                 "═══ transfer DONE: $filesOk/${uris.size} files, ${duration}ms, avg ${"%.1f".format(avgMbps)} MB/s")
             kotlinx.coroutines.delay(10_000)
@@ -444,6 +461,7 @@ class FileSenderService : Service() {
             return -1
         }
         val hashMs = System.currentTimeMillis() - hashStart
+        stHashMs = hashMs
         InAppLogger.d("FileSenderService",
             "hash($name)=${contentHash.take(16)}… size=$size in ${hashMs}ms")
 
@@ -491,6 +509,8 @@ class FileSenderService : Service() {
                 if (r.isSuccess) {
                     acceptResult = r
                     val offerMs = System.currentTimeMillis() - offerStart
+                    stAcceptMs = offerMs
+                    stBusyCnt = attempt - 1
                     InAppLogger.d("FileSenderService",
                         "accept OK in ${offerMs}ms (attempt $attempt)")
                     break
@@ -768,6 +788,8 @@ class FileSenderService : Service() {
         val elapsed = System.currentTimeMillis() - startTime
         val totalSent = progress.get()
         val avgMbps = if (elapsed > 0) totalSent / 1024.0 / 1024.0 / (elapsed / 1000.0) else 0.0
+        stTransMs = elapsed
+        stSpeedMbps = avgMbps
         InAppLogger.d("FileSenderService",
             "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(avgMbps)} MB/s avg (${threadCount} thr)")
 
