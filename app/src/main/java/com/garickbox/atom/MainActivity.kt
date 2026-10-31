@@ -388,6 +388,28 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT).show()
                 true
             }
+            R.id.action_share_log -> {
+                val f = com.mesh.core.CompactLog.getLogFile()
+                    ?: com.mesh.core.InAppLogger.getErrFile()
+                    ?: com.mesh.core.InAppLogger.getLogFile()
+                if (f == null) {
+                    Toast.makeText(this, "Нет логов", Toast.LENGTH_SHORT).show()
+                } else {
+                    try {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", f)
+                        val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(android.content.Intent.createChooser(i, "Поделиться"))
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+                true
+            }
             R.id.action_about -> { showAbout(); true }
             else -> super.onOptionsItemSelected(item)
         }

@@ -17,6 +17,10 @@
         android:id="@+id/action_view_log"
         android:title="📋 Лог"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_share_log"
+        android:title="📤 Поделиться логом"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/action_clear_history"

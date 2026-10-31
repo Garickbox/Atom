@@ -359,6 +359,12 @@ class FileSenderService : Service() {
                 if (!isActive) break
                 val name = displayName(uri) ?: "file_${idx}"
                 val size = fileSize(uri)
+                // B20.7: skip small (<1KB) — .nomedia, .DS_Store, thumbs
+                if (size in 1..1023) {
+                    InAppLogger.d("FileSenderService",
+                        "skip small ${size}B: $name")
+                    continue
+                }
                 val resumeOffset = if (idx == 0) resumeFirstOffset else 0L
                 val transferId = if (idx == 0 && resumeFirstTid != null) resumeFirstTid else UUID.randomUUID().toString()
                 val realIdx = idx + fileIndexOffset + 1
