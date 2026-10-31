@@ -99,8 +99,22 @@ class WidgetReceiveService : Service() {
     private fun scheduleAutoStop() {
         Thread {
             try {
-                val remain = activeUntil - System.currentTimeMillis()
-                if (remain > 0) Thread.sleep(remain)
+                while (true) {
+                    val remain = activeUntil - System.currentTimeMillis()
+                    if (remain > 0) Thread.sleep(remain)
+                    // B20.6: не останавливаться если идёт приём/передача
+                    val receiving = try { FileReceiver.isBusy } catch (_: Exception) { false }
+                    val sending = try { AtomController.transferActive } catch (_: Exception) { false }
+                    if (receiving || sending) {
+                        InAppLogger.d("WidgetReceive",
+                            "autoStop: transfer active (r=$receiving s=$sending), extend 60s")
+                        activeUntil = System.currentTimeMillis() + 60_000L
+                        try { AtomWidgetProvider.refreshNow(this) } catch (_: Exception) {}
+                        try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
+                        continue
+                    }
+                    break
+                }
             } catch (_: Exception) {}
             try { stopSelf() } catch (_: Exception) {}
         }.apply { isDaemon = true }.start()
@@ -110,7 +124,12 @@ class WidgetReceiveService : Service() {
         tickerHandler.removeCallbacks(tickerRunnable)
         isActive = false
         activeUntil = 0L
-        try { AtomController.wifiDirect?.stopContinuousDiscover() } catch (_: Exception) {}
+        val stillBusy = try { FileReceiver.isBusy } catch (_: Exception) { false }
+        if (!stillBusy) {
+            try { AtomController.wifiDirect?.stopContinuousDiscover() } catch (_: Exception) {}
+        } else {
+            InAppLogger.d("WidgetReceive", "onDestroy: receiver busy — keep discover")
+        }
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         InAppLogger.d("WidgetReceive", "OFF")
