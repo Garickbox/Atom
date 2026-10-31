@@ -27,7 +27,7 @@ object CompactLog {
     }
 
     @Synchronized
-    @Volatile private var lastSpeedMbps: Double = 0.0
+    private var lastSpeedMbps: Double = 0.0
 
     fun sessionStart(files: Int, resumed: Boolean, connectMs: Long = 0L) {
         if (resumed && sessionOpen) {
