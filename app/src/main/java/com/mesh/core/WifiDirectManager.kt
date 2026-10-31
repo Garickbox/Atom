@@ -38,9 +38,6 @@ class WifiDirectManager(private val ctx: Context) {
     private var channel: WifiP2pManager.Channel? = null
     private var receiver: BroadcastReceiver? = null
     private var initialized = false
-    // B22: recovery при framework ERROR
-    private var consecutiveFailures = 0
-    @Volatile private var reinitInProgress = false
     private var continuousJob: Job? = null
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO
@@ -177,7 +174,6 @@ class WifiDirectManager(private val ctx: Context) {
 
     @SuppressLint("MissingPermission")
     fun discoverPeers() {
-        if (reinitInProgress) return
         if (manager == null || channel == null) {
             onError?.invoke("Wi-Fi Direct не инициализирован")
             return
@@ -340,75 +336,19 @@ class WifiDirectManager(private val ctx: Context) {
 
     @SuppressLint("MissingPermission")
     private fun doDiscoverTick() {
-        if (reinitInProgress) return
-        if (channel == null || manager == null) {
-            InAppLogger.d("WifiDirect", "discoverTick skip — channel/manager null")
-            return
-        }
         try {
             manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    consecutiveFailures = 0
+                    // ВАЖНО: сразу запрашиваем peers — requestPeers сам залогирует изменения
                     requestPeers()
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discover tick fail: $reason")
-                    // BUSY (2): group залипла — removeGroup, потом retry
-                    if (reason == 2) {
-                        try {
-                            manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                                override fun onSuccess() { requestPeers() }
-                                override fun onFailure(r: Int) { requestPeers() }
-                            })
-                        } catch (_: Exception) { requestPeers() }
-                        return
-                    }
-                    // ERROR (0) × 2 подряд: channel мёртв — reinit
-                    consecutiveFailures++
-                    if (reason == 0 && consecutiveFailures >= 2) {
-                        reinitP2p()
-                    } else {
-                        requestPeers()
-                    }
+                    InAppLogger.d("WifiDirect", "discover tick fail: $reason → requestPeers anyway")
+                    requestPeers()
                 }
             })
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "doDiscoverTick error: ${e.message}")
-        }
-    }
-
-    /** B22: при повторных ERROR (0) — новый channel + новый discover. */
-    private fun reinitP2p() {
-        if (reinitInProgress) return
-        reinitInProgress = true
-        InAppLogger.d("WifiDirect",
-            "P2P ERROR x$consecutiveFailures → reinit channel")
-        scope.launch {
-            try {
-                try {
-                    manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                        override fun onSuccess() {}
-                        override fun onFailure(r: Int) {}
-                    })
-                } catch (_: Exception) {}
-                delay(500)
-                cleanup()
-                delay(300)
-                init()
-                delay(500)
-                consecutiveFailures = 0
-                // B22.1: startDiscover() БЕЗ guard reinitInProgress (иначе silent return)
-                if (channel != null) {
-                    startDiscover()
-                    InAppLogger.d("WifiDirect", "reinit OK, startDiscover called")
-                } else {
-                    InAppLogger.d("WifiDirect", "reinit FAILED: channel null после init")
-                }
-            } catch (e: Exception) {
-                InAppLogger.d("WifiDirect", "reinit error: ${e.message}")
-            } finally {
-                reinitInProgress = false
-            }
         }
     }
 
@@ -417,8 +357,6 @@ class WifiDirectManager(private val ctx: Context) {
             receiver?.let { ctx.unregisterReceiver(it) }
         } catch (_: Exception) {}
         receiver = null
-        channel = null
-        manager = null
         initialized = false
         InAppLogger.d("WifiDirect", "cleanup")
     }

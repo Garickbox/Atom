@@ -45,6 +45,9 @@ object InAppLogger {
         "finalize", "watchdog:", "bind error", "onStartCommand",
         "cancel requested", "pause:", "resume:",
         "error", "Error", "fail", "FAIL", "Exception",
+        // B22r: discovery диагностика (иначе verbose пустой при P2P проблемах)
+        "discover", "reinit", "initialized", "cleanup", "channel",
+        "P2P ERROR", "requestPeers", "peers changed",
     )
 
     private fun shortTag(tag: String): String = when (tag) {
