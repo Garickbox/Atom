@@ -62,13 +62,14 @@ object MediaStoreSaver {
             val dir = "$ROOT_DIR/${overrideRelativeDir.trim('/')}/"
             MediaStore.Downloads.EXTERNAL_CONTENT_URI to dir
         } else {
+            // B15.1: всё в единый корень Download/Atom/<category>/
             when {
                 mime.startsWith("video/") ->
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "Movies/Atom/"
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Movies/"
                 mime.startsWith("audio/") ->
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to "Music/Atom/"
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Music/"
                 mime.startsWith("image/") ->
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "Pictures/Atom/"
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Pictures/"
                 else ->
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI to "Download/Atom/Documents/"
             }
