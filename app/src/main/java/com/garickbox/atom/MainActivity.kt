@@ -459,6 +459,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
         UpdateChecker.checkPending(this)
         if (pendingWidgetSend) {
             pendingWidgetSend = false

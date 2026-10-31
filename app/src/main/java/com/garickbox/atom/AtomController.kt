@@ -31,6 +31,7 @@ object AtomController {
     var myName: String = ""
     var myId: String = ""
     var lastPeer: Peer? = null
+    @Volatile var appForeground: Boolean = false
 
     val meshNode: MeshNode? get() = _meshNode
 
@@ -106,10 +107,17 @@ object AtomController {
                 object : androidx.lifecycle.DefaultLifecycleObserver {
                     override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app foreground → start discover loop")
+                        appForeground = true
+                        try { AtomQSTile.requestUpdate(owner as? android.content.Context ?: return@onStart) } catch (_: Exception) {}
                         startContinuousP2P()
                     }
                     override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app background → stop discover loop")
+                        appForeground = false
+                        try {
+                            val c = owner as? android.content.Context
+                            if (c != null) AtomQSTile.requestUpdate(c)
+                        } catch (_: Exception) {}
                         stopContinuousP2P()
                     }
                 }

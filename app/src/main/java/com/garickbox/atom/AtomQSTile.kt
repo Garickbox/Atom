@@ -36,6 +36,18 @@ class AtomQSTile : TileService() {
 
     override fun onClick() {
         super.onClick()
+        // B20.4: fg-only (Атом открыт, FGS нет) → тап запускает FGS
+        if (!WidgetReceiveService.isActive && AtomController.appForeground) {
+            InAppLogger.d("AtomQSTile", "click → pin FGS (app open)")
+            try {
+                val i = Intent(this, WidgetReceiveService::class.java).apply {
+                    action = WidgetReceiveService.ACTION_TOGGLE
+                }
+                ContextCompat.startForegroundService(this, i)
+            } catch (_: Exception) {}
+            handler.postDelayed({ updateTile() }, 500L)
+            return
+        }
         // B17: click → pause (если Running) или resume (если Paused)
         val ts = AtomController.transferState.value
         if (ts is TransferState.Running) {
@@ -137,16 +149,21 @@ class AtomQSTile : TileService() {
                     tile.subtitle = "⏸ " + pct + "% · тап продолжить"
                 }
                 else -> {
-                    val active = WidgetReceiveService.isActive
+                    // B20.4: синяя = FGS активен ИЛИ Атом открыт
+                    val fgs = WidgetReceiveService.isActive
+                    val fg = AtomController.appForeground
+                    val active = fgs || fg
                     tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
                     tile.label = "Атом"
-                    if (active) {
-                        val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
-                        if (remain > 0) {
-                            tile.subtitle = "Приём · " + (remain / 60) + ":" + "%02d".format(remain % 60)
-                        } else tile.subtitle = "Приём"
-                    } else {
-                        tile.subtitle = "Тап: приём · 2×тап: отправить"
+                    when {
+                        fgs -> {
+                            val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
+                            tile.subtitle = if (remain > 0)
+                                "Приём · " + (remain / 60) + ":" + "%02d".format(remain % 60)
+                            else "Приём"
+                        }
+                        fg -> tile.subtitle = "Приём · приложение открыто"
+                        else -> tile.subtitle = "Тап: приём · 2×тап: отправить"
                     }
                 }
             }
