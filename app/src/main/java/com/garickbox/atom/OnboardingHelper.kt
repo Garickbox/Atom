@@ -128,11 +128,7 @@ object OnboardingHelper {
                         activity.getSharedPreferences("atom", android.content.Context.MODE_PRIVATE)
                             .edit().putBoolean("hyperos_autostart_prompt_shown", true).apply()
                         setStep(activity, 4)
-                        try {
-                            activity.startActivity(Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.parse("package:${activity.packageName}")))
-                        } catch (_: Exception) {}
+                        openAutostart(activity)
                     }
                     .setNegativeButton("Позже") { _, _ ->
                         activity.getSharedPreferences("atom", android.content.Context.MODE_PRIVATE)
@@ -147,5 +143,40 @@ object OnboardingHelper {
                 Toast.makeText(activity, "✅ Атом готов к работе", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    /** B21.1: прямой intent в MIUI/HyperOS Security Center → Автозапуск.
+     *  Fallback: App Info если Security Center нет (custom ROM). */
+    private fun openAutostart(activity: Activity) {
+        // 1) MIUI/HyperOS Autostart Management
+        val miui = Intent().apply {
+            component = android.content.ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            )
+        }
+        try {
+            activity.startActivity(miui)
+            InAppLogger.d("Onboarding", "opened MIUI autostart")
+            return
+        } catch (_: Exception) {}
+
+        // 2) MIUI Security Center (если activity не найдена — открыть сам Security)
+        val security = activity.packageManager.getLaunchIntentForPackage("com.miui.securitycenter")
+        if (security != null) {
+            try {
+                activity.startActivity(security)
+                InAppLogger.d("Onboarding", "opened Security Center (manual nav)")
+                return
+            } catch (_: Exception) {}
+        }
+
+        // 3) Fallback — App Info
+        try {
+            activity.startActivity(Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${activity.packageName}")))
+            InAppLogger.d("Onboarding", "opened App Info (fallback)")
+        } catch (_: Exception) {}
     }
 }
