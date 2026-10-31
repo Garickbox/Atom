@@ -100,8 +100,7 @@ class MainActivity : AppCompatActivity() {
         if (!AtomController.hasName()) {
             startActivity(Intent(this, NameSetupActivity::class.java))
         } else {
-            // B11.6: онбординг автозапуска HyperOS (только если имя уже есть)
-            maybePromptHyperOsAutostart()
+            runOnboarding()
         }
 
         setupTvIfNeeded()
@@ -111,6 +110,13 @@ class MainActivity : AppCompatActivity() {
         // Авто-проверка обновления убрана — только manual (меню / кнопка на TV)
 
         InAppLogger.d("MainActivity", "onCreate done")
+    }
+
+    private fun runOnboarding() {
+        OnboardingHelper.next(this) { missing ->
+            InAppLogger.d("MainActivity", "onboarding: request ${missing.size} perms")
+            try { permissionLauncher.launch(missing.toTypedArray()) } catch (_: Exception) {}
+        }
     }
 
     private fun checkUpdate() {
@@ -477,6 +483,7 @@ class MainActivity : AppCompatActivity() {
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
+        runOnboarding()
     }
 
     override fun onResume() {
@@ -497,8 +504,7 @@ class MainActivity : AppCompatActivity() {
         InAppLogger.d("MainActivity",
             "preflight (silent): ${PreflightChecker.summary(issues)}")
 
-        // Battery optimization prompt (один раз)
-        maybePromptBattery()
+        runOnboarding()
 
         // История скрыта — минимализм
 
