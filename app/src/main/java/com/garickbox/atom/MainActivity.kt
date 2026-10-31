@@ -210,6 +210,107 @@ class MainActivity : AppCompatActivity() {
         startActivity(share)
     }
 
+    private val folderPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri == null) return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(
+                treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {}
+        lifecycleScope.launch {
+            val files = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                collectTreeFiles(treeUri)
+            }
+            if (files.isEmpty()) {
+                Toast.makeText(this@MainActivity, "Папка пуста", Toast.LENGTH_SHORT).show()
+            } else if (files.size > 500) {
+                Toast.makeText(this@MainActivity,
+                    "Слишком много файлов (500+). Выбери папку поменьше",
+                    Toast.LENGTH_LONG).show()
+            } else {
+                startShareWithPaths(files)
+            }
+        }
+    }
+
+    private fun openFolderPicker() {
+        try {
+            folderPicker.launch(null)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Папка недоступна: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun collectTreeFiles(treeUri: android.net.Uri): List<Pair<android.net.Uri, String>> {
+        val MAX = 500
+        val cap = MAX + 1
+        val result = mutableListOf<Pair<android.net.Uri, String>>()
+        val rootDocId = try {
+            android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+        } catch (_: Exception) { return emptyList() }
+        val rootName = try {
+            var n = "folder"
+            val rootUri = android.provider.DocumentsContract
+                .buildDocumentUriUsingTree(treeUri, rootDocId)
+            contentResolver.query(rootUri, arrayOf(
+                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME
+            ), null, null, null)?.use { c ->
+                if (c.moveToFirst()) n = c.getString(0) ?: "folder"
+            }
+            n
+        } catch (_: Exception) { "folder" }
+
+        fun walk(parentUri: android.net.Uri, parentId: String, path: String) {
+            if (result.size >= cap) return
+            val childrenUri = android.provider.DocumentsContract
+                .buildChildDocumentsUriUsingTree(treeUri, parentId)
+            try {
+                contentResolver.query(childrenUri, arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+                ), null, null, null)?.use { c ->
+                    while (c.moveToNext() && result.size < cap) {
+                        val id = c.getString(0) ?: continue
+                        val name = c.getString(1) ?: continue
+                        val mime = c.getString(2) ?: ""
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                            walk(childrenUri, id, "$path/$name")
+                        } else {
+                            val docUri = android.provider.DocumentsContract
+                                .buildDocumentUriUsingTree(treeUri, id)
+                            result.add(docUri to "$path/$name")
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        walk(treeUri, rootDocId, rootName)
+        return result
+    }
+
+    private fun startShareWithPaths(files: List<Pair<android.net.Uri, String>>) {
+        if (files.isEmpty()) return
+        val uris = files.map { it.first }
+        val relPaths = files.map { it.second }
+        val share = Intent(this, ShareTargetActivity::class.java).apply {
+            action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
+            type = "*/*"
+            if (uris.size == 1) {
+                putExtra(Intent.EXTRA_STREAM, uris.first())
+            } else {
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            }
+            putStringArrayListExtra("atom_relative_paths", ArrayList(relPaths))
+            clipData = android.content.ClipData.newRawUri("", uris.first()).apply {
+                for (i in 1 until uris.size) addItem(android.content.ClipData.Item(uris[i]))
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(share)
+    }
+
     private fun openFilePicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)

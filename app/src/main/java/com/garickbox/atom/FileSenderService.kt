@@ -86,6 +86,8 @@ class FileSenderService : Service() {
     @Volatile private var lastPeerId: String = ""
     @Volatile private var lastPeerName: String = ""
     @Volatile private var lastUris: List<String> = emptyList()
+    @Volatile private var lastRelativePaths: List<String?> = emptyList()
+    @Volatile private var pausedRemainingRelativePaths: List<String?> = emptyList()
     @Volatile private var lastUriIndex: Int = 0
     @Volatile private var currentProgressBytes: Long = 0L
     @Volatile private var pausedOffset: Long = 0L
