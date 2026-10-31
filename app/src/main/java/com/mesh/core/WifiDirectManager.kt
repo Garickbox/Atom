@@ -192,11 +192,13 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             manager!!.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "discover started")
+                    InAppLogger.d("WifiDirect", "discover started → requestPeers now")
+                    requestPeers()  // B22-log2: сразу, не ждать 12s tick
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discover failed: $reason")
-                    onError?.invoke("Не удалось начать поиск (код $reason)")
+                    InAppLogger.d("WifiDirect", "discover failed: $reason → requestPeers anyway")
+                    requestPeers()  // B22-log2: даже fail — что-то есть?
+                    onError?.invoke("Поиск не начался (код $reason)")
                 }
             })
         } catch (e: Exception) {
