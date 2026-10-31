@@ -75,13 +75,31 @@ object FileReceiver {
             }
         }
 
-        // Self-heal: busy=true но НЕТ активных сессий вообще — сбрасываем.
-        // ВАЖНО: не сбрасывать если есть сессии в finalize (finished >= threadCount),
-        // иначе новый приём стартует параллельно MediaStore.save старого.
+        // B18: логируем состояние — в логе будет видно почему decline
+        val activeCount = activeSessions.values.count { s ->
+            !s.failed.get() && !s.paused.get() && s.finished.get() < s.threadCount
+        }
+        InAppLogger.d("FileReceiver",
+            "B18: onOffer state: busy=$isBusy sessions=${activeSessions.size} active=$activeCount")
+
+        // B18: smart self-heal. Если все сессии в final state (done/failed/paused) —
+        // busy больше не нужен. Проверяем «нет активных», а не «map пуст».
+        // Это снимает lock даже если finalize async ещё не удалил сессию из map
+        // (было 7-12-секундные busy от старого кода на receiver).
         if (_isBusy.get()) {
-            if (activeSessions.isEmpty()) {
-                InAppLogger.d("FileReceiver", "busy stuck, no sessions — self-heal")
+            if (activeCount == 0) {
+                InAppLogger.d("FileReceiver",
+                    "B18: smart self-heal — no active sessions, releasing busy (sessions=${activeSessions.size})")
                 _isBusy.set(false)
+                // Удаляем done + failed. Paused НЕ трогаем — нужны для resume-пути.
+                val dead = activeSessions.values.filter { s ->
+                    s.failed.get() || s.finished.get() >= s.threadCount
+                }
+                dead.forEach { s ->
+                    activeSessions.remove(s.tid)
+                    InAppLogger.d("FileReceiver",
+                        "B18: cleanup dead session tid=${s.tid.take(8)}")
+                }
             }
         }
         // АТОМАРНЫЙ захват busy — CAS. Если не получилось — decline
