@@ -108,16 +108,13 @@ object AtomController {
                     override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app foreground → start discover loop")
                         appForeground = true
-                        try { AtomQSTile.requestUpdate(owner as? android.content.Context ?: return@onStart) } catch (_: Exception) {}
+                        try { AtomQSTile.requestUpdate(ctx.applicationContext) } catch (_: Exception) {}
                         startContinuousP2P()
                     }
                     override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app background → stop discover loop")
                         appForeground = false
-                        try {
-                            val c = owner as? android.content.Context
-                            if (c != null) AtomQSTile.requestUpdate(c)
-                        } catch (_: Exception) {}
+                        try { AtomQSTile.requestUpdate(ctx.applicationContext) } catch (_: Exception) {}
                         stopContinuousP2P()
                     }
                 }
