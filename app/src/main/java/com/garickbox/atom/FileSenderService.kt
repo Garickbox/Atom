@@ -82,29 +82,30 @@ class FileSenderService : Service() {
     private val pendingAccepts = ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Result<Long>>>()
 
     // B6b: state для паузы/докачки
-    @Volatile private var lastPeerIp: String = ""
-    @Volatile private var lastPeerId: String = ""
-    @Volatile private var lastPeerName: String = ""
-    @Volatile private var lastUris: List<String> = emptyList()
+    private var lastPeerIp: String = ""
+    private var lastPeerId: String = ""
+    private var lastPeerName: String = ""
+    private var lastUris: List<String> = emptyList()
     // B19: stats для компактного лога
-    @Volatile private var stAcceptMs: Long = 0L
-    @Volatile private var stBusyCnt: Int = 0
-    @Volatile private var stHashMs: Long = 0L
-    @Volatile private var stTransMs: Long = 0L
-    @Volatile private var stSpeedMbps: Double = 0.0
-    @Volatile private var lastRelativePaths: List<String?> = emptyList()
-    @Volatile private var pausedRemainingRelativePaths: List<String?> = emptyList()
-    @Volatile private var lastUriIndex: Int = 0
-    @Volatile private var currentProgressBytes: Long = 0L
-    @Volatile private var pausedOffset: Long = 0L
-    @Volatile private var pausedTid: String? = null
-    @Volatile private var pausedName: String? = null
-    @Volatile private var pausedPeerIp: String = ""
-    @Volatile private var pausedPeerId: String = ""
-    @Volatile private var pausedPeerName: String = ""
-    @Volatile private var pausedFileIndex: Int = 0
-    @Volatile private var pausedFileCount: Int = 0
-    @Volatile private var pausedRemainingUris: List<String> = emptyList()
+    private var stAcceptMs: Long = 0L
+    private var stBusyCnt: Int = 0
+    private var stHashMs: Long = 0L
+    private var stTransMs: Long = 0L
+    private var stSpeedMbps: Double = 0.0
+    private var lastFailReason: String = "fail"
+    private var lastRelativePaths: List<String?> = emptyList()
+    private var pausedRemainingRelativePaths: List<String?> = emptyList()
+    private var lastUriIndex: Int = 0
+    private var currentProgressBytes: Long = 0L
+    private var pausedOffset: Long = 0L
+    private var pausedTid: String? = null
+    private var pausedName: String? = null
+    private var pausedPeerIp: String = ""
+    private var pausedPeerId: String = ""
+    private var pausedPeerName: String = ""
+    private var pausedFileIndex: Int = 0
+    private var pausedFileCount: Int = 0
+    private var pausedRemainingUris: List<String> = emptyList()
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var currentJob: Job? = null
@@ -392,7 +393,7 @@ class FileSenderService : Service() {
                 }
                 if (sent < 0) {
                     com.mesh.core.CompactLog.file(realIdx, size / 1024,
-                        stAcceptMs, stBusyCnt, 0, stHashMs, 0.0, "fail")
+                        stAcceptMs, stBusyCnt, 0, stHashMs, 0.0, lastFailReason)
                     InAppLogger.d("FileSenderService",
                         "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
                     TransferHistory.add(this@FileSenderService, TransferHistory.Record(
@@ -551,6 +552,7 @@ class FileSenderService : Service() {
         }
 
         if (acceptResult == null) {
+            lastFailReason = "timeout"
             InAppLogger.d("FileSenderService", "accept timeout")
             AtomController.transferState.value = TransferState.Failed(
                 transferId, peerName, name, "Получатель не ответил", peerIp, contentHash
@@ -562,6 +564,7 @@ class FileSenderService : Service() {
 
         if (acceptResult.isFailure) {
             val reason = (acceptResult.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
+            lastFailReason = "declined:" + reason
             val humanReason = when (reason) {
                 "busy" -> "занят — принимает другой файл"
                 "no_space" -> "нет места на устройстве"
@@ -608,6 +611,7 @@ class FileSenderService : Service() {
                 }
                 val errClass = e.javaClass.simpleName
                 lastErr = e.message ?: errClass
+                lastFailReason = "conn:" + errClass.take(10)
                 InAppLogger.d("FileSenderService",
                     "send error (attempt $sendAttempt/3): $errClass: ${e.message}")
 
