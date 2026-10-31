@@ -36,6 +36,30 @@ class AtomQSTile : TileService() {
 
     override fun onClick() {
         super.onClick()
+        // B17: click → pause (если Running) или resume (если Paused)
+        val ts = AtomController.transferState.value
+        if (ts is TransferState.Running) {
+            InAppLogger.d("AtomQSTile", "click → pause")
+            try {
+                val i = Intent(this, FileSenderService::class.java).apply {
+                    action = TransferNotification.ACTION_PAUSE
+                }
+                ContextCompat.startForegroundService(this, i)
+            } catch (_: Exception) {}
+            handler.postDelayed({ updateTile() }, 500L)
+            return
+        }
+        if (ts is TransferState.Paused) {
+            InAppLogger.d("AtomQSTile", "click → resume")
+            try {
+                val i = Intent(this, FileSenderService::class.java).apply {
+                    action = TransferNotification.ACTION_RESUME
+                }
+                ContextCompat.startForegroundService(this, i)
+            } catch (_: Exception) {}
+            handler.postDelayed({ updateTile() }, 500L)
+            return
+        }
         val now = System.currentTimeMillis()
         val isDoubleTap = (now - lastTapAt) < DOUBLE_TAP_MS
         lastTapAt = now
@@ -95,18 +119,36 @@ class AtomQSTile : TileService() {
     private fun updateTile() {
         try {
             val tile = qsTile ?: return
-            val active = WidgetReceiveService.isActive
-            tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-            tile.label = "Атом"
-            if (active) {
-                val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
-                if (remain > 0) {
-                    tile.subtitle = "Приём · " + (remain / 60) + ":" + "%02d".format(remain % 60)
-                } else {
-                    tile.subtitle = "Приём"
+            // B17: приоритет transferState над WidgetReceive
+            val ts = AtomController.transferState.value
+            when (ts) {
+                is TransferState.Running -> {
+                    tile.state = Tile.STATE_ACTIVE
+                    tile.label = "Атом"
+                    val pct = if (ts.bytesTotal > 0)
+                        ((ts.bytesSent * 100) / ts.bytesTotal).toInt() else 0
+                    tile.subtitle = "📤 " + ts.peerName.take(10) + " · " + pct + "%"
                 }
-            } else {
-                tile.subtitle = "Тап: приём · 2×тап: отправить"
+                is TransferState.Paused -> {
+                    tile.state = Tile.STATE_INACTIVE
+                    tile.label = "Атом"
+                    val pct = if (ts.bytesTotal > 0)
+                        ((ts.bytesSent * 100) / ts.bytesTotal).toInt() else 0
+                    tile.subtitle = "⏸ " + pct + "% · тап продолжить"
+                }
+                else -> {
+                    val active = WidgetReceiveService.isActive
+                    tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+                    tile.label = "Атом"
+                    if (active) {
+                        val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
+                        if (remain > 0) {
+                            tile.subtitle = "Приём · " + (remain / 60) + ":" + "%02d".format(remain % 60)
+                        } else tile.subtitle = "Приём"
+                    } else {
+                        tile.subtitle = "Тап: приём · 2×тап: отправить"
+                    }
+                }
             }
             tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_tile)
             tile.updateTile()

@@ -184,6 +184,14 @@ class FileSenderService : Service() {
                     }
 
                     AtomController.transferState.value = TransferState.Idle
+                } else if (curState is TransferState.Failed ||
+                           curState is TransferState.Paused) {
+                    // B17: cancel на Failed/Paused — просто сбрасываем state в Idle.
+                    // Без этого — «cancel-loop»: тап Отменить на Failed → FGS старт →
+                    // ничего не делает → stopSelf → уведомление остаётся → снова тап → цикл.
+                    InAppLogger.d("FileSenderService",
+                        "cancel: reset ${curState.javaClass.simpleName} → Idle")
+                    AtomController.transferState.value = TransferState.Idle
                 }
 
                 // Отменяем корутину
@@ -464,6 +472,12 @@ class FileSenderService : Service() {
         var lastReason: String? = null
         val offerStart = System.currentTimeMillis()
         for (attempt in 1..30) {
+            // B17: pause в retry-loop — если корутина отменена (user pause/cancel),
+            // прерываемся немедленно, не ждём delay(200-600ms) × 30 итераций.
+            if (!currentCoroutineContext().isActive) {
+                throw kotlinx.coroutines.CancellationException(
+                    "paused during retry-loop")
+            }
             val deferred = kotlinx.coroutines.CompletableDeferred<Result<Long>>()
             pendingAccepts[transferId] = deferred
             node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))

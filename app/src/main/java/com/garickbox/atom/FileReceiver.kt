@@ -254,6 +254,11 @@ object FileReceiver {
                     if (session.paused.get() && !session.failed.get()) {
                         InAppLogger.d("FileReceiver",
                             "thread $threadIdx paused — keeping .part (tid=${session.tid.take(8)})")
+                        // B17: paused: снять busy, но НЕ удалять из activeSessions —
+                        // сессия нужна для resume-пути (onOffer ищет по tid).
+                        // Удаление произойдёт в finalizeSession при resume-success
+                        // или в onCancel/watchdog при явном abort.
+                        _isBusy.set(false)
                     } else {
                         val done = session.finished.incrementAndGet()
                         InAppLogger.d("FileReceiver",

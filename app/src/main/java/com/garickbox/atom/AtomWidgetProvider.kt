@@ -74,6 +74,17 @@ class AtomWidgetProvider : AppWidgetProvider() {
                     rv.setTextViewText(R.id.btn_secondary, XMARK + " Отменить")
                     rv.setOnClickPendingIntent(R.id.btn_secondary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
                 }
+                is TransferState.Failed -> {
+                    // B17: Failed state — показать ошибку и кнопку Закрыть
+                    rv.setTextViewText(R.id.title, XMARK + " Ошибка")
+                    rv.setTextViewText(R.id.subtitle, state.reason.take(35))
+                    rv.setViewVisibility(R.id.progress, View.GONE)
+                    rv.setTextViewText(R.id.btn_primary, XMARK + " Закрыть")
+                    rv.setOnClickPendingIntent(R.id.btn_primary,
+                        piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
+                    rv.setTextViewText(R.id.btn_secondary, "Открыть")
+                    rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
+                }
                 else -> {
                     val recvOn = WidgetReceiveService.isActive
                     val title = if (recvOn) ATOM + VS16 + " Принимаю"
