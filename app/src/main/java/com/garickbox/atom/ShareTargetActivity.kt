@@ -219,8 +219,16 @@ class ShareTargetActivity : AppCompatActivity() {
             .show()
 
         var done = false
+        // B18.1: reinvoke-fallback — если за 3 сек не подключились, force fresh
+        val reinvokeCheckJob = lifecycleScope.launch {
+            delay(3000L)
+            if (!done) {
+                InAppLogger.d("ShareTarget", "reinvoke timeout 3s — forceFreshConnect")
+                wd.forceFreshConnect(mac)
+            }
+        }
         val timeoutJob = lifecycleScope.launch {
-            delay(15000)
+            delay(20000)
             if (!done) {
                 done = true
                 try { dialog.dismiss() } catch (_: Exception) {}
@@ -234,6 +242,7 @@ class ShareTargetActivity : AppCompatActivity() {
             if (done) return@onConnected
             done = true
             timeoutJob.cancel()
+            reinvokeCheckJob.cancel()
             InAppLogger.d("ShareTarget",
                 "quick p2p connected: isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
             AtomController.saveKnownP2pPeer(mac, name)

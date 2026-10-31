@@ -282,6 +282,36 @@ class WifiDirectManager(private val ctx: Context) {
      * изменении списка — если peers=0 всегда, broadcast не приходит вообще.
      * Принудительный requestPeers решает проблему.
      */
+    /**
+     * B18.1: принудительный fresh connect — removeGroup + reconnect.
+     * Вызывается когда reinvoke persistent group не сработал за 3 сек
+     * (framework висит в status=INVITED, но соединение не формируется).
+     */
+    fun forceFreshConnect(mac: String) {
+        if (manager == null || channel == null) return
+        InAppLogger.d("WifiDirect", "forceFreshConnect: removeGroup + reconnect $mac")
+        try {
+            manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("WifiDirect", "forceFresh: removeGroup OK, reconnect in 500ms")
+                    scope.launch {
+                        kotlinx.coroutines.delay(500L)
+                        connect(mac)
+                    }
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "forceFresh: removeGroup failed $reason, reconnect anyway")
+                    scope.launch {
+                        kotlinx.coroutines.delay(500L)
+                        connect(mac)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("WifiDirect", "forceFreshConnect error: ${e.message}")
+        }
+    }
+
     fun startContinuousDiscover() {
         if (continuousJob?.isActive == true) return
         continuousJob = scope.launch {

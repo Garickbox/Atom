@@ -353,7 +353,7 @@ class MainActivity : AppCompatActivity() {
                 UpdateChecker.promptAndInstall(this@MainActivity, release)
             } else {
                 InAppLogger.d("MainActivity", "widget_send: no update")
-                openFilePicker()
+                showSendPicker()
             }
         }
     }
