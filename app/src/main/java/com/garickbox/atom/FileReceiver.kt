@@ -266,16 +266,12 @@ object FileReceiver {
                         "thread $threadIdx error: ${e.javaClass.simpleName}: ${e.message}")
                     session.failed.set(true)
                 } finally {
-                    try { socket.close() } catch (_: Exception) {}
+                    // B20.5: increment + set(false) ДО close — close может блокировать 100ms+,
+                    // следующий offer приходит в это окно и ловит busy.
                     session.sockets.remove(socket)
-                    // B6b: если sender поставил паузу — не финализируем, .part оставляем
                     if (session.paused.get() && !session.failed.get()) {
                         InAppLogger.d("FileReceiver",
                             "thread $threadIdx paused — keeping .part (tid=${session.tid.take(8)})")
-                        // B17: paused: снять busy, но НЕ удалять из activeSessions —
-                        // сессия нужна для resume-пути (onOffer ищет по tid).
-                        // Удаление произойдёт в finalizeSession при resume-success
-                        // или в onCancel/watchdog при явном abort.
                         _isBusy.set(false)
                     } else {
                         val done = session.finished.incrementAndGet()
@@ -294,6 +290,7 @@ object FileReceiver {
                             }
                         }
                     }
+                    try { socket.close() } catch (_: Exception) {}
                 }
             }
         } catch (e: Exception) {
