@@ -179,17 +179,11 @@ class WifiDirectManager(private val ctx: Context) {
             return
         }
         try {
-            // removeGroup перед новым поиском — иначе залипает
-            manager!!.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "removed group before discover")
-                    startDiscover()
-                }
-                override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "removeGroup failed: $reason (продолжаем)")
-                    startDiscover()
-                }
-            })
+            // B16: НЕ вызываем removeGroup перед discover — иначе стирается
+            // persistent group profile и framework не может сделать reinvoke
+            // (fast reconnect ~1-2s вместо полного цикла 5-15s с GO Negotiation).
+            InAppLogger.d("WifiDirect", "discoverPeers: skip removeGroup (keep persistent)")
+            startDiscover()
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "discoverPeers error: ${e.message}")
             onError?.invoke("Ошибка поиска: ${e.message}")
@@ -243,10 +237,10 @@ class WifiDirectManager(private val ctx: Context) {
             val config = android.net.wifi.p2p.WifiP2pConfig().apply {
                 deviceAddress = mac
             }
-            InAppLogger.d("WifiDirect", "connect to $mac (clean, framework auto)")
+            InAppLogger.d("WifiDirect", "connect to $mac (B16: reinvoke-if-profile-exists)")
             manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "connect initiated")
+                    InAppLogger.d("WifiDirect", "connect initiated (system decides fresh vs reinvoke)")
                 }
                 override fun onFailure(reason: Int) {
                     InAppLogger.d("WifiDirect", "connect failed: $reason")
@@ -264,16 +258,23 @@ class WifiDirectManager(private val ctx: Context) {
      * 3 стратегии: getMethod (public) → getDeclaredMethod (hidden) → Builder (API 30+).
      */
 @SuppressLint("MissingPermission")
+    /**
+     * B16: явное «забыть группу» — стирает persistent profile.
+     * Вызывать только из кнопки «Отключиться / Забыть устройство», НЕ из flow.
+     */
     fun disconnect() {
         try {
             manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() { InAppLogger.d("WifiDirect", "group removed") }
+                override fun onSuccess() { InAppLogger.d("WifiDirect", "group removed (forget)") }
                 override fun onFailure(reason: Int) {
                     InAppLogger.d("WifiDirect", "removeGroup failed: $reason")
                 }
             })
         } catch (_: Exception) {}
     }
+
+    /** Alias для явного «забыть устройство». Сейчас = disconnect(). */
+    fun forgetGroup() = disconnect()
 
     /**
      * Постоянный discovery: каждые 12 сек вызываем discoverPeers + requestPeers.
