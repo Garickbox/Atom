@@ -341,6 +341,10 @@ class WifiDirectManager(private val ctx: Context) {
     @SuppressLint("MissingPermission")
     private fun doDiscoverTick() {
         if (reinitInProgress) return
+        if (channel == null || manager == null) {
+            InAppLogger.d("WifiDirect", "discoverTick skip — channel/manager null")
+            return
+        }
         try {
             manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
@@ -393,8 +397,13 @@ class WifiDirectManager(private val ctx: Context) {
                 init()
                 delay(500)
                 consecutiveFailures = 0
-                discoverPeers()
-                InAppLogger.d("WifiDirect", "reinit OK, discover triggered")
+                // B22.1: startDiscover() БЕЗ guard reinitInProgress (иначе silent return)
+                if (channel != null) {
+                    startDiscover()
+                    InAppLogger.d("WifiDirect", "reinit OK, startDiscover called")
+                } else {
+                    InAppLogger.d("WifiDirect", "reinit FAILED: channel null после init")
+                }
             } catch (e: Exception) {
                 InAppLogger.d("WifiDirect", "reinit error: ${e.message}")
             } finally {
@@ -408,6 +417,8 @@ class WifiDirectManager(private val ctx: Context) {
             receiver?.let { ctx.unregisterReceiver(it) }
         } catch (_: Exception) {}
         receiver = null
+        channel = null
+        manager = null
         initialized = false
         InAppLogger.d("WifiDirect", "cleanup")
     }
