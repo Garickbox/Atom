@@ -37,6 +37,16 @@ class WidgetReceiveService : Service() {
     }
 
     private var wifiLock: WifiManager.WifiLock? = null
+    // B20.3: ticker — виджет/QS Tile раз в секунду пока приём активен
+    private val tickerHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val tickerRunnable = object : Runnable {
+        override fun run() {
+            if (!isActive) return
+            try { AtomWidgetProvider.refreshNow(this@WidgetReceiveService) } catch (_: Exception) {}
+            try { AtomQSTile.requestUpdate(this@WidgetReceiveService) } catch (_: Exception) {}
+            tickerHandler.postDelayed(this, 1000L)
+        }
+    }
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -75,6 +85,8 @@ class WidgetReceiveService : Service() {
                 scheduleAutoStop()
                 AtomWidgetProvider.refreshNow(this)
                 try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
+                tickerHandler.removeCallbacks(tickerRunnable)
+                tickerHandler.post(tickerRunnable)
             }
             ACTION_STOP -> {
                 InAppLogger.d("WidgetReceive", "manual stop from notification")
@@ -95,6 +107,7 @@ class WidgetReceiveService : Service() {
     }
 
     override fun onDestroy() {
+        tickerHandler.removeCallbacks(tickerRunnable)
         isActive = false
         activeUntil = 0L
         try { AtomController.wifiDirect?.stopContinuousDiscover() } catch (_: Exception) {}
