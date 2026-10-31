@@ -131,12 +131,9 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             manager?.requestPeers(channel) { list ->
                 val peers = list?.deviceList?.toList() ?: emptyList()
-                val key = peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }.sorted().joinToString(",")
-                if (key != lastPeerKey) {
-                    lastPeerKey = key
-                    InAppLogger.d("WifiDirect",
-                        "requestPeers → ${peers.size} peer(s): ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
-                }
+                // B22-log: логировать ВСЕГДА (не только при смене) — иначе "0" невидим
+                InAppLogger.d("WifiDirect",
+                    "requestPeers → ${peers.size}: ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
                 if (peers.isNotEmpty()) {
                     onPeersChanged?.invoke(peers)
                     persistentOnPeersChanged?.invoke(peers)
@@ -315,6 +312,7 @@ class WifiDirectManager(private val ctx: Context) {
     fun startContinuousDiscover() {
         if (continuousJob?.isActive == true) return
         continuousJob = scope.launch {
+            InAppLogger.d("WifiDirect", "continuousDiscover RUN (doDiscoverTick every 12s)")
             InAppLogger.d("WifiDirect", "continuousDiscover started")
             delay(500)
             while (true) {
