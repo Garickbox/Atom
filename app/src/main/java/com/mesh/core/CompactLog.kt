@@ -26,9 +26,9 @@ object CompactLog {
         return if (f.exists() && f.length() > 0) f else null
     }
 
-    @Synchronized
     private var lastSpeedMbps: Double = 0.0
 
+    @Synchronized
     fun sessionStart(files: Int, resumed: Boolean, connectMs: Long = 0L) {
         if (resumed && sessionOpen) {
             sb.append("r\n")
