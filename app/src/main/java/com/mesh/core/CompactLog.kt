@@ -27,7 +27,9 @@ object CompactLog {
     }
 
     @Synchronized
-    fun sessionStart(files: Int, resumed: Boolean) {
+    @Volatile private var lastSpeedMbps: Double = 0.0
+
+    fun sessionStart(files: Int, resumed: Boolean, connectMs: Long = 0L) {
         if (resumed && sessionOpen) {
             sb.append("r\n")
             flush()
@@ -38,8 +40,11 @@ object CompactLog {
         }
         sessionStartMs = System.currentTimeMillis()
         lastPauseIdx = -1
+        lastSpeedMbps = 0.0
         sessionOpen = true
-        sb.append('S').append(files).append('\n')
+        sb.append('S').append(files)
+        if (connectMs > 0) sb.append('/').append(connectMs / 1000)
+        sb.append('\n')
         flush()
     }
 
@@ -57,7 +62,10 @@ object CompactLog {
             .append('/').append("%.1f".format(Locale.US, speedMbps))
         if (failReason != null) {
             sb.append("-F/").append(failReason.replace("/", "_").take(14))
+        } else if (lastSpeedMbps > 1.0 && speedMbps < lastSpeedMbps * 0.3) {
+            sb.append('!')
         }
+        if (speedMbps > 0) lastSpeedMbps = speedMbps
         sb.append('\n')
         flush()
     }
