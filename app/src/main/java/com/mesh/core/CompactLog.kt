@@ -2,6 +2,7 @@ package com.mesh.core
 
 import android.content.Context
 import java.io.File
+import java.util.Locale
 
 /**
  * B19: компактный лог. ~50-300 байт на сессию (было 12-100 KB).
@@ -24,6 +25,7 @@ object CompactLog {
     private var dir: File? = null
     private var sessionStartMs: Long = 0L
     private val sb = StringBuilder()
+    private var lastPauseIdx: Int = -1
 
     fun init(ctx: Context) {
         val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
@@ -41,6 +43,7 @@ object CompactLog {
     fun sessionStart(files: Int, resumed: Boolean) {
         sessionStartMs = System.currentTimeMillis()
         sb.setLength(0)
+        lastPauseIdx = -1
         sb.append('S').append(files)
         if (resumed) sb.append("/r")
         sb.append('\n')
@@ -59,7 +62,7 @@ object CompactLog {
             .append('/').append(busyCnt)
             .append('/').append(transMs)
             .append('/').append(hashMs)
-            .append('/').append("%.1f".format(speedMbps))
+            .append('/').append("%.1f".format(Locale.US, speedMbps))
         if (failReason != null) {
             sb.append("-F/").append(failReason.replace("/", "_").take(14))
         }
@@ -69,6 +72,8 @@ object CompactLog {
 
     @Synchronized
     fun pause(idx: Int) {
+        if (idx == lastPauseIdx) return
+        lastPauseIdx = idx
         sb.append('P').append(idx).append('\n')
         flush()
     }
@@ -82,9 +87,10 @@ object CompactLog {
     @Synchronized
     fun sessionEnd(ok: Int, fail: Int, durMs: Long, avgMbps: Double) {
         sb.append('E').append(ok + fail)
-            .append('/').append(ok).append("ok").append(fail).append("fail")
-            .append('/').append("%.1f".format(durMs / 1000.0))
-            .append('/').append("%.1f".format(avgMbps))
+            .append('/').append(ok)
+            .append('/').append(fail)
+            .append('/').append("%.1f".format(Locale.US, durMs / 1000.0))
+            .append('/').append("%.1f".format(Locale.US, avgMbps))
             .append('\n')
         flush()
     }

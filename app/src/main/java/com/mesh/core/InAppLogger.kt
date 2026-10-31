@@ -36,17 +36,15 @@ object InAppLogger {
     private val fmtHm = SimpleDateFormat("HHmm", Locale.US)
     private val fmtHmS = SimpleDateFormat("HHmmss", Locale.US)
 
-    private val NOISE_PREFIXES = arrayOf(
-        "send HELLO",
-        "received HELLO",
-        "received HERE",
-        "known_peer saved",
-        "continuousDiscover",
-        "this device:",
-        "discover tick",
-        "skip continuous",
-        "preflight (silent)",
-        "requestPeers \u2192",
+    // B20.1: verbose пишет ТОЛЬКО эти ключи (белый список)
+    private val WHITELIST = arrayOf(
+        "accept OK", "busy (", "multi done", "thread done", "thread error",
+        "transfer DONE", "transfer START", "tcp OK", "tcp FAIL", "tcp connect",
+        "connect initiated", "connected:", "connected isGO",
+        "SHA-256", "MISMATCH", "hash(", "MediaStore save",
+        "finalize", "watchdog:", "bind error", "onStartCommand",
+        "cancel requested", "pause:", "resume:",
+        "error", "Error", "fail", "FAIL", "Exception",
     )
 
     private fun shortTag(tag: String): String = when (tag) {
@@ -101,9 +99,11 @@ object InAppLogger {
         if (!verboseEnabled) return
         val dd = dir ?: return
         try {
-            for (p in NOISE_PREFIXES) {
-                if (msg.startsWith(p)) return
+            var whitelisted = false
+            for (k in WHITELIST) {
+                if (msg.contains(k)) { whitelisted = true; break }
             }
+            if (!whitelisted) return
             val compressed = compress(msg)
             if (compressed.isBlank()) return
             val t = fmtHm.format(Date())
