@@ -204,6 +204,13 @@ class FileSenderService : Service() {
                     AtomController.transferState.value = TransferState.Idle
                 }
 
+                // B20.2: закрыть compact session при cancel
+                try {
+                    val cs = AtomController.transferState.value
+                    val okCount = if (cs is TransferState.Running) cs.fileIndex - 1 else 0
+                    com.mesh.core.CompactLog.sessionEnd(okCount, 1, 0, 0.0)
+                } catch (_: Exception) {}
+
                 // Отменяем корутину
                 currentJob?.cancel()
 
