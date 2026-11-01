@@ -24,15 +24,28 @@ object MediaStoreSaver {
 
     fun save(ctx: Context, source: File, fileName: String, mimeType: String?,
              overrideRelativeDir: String? = null): SaveResult {
-        val type = mimeType ?: guessMime(fileName)
-        val category = if (overrideRelativeDir.isNullOrBlank()) categoryFor(type) else overrideRelativeDir.trim('/')
+        // B73 code-review#6: sanitize против path traversal от malicious peer
+        val safeName = sanitizeName(fileName)
+        val safeDir = sanitizeDir(overrideRelativeDir)
+        val type = mimeType ?: guessMime(safeName)
+        val category = if (safeDir.isNullOrBlank()) categoryFor(type) else safeDir
         val relPath = "$ROOT_DIR/$category"
+
+        // B73: если санитизация изменила имя/путь — лог
+        if (safeName != fileName) {
+            InAppLogger.d("MediaStoreSaver",
+                "B73 sanitize name: '" + fileName + "' -> '" + safeName + "'")
+        }
+        if (overrideRelativeDir != null && safeDir != overrideRelativeDir.trim('/')) {
+            InAppLogger.d("MediaStoreSaver",
+                "B73 sanitize dir: '" + overrideRelativeDir + "' -> '" + safeDir + "'")
+        }
 
         // B10a: MediaStore.Downloads на некоторых TV не создаёт RELATIVE_PATH поддиректории.
         // При любой ошибке saveModern → fallback на прямую запись saveLegacy.
         if (Build.VERSION.SDK_INT >= 29) {
             try {
-                val r = saveModern(ctx, source, fileName, type, relPath, overrideRelativeDir)
+                val r = saveModern(ctx, source, safeName, type, relPath, safeDir)
                 if (r.uri != null) return r
                 InAppLogger.d("MediaStoreSaver", "saveModern: null uri → fallback to legacy")
             } catch (e: Exception) {
@@ -41,7 +54,7 @@ object MediaStoreSaver {
         }
 
         return try {
-            saveLegacy(ctx, source, fileName, relPath)
+            saveLegacy(ctx, source, safeName, relPath)
         } catch (e: Exception) {
             InAppLogger.d("MediaStoreSaver", "saveLegacy error: ${e.message}")
             SaveResult(null, "")
@@ -105,6 +118,31 @@ object MediaStoreSaver {
         val path = "$realRelPath$fileName"
         InAppLogger.d("MediaStoreSaver", "saveModern: saved $path")
         return SaveResult(uri, path)
+    }
+
+    /** B73: санитизация имени — только буквы/цифры/._- , без пути. */
+    private fun sanitizeName(raw: String): String {
+        if (raw.isBlank()) return "file"
+        var s = raw.replace('\\', '_').replace('/', '_')
+        s = s.replace("..", "_")
+        // убрать control chars
+        s = s.filter { it.code >= 0x20 }
+        if (s.isBlank() || s == "." || s == "..") return "file"
+        // максимум 200 символов
+        return if (s.length > 200) s.take(200) else s
+    }
+
+    /** B73: санитизация директории — один сегмент, без .. и /. */
+    private fun sanitizeDir(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        var s = raw.trim('/').trim()
+        if (s.isBlank()) return null
+        // отсечь .. и / — берём ТОЛЬКО первый сегмент
+        s = s.replace("..", "").replace("//", "/").trim('/')
+        val firstSegment = s.substringBefore('/')
+        if (firstSegment.isBlank() || firstSegment == "." || firstSegment == "..") return null
+        // максимум 100 символов
+        return if (firstSegment.length > 100) firstSegment.take(100) else firstSegment
     }
 
     @Suppress("DEPRECATION")
