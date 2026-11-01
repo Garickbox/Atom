@@ -19,4 +19,8 @@
     <string name="share_nobody">Никого не нашли. Попробуйте QR</string>
     <string name="share_wifi_direct">📶  Wi-Fi Direct (без роутера)</string>
     <string name="widget_description">Атом — быстрая передача файлов</string>
+    <string name="shortcut_find_short">Найти</string>
+    <string name="shortcut_find_long">Найти устройство</string>
+    <string name="shortcut_recv_short">Приём</string>
+    <string name="shortcut_recv_long">Приём 10 мин</string>
 </resources>
