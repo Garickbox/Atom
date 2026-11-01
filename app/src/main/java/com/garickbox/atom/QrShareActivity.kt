@@ -34,6 +34,9 @@ class QrShareActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         infoText = findViewById(R.id.infoText)
 
+        // B71: кнопка ← В главное (axiom#62)
+        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener { finish() }
+
         startP2pGroup()
     }
 

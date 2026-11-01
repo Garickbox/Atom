@@ -63,6 +63,8 @@ object TestApi {
                     "/file-io" -> cmdFileIo(ctx)
                     "/crash" -> cmdCrash(ctx)
                     "/selftest" -> cmdSelftest(ctx)
+                    "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
+                        catch (e: Exception) { "err: " + (e.message ?: "?") }
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
             } catch (e: Throwable) {
