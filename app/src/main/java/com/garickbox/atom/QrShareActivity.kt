@@ -1,7 +1,6 @@
 package com.garickbox.atom
 
 import android.content.Context
-import android.content.Intent
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pManager
