@@ -14,6 +14,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 
 object AtomController {
 
@@ -221,7 +222,7 @@ object AtomController {
 
 
     private fun startContinuousP2P() {
-        if (_transferActive) {
+        if (transferActive) {
             com.mesh.core.InAppLogger.d("AtomController", "skip continuous — transfer active")
             return
         }
