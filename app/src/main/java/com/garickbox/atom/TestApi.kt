@@ -65,6 +65,12 @@ object TestApi {
                     "/selftest" -> cmdSelftest(ctx)
                     "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                         catch (e: Exception) { "err: " + (e.message ?: "?") }
+                    "/prefs" -> cmdPrefs(ctx)
+                    "/permissions" -> cmdPermissions(ctx)
+                    "/history" -> cmdHistory(ctx)
+                    "/channels" -> cmdChannels(ctx)
+                    "/shortcuts" -> cmdShortcuts(ctx)
+                    "/widgets" -> cmdWidgets(ctx)
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
             } catch (e: Throwable) {
@@ -209,6 +215,95 @@ object TestApi {
             val lines = f.readLines().takeLast(200)
             val bad = lines.filter { it.contains("FATAL", true) || it.contains("Exception", true) }
             "errors=" + bad.size + "/" + lines.size + "\n" + bad.takeLast(10).joinToString("\n")
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdPrefs(ctx: Context): String {
+        return try {
+            val p = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
+            val keys = p.all.keys.sorted()
+            val sb = StringBuilder("prefs=" + keys.size + "\n")
+            keys.forEach { k ->
+                val v = p.all[k]
+                val shown = when (v) {
+                    is Boolean -> v.toString()
+                    is Int -> v.toString()
+                    is Long -> if (k.contains("_at") || k.contains("ms"))
+                        (System.currentTimeMillis() - v).toString() + "ms_ago"
+                        else v.toString()
+                    is String -> if (k.contains("token") || k.contains("password")) "***"
+                        else if (v.length > 40) v.take(40) + "…" else v
+                    else -> "?"
+                }
+                sb.appendLine("  " + k + "=" + shown)
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdPermissions(ctx: Context): String {
+        return try {
+            val pm = ctx.packageManager
+            val ai = pm.getPackageInfo(ctx.packageName,
+                android.content.pm.PackageManager.GET_PERMISSIONS)
+            val sb = StringBuilder()
+            ai.requestedPermissions?.forEach { perm ->
+                val short = perm.substringAfterLast('.')
+                val granted = try {
+                    android.content.pm.PackageManager.PERMISSION_GRANTED ==
+                        ctx.checkSelfPermission(perm)
+                } catch (_: Exception) { false }
+                sb.appendLine(short + " granted=" + granted)
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdHistory(ctx: Context): String {
+        return try {
+            val records = TransferHistory.list(ctx)
+            val sb = StringBuilder("records=" + records.size + "\n")
+            records.take(20).forEach { r ->
+                sb.appendLine(r.status + " " + r.fileName + " " + r.bytes + "B from " + r.peerName)
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdChannels(ctx: Context): String {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT < 26) return "API<26 skip"
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE)
+                as android.app.NotificationManager
+            val sb = StringBuilder()
+            nm.notificationChannels?.forEach { ch ->
+                sb.appendLine(ch.id + " imp=" + ch.importance + " badge=" + ch.canShowBadge())
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdShortcuts(ctx: Context): String {
+        return try {
+            val sm = androidx.core.content.pm.ShortcutManagerCompat.getShortcuts(
+                ctx, androidx.core.content.pm.ShortcutManagerCompat.FLAG_MATCH_DYNAMIC)
+            "dynamic=" + sm.size + "\n" + sm.joinToString("\n") {
+                "  " + it.shortLabel + " (" + it.id + ")"
+            }
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdWidgets(ctx: Context): String {
+        return try {
+            val pm = ctx.packageManager
+            val ai = pm.getPackageInfo(ctx.packageName,
+                android.content.pm.PackageManager.GET_RECEIVERS)
+            val sb = StringBuilder()
+            ai.receivers?.filter { it.name.contains("Widget") }?.forEach { r ->
+                sb.appendLine(r.name.substringAfterLast('.') + " enabled=" + r.enabled)
+            }
+            if (sb.isEmpty()) sb.appendLine("(no widget receivers)")
+            sb.toString()
         } catch (e: Exception) { "err: " + e.message }
     }
 

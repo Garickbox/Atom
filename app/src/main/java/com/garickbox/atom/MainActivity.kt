@@ -150,6 +150,35 @@ class MainActivity : AppCompatActivity() {
         InAppLogger.d("MainActivity", "onCreate done")
     }
 
+    private var batteryPromptChecked = false
+
+    /** B77: одноразовый prompt если whitelist нет и ещё не спрашивали. */
+    private fun maybePromptBatteryOnce() {
+        if (batteryPromptChecked) return
+        batteryPromptChecked = true
+        try {
+            if (BatteryOptimizationHelper.isWhitelisted(this)) return
+            val prefs = getSharedPreferences("atom", MODE_PRIVATE)
+            if (prefs.getBoolean("battery_prompt_shown", false)) return
+            prefs.edit().putBoolean("battery_prompt_shown", true).apply()
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("🔋 Фоновая работа")
+                .setMessage(
+                    "Чтобы большие передачи не рвались при выключенном экране, " +
+                    "разреши Атому работать в фоне.\n\n" +
+                    "На HyperOS: Батарея → «Без ограничений»"
+                )
+                .setPositiveButton("Разрешить") { _, _ ->
+                    try { BatteryOptimizationHelper.requestWhitelist(this) } catch (_: Exception) {}
+                }
+                .setNegativeButton("Позже", null)
+                .show()
+            InAppLogger.d("MainActivity", "B77 battery prompt shown")
+        } catch (e: Exception) {
+            InAppLogger.d("MainActivity", "B77 battery prompt error: ${e.message}")
+        }
+    }
+
     private fun runOnboarding() {
         OnboardingHelper.next(this) { missing ->
             InAppLogger.d("MainActivity", "onboarding: request ${missing.size} perms")
@@ -549,6 +578,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // B77: one-shot battery prompt — независим от OnboardingHelper.isDone
+        maybePromptBatteryOnce()
         try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
         UpdateChecker.checkPending(this)
         if (pendingWidgetSend) {
