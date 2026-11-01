@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="shortcut_find"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_find"
+        android:shortcutShortLabel="Найти"
+        android:shortcutLongLabel="Найти устройство"
+        android:rank="10">
+        <intent
+            android:action="com.garickbox.atom.SHORTCUT_FIND"
+            android:targetPackage="com.garickbox.atom"
+            android:targetClass="com.garickbox.atom.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_receive"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification_receive"
+        android:shortcutShortLabel="Приём"
+        android:shortcutLongLabel="Приём 10 мин"
+        android:rank="11">
+        <intent
+            android:action="com.garickbox.atom.SHORTCUT_RECEIVE"
+            android:targetPackage="com.garickbox.atom"
+            android:targetClass="com.garickbox.atom.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -97,6 +97,16 @@ class ShareTargetActivity : AppCompatActivity() {
             } catch (_: Exception) {}
         }
 
+        // B24: preselected peer из shortcut → сразу connect
+        val presel = MainActivity.pendingPeerForShareTarget
+        if (presel != null && presel.mac.isNotBlank() && !isTv()) {
+            MainActivity.pendingPeerForShareTarget = null
+            InAppLogger.d("ShareTarget", "preselected ${presel.name} → connectP2pQuick")
+            dialog?.dismiss()
+            connectP2pQuick(presel.mac, presel.name)
+            return
+        }
+
         if (isTv()) {
             showTvFlow()
             return

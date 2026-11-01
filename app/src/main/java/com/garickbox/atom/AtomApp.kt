@@ -10,6 +10,10 @@ class AtomApp : Application() {
         com.mesh.core.CompactLog.init(this)
         NotificationHelper.createChannels(this)
         AtomController.init(this)
+        AtomController.onKnownPeersUpdated = { peers ->
+            try { ShortcutPublisher.update(this, peers) } catch (_: Exception) {}
+        }
+        try { ShortcutPublisher.update(this, AtomController.getKnownP2pPeers()) } catch (_: Exception) {}
         cleanupOldParts()
         InAppLogger.d("AtomApp", "app started, version=${BuildConfig.VERSION_NAME}, myId=${AtomController.myId}")
     }

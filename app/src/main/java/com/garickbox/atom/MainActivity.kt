@@ -19,6 +19,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        const val ACTION_SHORTCUT_FIND = "com.garickbox.atom.SHORTCUT_FIND"
+        const val ACTION_SHORTCUT_RECEIVE = "com.garickbox.atom.SHORTCUT_RECEIVE"
+        const val ACTION_SHORTCUT_SEND_PEER = "com.garickbox.atom.SHORTCUT_SEND_PEER"
+        @Volatile var pendingPeerForShareTarget: Peer? = null
+    }
+    private var pendingShortcutFind = false
+    private var pickerShownForPeer = false
+
 
     private lateinit var b: ActivityMainBinding
 
@@ -84,14 +93,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent?.action == ACTION_SHORTCUT_RECEIVE) {
+            try { WidgetReceiveService.toggle(this) } catch (_: Exception) {}
+            finish()
+            return
+        }
         if (!com.garickbox.atom.TvHelper.isTv(this)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        if (intent?.action == AtomWidgetProvider.ACTION_WIDGET_SEND) {
-            pendingWidgetSend = true
+        when (intent?.action) {
+            AtomWidgetProvider.ACTION_WIDGET_SEND -> pendingWidgetSend = true
+            ACTION_SHORTCUT_FIND -> pendingShortcutFind = true
+            ACTION_SHORTCUT_SEND_PEER -> {
+                pendingPeerForShareTarget = Peer(
+                    id = intent.getStringExtra("atom_peer_mac") ?: "",
+                    name = intent.getStringExtra("atom_peer_name") ?: "?",
+                    ip = "",
+                    mac = intent.getStringExtra("atom_peer_mac") ?: ""
+                )
+                pickerShownForPeer = false
+            }
         }
 
         setSupportActionBar(b.toolbar)
@@ -346,8 +370,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent?.action == AtomWidgetProvider.ACTION_WIDGET_SEND) {
-            processWidgetSend()
+        setIntent(intent)
+        when (intent?.action) {
+            AtomWidgetProvider.ACTION_WIDGET_SEND -> processWidgetSend()
+            ACTION_SHORTCUT_FIND -> showSendPicker()
+            ACTION_SHORTCUT_SEND_PEER -> {
+                pendingPeerForShareTarget = Peer(
+                    id = intent.getStringExtra("atom_peer_mac") ?: "",
+                    name = intent.getStringExtra("atom_peer_name") ?: "?",
+                    ip = "",
+                    mac = intent.getStringExtra("atom_peer_mac") ?: ""
+                )
+                pickerShownForPeer = false
+                showSendPicker()
+            }
         }
     }
 
@@ -493,6 +529,14 @@ class MainActivity : AppCompatActivity() {
         if (pendingWidgetSend) {
             pendingWidgetSend = false
             processWidgetSend()
+        }
+        if (pendingShortcutFind) {
+            pendingShortcutFind = false
+            showSendPicker()
+        }
+        if (pendingPeerForShareTarget != null && !pickerShownForPeer) {
+            pickerShownForPeer = true
+            showSendPicker()
         }
         // B10d: восстановить OTA-диалог если загрузка идёт
         if (UpdateChecker.isDownloading && downloadDialog == null) {

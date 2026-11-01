@@ -32,6 +32,7 @@ object AtomController {
     var myId: String = ""
     var lastPeer: Peer? = null
     @Volatile var appForeground: Boolean = false
+    var onKnownPeersUpdated: ((List<KnownP2pPeer>) -> Unit)? = null
 
     val meshNode: MeshNode? get() = _meshNode
 
@@ -209,6 +210,7 @@ object AtomController {
             }
             prefs.edit().putString("known_p2p_peers", arr.toString()).apply()
             InAppLogger.d("AtomController", "known_peer saved: $actualName ($mac)")
+            try { onKnownPeersUpdated?.invoke(top.take(3)) } catch (_: Exception) {}
         }
     }
 
