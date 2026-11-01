@@ -50,6 +50,10 @@ object InAppLogger {
         "P2P ERROR", "requestPeers", "peers changed",
         // B31: QR/hotspot диагностика (временно до стабилизации)
         "HELLO", "recreate", "probe", "startTransfer", "peer resolved",
+        // B82: код-ревью теги B73-B81 (fix-строки должны попадать в atom.log)
+        "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81",
+        "findDownloadedApk", "saveApkToDownloads", "skip Failed",
+        "skip Success", "skip UpdatePending", "skip Update", "Badge",
     )
 
     private fun shortTag(tag: String): String = when (tag) {
