@@ -71,6 +71,8 @@ object TestApi {
                     "/channels" -> cmdChannels(ctx)
                     "/shortcuts" -> cmdShortcuts(ctx)
                     "/widgets" -> cmdWidgets(ctx)
+                    "/find_apk" -> cmdFindApk(ctx)
+                    "/badge" -> cmdBadge(ctx, params["action"] ?: "get", params["n"]?.toIntOrNull() ?: 0)
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
             } catch (e: Throwable) {
@@ -304,6 +306,48 @@ object TestApi {
             }
             if (sb.isEmpty()) sb.appendLine("(no widget receivers)")
             sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    /** B81 axiom#85: проверка findDownloadedApk — null если APK уже установлен. */
+    private fun cmdFindApk(ctx: Context): String {
+        return try {
+            val savedVc = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
+                .getInt("last_downloaded_apk_vc", 0)
+            val currentVc = BuildConfig.VERSION_CODE
+            val ready = UpdateChecker.findDownloadedApk(ctx)
+            buildString {
+                appendLine("savedVc=" + savedVc + " currentVc=" + currentVc)
+                appendLine("verdict=" + (if (savedVc > currentVc) "UPDATE_AVAILABLE" else
+                    if (savedVc == 0) "NO_APK" else "ALREADY_INSTALLED"))
+                if (ready != null) {
+                    appendLine("APK_READY name=" + ready.name + " date=" + ready.dateAdded)
+                } else {
+                    appendLine("APK_READY=null (правильно если savedVc<=currentVc)")
+                }
+            }
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    /** B81: управление badge counter. action=get|set|clear */
+    private fun cmdBadge(ctx: Context, action: String, n: Int): String {
+        return try {
+            when (action) {
+                "get" -> "badge_count=" + BadgeHelper.currentCount(ctx)
+                "set" -> {
+                    BadgeHelper.setCount(ctx, n)
+                    "badge_count=" + BadgeHelper.currentCount(ctx) + " (set " + n + ")"
+                }
+                "clear" -> {
+                    BadgeHelper.clear(ctx)
+                    "badge_count=" + BadgeHelper.currentCount(ctx) + " (cleared)"
+                }
+                "incr" -> {
+                    BadgeHelper.increment(ctx)
+                    "badge_count=" + BadgeHelper.currentCount(ctx) + " (incremented)"
+                }
+                else -> "unknown action: " + action + " (get|set|clear|incr)"
+            }
         } catch (e: Exception) { "err: " + e.message }
     }
 
