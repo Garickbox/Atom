@@ -69,6 +69,74 @@ class AtomCommandReceiver : BroadcastReceiver() {
             ACTION_PING -> {
                 InAppLogger.d("AtomCmd", "PING received")
             }
+            // B90: broadcast intents extension — read-only, безопасно
+            ACTION_STATUS -> {
+                try {
+                    val reply = org.json.JSONObject().apply {
+                        put("build", BuildConfig.VERSION_CODE)
+                        put("versionName", BuildConfig.VERSION_NAME)
+                        put("device", android.os.Build.MANUFACTURER + "/" + android.os.Build.MODEL)
+                        put("myName", AtomController.myName)
+                        put("myId", AtomController.myId.take(8))
+                        put("transferState", AtomController.transferState.value.javaClass.simpleName)
+                        put("knownPeers", AtomController.getKnownP2pPeers().size)
+                        put("receiveActive", WidgetReceiveService.isActive)
+                    }
+                    InAppLogger.d("AtomCmd", "STATUS: " + reply)
+                    sendBroadcast(Intent(ACTION_STATUS_RESULT).apply {
+                        putExtra("json", reply.toString())
+                        setPackage(ctx.packageName)
+                    })
+                } catch (e: Exception) {
+                    InAppLogger.d("AtomCmd", "STATUS error: " + e.message)
+                }
+            }
+            ACTION_PEERS -> {
+                try {
+                    val peers = AtomController.getKnownP2pPeers()
+                    val arr = org.json.JSONArray()
+                    peers.forEach { p ->
+                        arr.put(org.json.JSONObject().apply {
+                            put("name", p.name)
+                            put("mac", p.mac)
+                            put("lastConnectedMs", p.lastConnectedMs)
+                        })
+                    }
+                    InAppLogger.d("AtomCmd", "PEERS: " + peers.size)
+                    sendBroadcast(Intent(ACTION_PEERS_RESULT).apply {
+                        putExtra("json", arr.toString())
+                        putExtra("count", peers.size)
+                        setPackage(ctx.packageName)
+                    })
+                } catch (e: Exception) {
+                    InAppLogger.d("AtomCmd", "PEERS error: " + e.message)
+                }
+            }
+            ACTION_HISTORY -> {
+                try {
+                    val records = TransferHistory.list(ctx)
+                    val limit = intent.getIntExtra("limit", 10)
+                    val arr = org.json.JSONArray()
+                    records.take(limit).forEach { r ->
+                        arr.put(org.json.JSONObject().apply {
+                            put("ts", r.timestamp)
+                            put("peer", r.peerName)
+                            put("file", r.fileName)
+                            put("bytes", r.bytes)
+                            put("status", r.status)
+                            put("savedPath", r.savedPath)
+                        })
+                    }
+                    InAppLogger.d("AtomCmd", "HISTORY: " + records.size + " (sent " + arr.length() + ")")
+                    sendBroadcast(Intent(ACTION_HISTORY_RESULT).apply {
+                        putExtra("json", arr.toString())
+                        putExtra("total", records.size)
+                        setPackage(ctx.packageName)
+                    })
+                } catch (e: Exception) {
+                    InAppLogger.d("AtomCmd", "HISTORY error: " + e.message)
+                }
+            }
         }
     }
 

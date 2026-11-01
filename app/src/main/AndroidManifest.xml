@@ -99,6 +99,9 @@
                 <action android:name="com.garickbox.atom.SEND" />
                 <action android:name="com.garickbox.atom.CHECK_UPDATE" />
                 <action android:name="com.garickbox.atom.PING" />
+                <action android:name="com.garickbox.atom.STATUS" />
+                <action android:name="com.garickbox.atom.PEERS" />
+                <action android:name="com.garickbox.atom.HISTORY" />
             </intent-filter>
         </receiver>
 
