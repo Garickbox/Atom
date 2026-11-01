@@ -16,29 +16,10 @@ import com.mesh.core.InAppLogger
 
 class QrShareActivity : AppCompatActivity() {
 
-    companion object {
-        // B39.3: hotspot живёт между Activity-instance. Back = finish,
-        // AP не умирает. Новое открытие = reuse (не BUSY).
-        @Volatile var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
-        @Volatile var savedSsid: String = ""
-        @Volatile var savedPass: String = ""
-        @Volatile var savedIp: String = ""
-
-        fun closeHotspot() {
-            try { hotspotReservation?.close() } catch (_: Exception) {}
-            hotspotReservation = null
-            savedSsid = ""
-            savedPass = ""
-            savedIp = ""
-        }
-
-        fun isAlive(): Boolean =
-            hotspotReservation != null && savedSsid.isNotBlank()
-    }
-
     private var groupCreated = false
     private var hotspotRetryCount = 0
     private var usingHotspot = false
+    private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
 
     private lateinit var qrImage: ImageView
     private lateinit var statusText: TextView
@@ -65,21 +46,6 @@ class QrShareActivity : AppCompatActivity() {
         // B39.2: явная кнопка «В главное» + Back (нет toolbar на landscape QR)
         findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener {
             onBackPressed()
-        }
-        // B39.3: явное закрытие AP (иначе reuse навсегда, нельзя пересоздать)
-        findViewById<android.view.View>(R.id.btnStopHotspot)?.setOnClickListener {
-            InAppLogger.d("QrServer", "manual hotspot close")
-            Companion.closeHotspot()
-            finish()
-        }
-
-        // B39.3: reuse живого AP — не создаём заново (иначе BUSY retry-loop)
-        if (Companion.isAlive()) {
-            InAppLogger.d("QrServer", "reuse existing hotspot ssid=${Companion.savedSsid}")
-            groupCreated = true
-            usingHotspot = true
-            showQr(Companion.savedSsid, Companion.savedPass, Companion.savedIp, "Hotspot (reuse)")
-            return
         }
 
         // B39: hotspot напрямую (P2P+WifiNetworkSpecifier несовместимы, B26)
@@ -219,6 +185,7 @@ class QrShareActivity : AppCompatActivity() {
         try {
             wm.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
                 override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
+                    hotspotReservation = reservation
                     val conf: WifiConfiguration = reservation.wifiConfiguration
                         ?: run {
                             statusText.text = "Ошибка: wifiConfiguration null"
@@ -230,31 +197,20 @@ class QrShareActivity : AppCompatActivity() {
                         statusText.text = "Ошибка: пустые credentials"
                         return
                     }
-                    Companion.hotspotReservation = reservation
-                    Companion.savedSsid = ssid
-                    Companion.savedPass = pass
-                    Companion.savedIp = getHotspotIp()
                     groupCreated = true
                     usingHotspot = true
-                    showQr(ssid, pass, Companion.savedIp, "Hotspot")
+                    showQr(ssid, pass, getHotspotIp(), "Hotspot")
                 }
                 override fun onFailed(reason: Int) {
                     InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
-                    if (reason == 2 && hotspotRetryCount < 5) {
+                    // B39.4: HyperOS BUSY 10-30s → 10 попыток × 3s = 30s
+                    if (reason == 2 && hotspotRetryCount < 10) {
                         hotspotRetryCount++
-                        statusText.text = "Hotspot занят, retry $hotspotRetryCount/5…"
-                        handler.postDelayed({ startHotspot() }, 2000L)
+                        statusText.text = "Hotspot занят, retry $hotspotRetryCount/10…"
+                        handler.postDelayed({ startHotspot() }, 3000L)
                         return
                     }
-                    // B39.3: если AP уже жив (stale от прошлого instance) — reuse
-                    if (Companion.isAlive()) {
-                        InAppLogger.d("QrServer", "FAIL but existing alive → reuse")
-                        groupCreated = true
-                        usingHotspot = true
-                        showQr(Companion.savedSsid, Companion.savedPass, Companion.savedIp, "Hotspot (reuse)")
-                        return
-                    }
-                    statusText.text = "Не удалось создать hotspot (код $reason).\nНажми «⏹ Закрыть» и попробуй снова."
+                    statusText.text = "Не удалось создать hotspot (код $reason)"
                 }
                 override fun onStopped() {
                     InAppLogger.d("QrServer", "hotspot stopped")
@@ -306,8 +262,10 @@ class QrShareActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
-        // B39.3: НЕ закрываем hotspotReservation — AP живёт в companion,
-        // следующее открытие = reuse. Явное закрытие = кнопка «⏹ Закрыть».
-        InAppLogger.d("QrServer", "onDestroy (AP kept alive in companion)")
+        // B39.4: AP закрываем в onDestroy (стабильно на HyperOS).
+        // Back = finish = AP умирает. Новое открытие = новый AP.
+        try { hotspotReservation?.close() } catch (_: Exception) {}
+        hotspotReservation = null
+        InAppLogger.d("QrServer", "onDestroy, AP closed")
     }
 }
