@@ -51,7 +51,7 @@ object InAppLogger {
         // B31: QR/hotspot диагностика (временно до стабилизации)
         "HELLO", "recreate", "probe", "startTransfer", "peer resolved",
         // B82: код-ревью теги B73-B81 (fix-строки должны попадать в atom.log)
-        "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B83", "Shortcut",
+        "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B83", "B84", "Shortcut",
         "findDownloadedApk", "saveApkToDownloads", "skip Failed",
         "skip Success", "skip UpdatePending", "skip Update", "Badge",
     )

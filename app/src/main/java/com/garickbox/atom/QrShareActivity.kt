@@ -37,7 +37,41 @@ class QrShareActivity : AppCompatActivity() {
         // B71: кнопка ← В главное (axiom#62)
         findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener { finish() }
 
-        startP2pGroup()
+        // B84: force reset STA через системный Wi-Fi сканер → hotspot (P2P try пропускаем, axiom#26)
+        forceSystemWifiScanThenHotspot()
+    }
+
+    /** B84: вызов системного Wi-Fi сканера для сброса текущего STA-соединения. */
+    private fun forceSystemWifiScanThenHotspot() {
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        if (wm == null || !wm.isWifiEnabled) {
+            InAppLogger.d("QrServer", "B84: Wi-Fi off/absent → startHotspot сразу")
+            startHotspot()
+            return
+        }
+        InAppLogger.d("QrServer", "B84: вызов системного Wi-Fi сканера (сброс STA)")
+        statusText.text = "Сброс Wi-Fi для точки доступа…"
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val panel = Intent(android.provider.Settings.Panel.ACTION_WIFI).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(panel)
+            } else {
+                val pick = Intent(WifiManager.ACTION_PICK_WIFI_NETWORK).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(pick)
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer", "B84: intent error: ${e.message} → startHotspot сразу")
+            startHotspot()
+            return
+        }
+        handler.postDelayed({
+            InAppLogger.d("QrServer", "B84: 1.5s после сканера → startHotspot")
+            startHotspot()
+        }, 1500L)
     }
 
     private fun startP2pGroup() {
