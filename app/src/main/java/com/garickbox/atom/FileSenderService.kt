@@ -877,7 +877,25 @@ private fun displayName(uri: Uri): String? {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        try { QrScanActivity.unbind() } catch (_: Exception) {}
+        // B34: unbind через 500ms + только если нет активной передачи.
+        // - Конец серии (state=Success/Idle/Failed) → unbind (норма)
+        // - Параллельный sender (state=Running/Paused) → skip (не убиваем чужую QR-сессию)
+        try {
+            val h = android.os.Handler(android.os.Looper.getMainLooper())
+            h.postDelayed({
+                try {
+                    val st = AtomController.transferState.value
+                    if (st !is TransferState.Running && st !is TransferState.Paused) {
+                        try { QrScanActivity.unbind() } catch (_: Exception) {}
+                        InAppLogger.d("FileSenderService",
+                            "B34: unbind, state=" + st.javaClass.simpleName)
+                    } else {
+                        InAppLogger.d("FileSenderService",
+                            "B34: skip unbind, transfer active: " + st.javaClass.simpleName)
+                    }
+                } catch (_: Exception) {}
+            }, 500L)
+        } catch (_: Exception) {}
         TransferNotification.resetCache(NOTIF_ID)
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         PowerLocks.releaseWifi(wifiLock)
