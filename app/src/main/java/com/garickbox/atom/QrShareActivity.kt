@@ -221,10 +221,85 @@ class QrShareActivity : AppCompatActivity() {
             return
         }
         try {
+            // B54: API 30+ SoftApConfiguration(5GHz) через reflection — обходит
+            // channel conflict с 2.4GHz STA (reason=3 NO_CHANNEL).
+            if (android.os.Build.VERSION.SDK_INT >= 30 && startHotspot5GHz(wm)) return
+            // Fallback: legacy без конфига (framework сам выберет)
             startHotspotLegacy(wm)
         } catch (e: Exception) {
             InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
             statusText.text = "Ошибка: ${e.message}"
+        }
+    }
+
+    /** B54: reflection SoftApConfiguration(5GHz) — API 30+, compile SDK 34 не видит
+     *  метод startLocalOnlyHotspot(SoftApConfiguration, Executor, Callback) в
+     *  standard path (hidden API list). Reflection обходит. Если что-то не так —
+     *  возвращает false, startHotspot → legacy. */
+    @android.annotation.SuppressLint("NewApi", "SoonBlockedPrivateApi")
+    private fun startHotspot5GHz(wm: WifiManager): Boolean {
+        return try {
+            val cfgBuilderCls = Class.forName("android.net.wifi.SoftApConfiguration\$Builder")
+            val builder = cfgBuilderCls.getDeclaredConstructor().newInstance()
+            // setBand(BAND_5GHZ = 2) — hidden constant в SoftApConfiguration
+            val setBand = cfgBuilderCls.getMethod("setBand", Int::class.javaPrimitiveType)
+            setBand.invoke(builder, 2)  // BAND_5GHZ
+            // setSsid(String) — с именем юзера
+            val ssid = AtomController.myName.trim().ifBlank { "Atom" }
+            val safeSsid = if (ssid.toByteArray(Charsets.UTF_8).size > 32)
+                ssid.take(15) else ssid
+            try {
+                cfgBuilderCls.getMethod("setSsid", String::class.java).invoke(builder, safeSsid)
+            } catch (_: Exception) {}
+            // setPassphrase(pass, SECURITY_TYPE_WPA2_PSK = 1)
+            try {
+                cfgBuilderCls.getMethod("setPassphrase", String::class.java, Int::class.javaPrimitiveType)
+                    .invoke(builder, "00000000", 1)
+            } catch (_: Exception) {}
+            val config = cfgBuilderCls.getMethod("build").invoke(builder)
+
+            // Executor
+            val executor = android.os.Handler(android.os.Looper.getMainLooper())
+                .let { h -> java.util.concurrent.Executor { r -> h.post(r) } }
+
+            // startLocalOnlyHotspot(SoftApConfiguration, Executor, Callback)
+            val cfgCls = Class.forName("android.net.wifi.SoftApConfiguration")
+            val method = WifiManager::class.java.getMethod(
+                "startLocalOnlyHotspot",
+                cfgCls, java.util.concurrent.Executor::class.java,
+                WifiManager.LocalOnlyHotspotCallback::class.java
+            )
+
+            val latch = java.util.concurrent.CountDownLatch(1)
+            @Volatile var success = false
+            method.invoke(wm, config, executor,
+                object : WifiManager.LocalOnlyHotspotCallback() {
+                    override fun onStarted(r: WifiManager.LocalOnlyHotspotReservation) {
+                        hotspotReservation = r
+                        val ssid2 = r.wifiConfiguration?.SSID?.trim('"') ?: safeSsid
+                        val pass2 = r.wifiConfiguration?.preSharedKey?.trim('"') ?: "00000000"
+                        groupCreated = true
+                        usingHotspot = true
+                        success = true
+                        runOnUiThread {
+                            showQr(ssid2, pass2, getHotspotIp(), "Hotspot 5GHz")
+                        }
+                        InAppLogger.d("QrServer", "B54 5GHz AP: ssid=" + ssid2)
+                        latch.countDown()
+                    }
+                    override fun onFailed(reason: Int) {
+                        InAppLogger.d("QrServer",
+                            "B54 5GHz FAIL: reason=" + reason + " → legacy")
+                        latch.countDown()
+                    }
+                }
+            )
+            latch.await(8, java.util.concurrent.TimeUnit.SECONDS)
+            success
+        } catch (e: Throwable) {
+            InAppLogger.d("QrServer",
+                "B54 reflection error: " + e.javaClass.simpleName + ": " + e.message)
+            false
         }
     }
 
