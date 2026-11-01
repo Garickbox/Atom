@@ -41,6 +41,11 @@ class QrShareActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         infoText = findViewById(R.id.infoText)
 
+        // B53: кнопка «← В главное» (axiom#52 — видимая навигация на QR-экране)
+        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener {
+            finish()
+        }
+
         // B35-TV: reset state на повторный запуск (fix #18 — single-shot TV)
         hotspotRetryCount = 0
         groupCreated = false
