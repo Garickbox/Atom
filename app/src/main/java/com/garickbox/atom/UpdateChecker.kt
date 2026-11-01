@@ -452,6 +452,16 @@ object UpdateChecker {
 
     internal fun findDownloadedApk(ctx: Context): DownloadedApk? {
         if (android.os.Build.VERSION.SDK_INT < 29) return null
+        // B80 axiom#85: APK готов к установке только если versionCode > текущего.
+        // Иначе после OTA "Готово, установить" бесконечно повторяется (уже установлено).
+        val savedVc = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
+            .getInt("last_downloaded_apk_vc", 0)
+        if (savedVc > 0 && savedVc <= BuildConfig.VERSION_CODE) {
+            InAppLogger.d("UpdateChecker",
+                "B80 findDownloadedApk: savedVc=" + savedVc +
+                " <= currentVc=" + BuildConfig.VERSION_CODE + " → skip (уже установлено)")
+            return null
+        }
         return try {
             val cursor = ctx.contentResolver.query(
                 android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
@@ -489,11 +499,18 @@ object UpdateChecker {
     }
 
     internal fun saveApkToDownloads(ctx: Context, apk: File, tag: String): android.net.Uri? {
-        // B10d.1: delete старых Atom*.apk теперь в downloadAndInstall ДО скачивания.
         return try {
             val result = com.garickbox.atom.MediaStoreSaver.save(
                 ctx, apk, "Atom.apk", "application/vnd.android.package-archive"
             )
+            // B80 axiom#85: сохраняем versionCode в prefs — findDownloadedApk проверит
+            val vc = tag.removePrefix("build-").toIntOrNull() ?: 0
+            if (vc > 0) {
+                ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
+                    .edit().putInt("last_downloaded_apk_vc", vc).apply()
+                InAppLogger.d("UpdateChecker",
+                    "B80 saveApkToDownloads: vc=" + vc + " saved")
+            }
             InAppLogger.d("UpdateChecker",
                 "apk saved to downloads: ${result.displayPath}, uri=${result.uri}")
             result.uri
