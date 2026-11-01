@@ -49,13 +49,11 @@
         <activity
             android:name=".QrShareActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
             android:label="QR приём" />
 
         <activity
             android:name=".QrScanActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
             android:label="Сканировать QR" />
 
         <activity

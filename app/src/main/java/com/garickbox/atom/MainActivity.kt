@@ -790,14 +790,8 @@ class MainActivity : AppCompatActivity() {
         b.tvBtnLog.setOnClickListener {
             startActivity(Intent(this, LogViewerActivity::class.java))
         }
-        b.tvBtnSelfTest.setOnClickListener {
-            startActivity(Intent(this, SelfTestActivity::class.java))
-        }
         b.tvBtnQrReceive.setOnClickListener {
             startActivity(Intent(this, QrShareActivity::class.java))
-        }
-        b.tvBtnSettings.setOnClickListener {
-            startActivity(Intent(this, NameSetupActivity::class.java))
         }
     }
 

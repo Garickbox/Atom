@@ -63,6 +63,10 @@ class QrScanActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B36-TV: на телефоне — портрет, на TV — свободно
+        if (!TvHelper.isTv(this)) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         setContentView(R.layout.activity_qr_scan)
         statusText = findViewById(R.id.statusText)
         pendingUris = collectUris(intent)

@@ -29,6 +29,10 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B36-TV: на телефоне — портрет, на TV — свободно (landscape layout)
+        if (!TvHelper.isTv(this)) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         setContentView(R.layout.activity_qr_share)
         qrImage = findViewById(R.id.qrImage)
         statusText = findViewById(R.id.statusText)
