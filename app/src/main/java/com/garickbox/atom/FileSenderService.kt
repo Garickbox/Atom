@@ -225,8 +225,11 @@ class FileSenderService : Service() {
             TransferNotification.ACTION_PAUSE -> {
                 val cur = AtomController.transferState.value
                 if (cur !is TransferState.Running) {
-                    InAppLogger.d("FileSenderService", "pause: not running (state=$cur)")
-                    return START_STICKY
+                    // B72 code-review#5: zombie FGS при Pause на Idle/Failed/Success.
+                    // stopSelf снимает «Подготовка»-уведомление и убивает сервис.
+                    InAppLogger.d("FileSenderService", "pause: not running (state=$cur) → stopSelf")
+                    stopSelf()
+                    return START_NOT_STICKY
                 }
                 // Синхронно сообщить receiver до отмены корутины
                 try {
