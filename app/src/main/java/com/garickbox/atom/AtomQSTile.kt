@@ -34,12 +34,8 @@ class AtomQSTile : TileService() {
         updateTile()
     }
 
-    override fun onLongClick(): Boolean {
-        // B89: long-press → открыть file picker (было только двойной тап)
-        InAppLogger.d("AtomQSTile", "B89 long-press → file picker")
-        openFilePicker()
-        return true
-    }
+    // B89.1: TileService НЕ имеет onLongClick — long-press невозможно.
+    // File picker = двойной тап (уже реализован в onClick с DOUBLE_TAP_MS).
 
     override fun onClick() {
         super.onClick()
