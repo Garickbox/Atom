@@ -150,11 +150,13 @@ object CompactLog {
                 val resolver = ctx.contentResolver
                 val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
                 val relPath = "Download/Atom/logs/"
+                // B43.2: MediaStore добавляет .txt (MIME text/plain) → LIKE + _id DESC
                 val cursor = resolver.query(collection,
                     arrayOf(android.provider.MediaStore.Downloads._ID),
-                    android.provider.MediaStore.Downloads.DISPLAY_NAME + "=? AND " +
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? AND " +
                         android.provider.MediaStore.Downloads.RELATIVE_PATH + "=?",
-                    arrayOf(name, relPath), null)
+                    arrayOf("$name%", relPath),
+                    android.provider.MediaStore.Downloads._ID + " DESC")
                 val uri = if (cursor != null && cursor.moveToFirst()) {
                     val id = cursor.getLong(0); cursor.close()
                     android.content.ContentUris.withAppendedId(collection, id)
