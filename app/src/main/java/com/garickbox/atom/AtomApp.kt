@@ -16,6 +16,7 @@ class AtomApp : Application() {
         try { ShortcutPublisher.update(this, AtomController.getKnownP2pPeers()) } catch (_: Exception) {}
         cleanupOldParts()
         InAppLogger.d("AtomApp", "app started, version=${BuildConfig.VERSION_NAME}, myId=${AtomController.myId}")
+        try { TestApi.start(this) } catch (_: Exception) {}
     }
 
     private fun cleanupOldParts() {

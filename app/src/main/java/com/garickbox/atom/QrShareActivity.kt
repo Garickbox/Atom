@@ -135,6 +135,26 @@ class QrShareActivity : AppCompatActivity() {
         }
     }
 
+    private fun showHotspotFailDialog(hint: String, reason: Int) {
+        try {
+            val msg = when (reason) {
+                2, 3 -> "HyperOS блокирует точку доступа.\n\n" +
+                    "Варианты:\n" +
+                    "1. Забыть сеть Wi-Fi → переподключиться\n" +
+                    "2. Wi-Fi тумблер OFF → открыть QR → вернуть\n" +
+                    "3. Перезагрузить телефон\n\n" +
+                    "После одного из действий — повтори."
+                else -> "Не удалось создать hotspot ($hint)"
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Hotspot не создался")
+                .setMessage(msg)
+                .setPositiveButton("ОК") { _, _ -> finish() }
+                .setCancelable(false)
+                .show()
+        } catch (_: Exception) {}
+    }
+
     private fun startHotspot() {
         statusText.text = "Создаю hotspot…"
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -169,7 +189,14 @@ class QrShareActivity : AppCompatActivity() {
                         handler.postDelayed({ startHotspot() }, 1500L)
                         return
                     }
-                    statusText.text = "Не удалось создать группу (код $reason)"
+                    // B70: понятный диалог вместо немого текста
+                    val hint = when (reason) {
+                        2 -> "HyperOS не даёт AP при активном Wi-Fi"
+                        3 -> "Все каналы 2.4GHz заняты"
+                        else -> "код $reason"
+                    }
+                    statusText.text = "Не удалось: $hint"
+                    showHotspotFailDialog(hint, reason)
                 }
                 override fun onStopped() {
                     InAppLogger.d("QrServer", "hotspot stopped")
