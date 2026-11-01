@@ -49,6 +49,12 @@ class QrScanActivity : AppCompatActivity() {
     private var pendingUris: List<Uri> = emptyList()
     private val handler = Handler(Looper.getMainLooper())
 
+    // B38: manual-connect flow — ждём пока юзер сам подключится к TV-hotspot
+    private var manualQrSsid: String = ""
+    private var manualQrPass: String = ""
+    private var manualQrIp: String = ""
+    private var manualAwaitConnect: Boolean = false
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -131,32 +137,78 @@ class QrScanActivity : AppCompatActivity() {
         }
     }
 
-    /** B37.1: HyperOS иногда игнорирует wm.disconnect() для user-app. */
+    /** B38: HyperOS блокирует wm.disconnect() — просим юзера подключиться вручную.
+     *  onResume ловит момент подключения к TV-hotspot и продолжает автоматически. */
     private fun showManualWifiOffDialog(callback: () -> Unit) {
+        manualAwaitConnect = true
+        val msg = buildString {
+            append("Android не разрешает приложению отключиться от роутера.\n\n")
+            append("Подключись к TV вручную:\n\n")
+            append("   Wi-Fi:      ").append(manualQrSsid).append("\n")
+            append("   Пароль:     ").append(manualQrPass).append("\n\n")
+            append("1. Нажми «Открыть Wi-Fi настройки»\n")
+            append("2. Выбери «").append(manualQrSsid).append("»\n")
+            append("3. Введи пароль (можно скопировать)\n")
+            append("4. Вернись в Атом — передача начнётся автоматически")
+        }
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Wi-Fi не отключается")
-            .setMessage("HyperOS не разрешает приложению отключиться от роутера.\n\n" +
-                "1. Выключи Wi-Fi в шторке на 2 секунды\n" +
-                "2. Включи снова\n" +
-                "3. Вернись в Атом и сканируй QR\n\n" +
-                "Или открой настройки Wi-Fi и выключи вручную.")
-            .setPositiveButton("Открыть Wi-Fi") { _, _ ->
+            .setTitle("Подключись к TV")
+            .setMessage(msg)
+            .setPositiveButton("📋 Копировать пароль") { _, _ ->
                 try {
-                    if (android.os.Build.VERSION.SDK_INT >= 29) {
-                        startActivity(Intent(android.provider.Settings.Panel.ACTION_WIFI))
-                    } else {
-                        startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
-                    }
-                } catch (_: Exception) {
-                    try {
-                        startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
-                    } catch (_: Exception) {}
-                }
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("atom_qr_pass", manualQrPass))
+                    android.widget.Toast.makeText(this, "Пароль скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {}
+                openWifiSettings()
+            }
+            .setNeutralButton("Открыть Wi-Fi настройки") { _, _ -> openWifiSettings() }
+            .setNegativeButton("Отмена") { _, _ ->
+                manualAwaitConnect = false
                 finish()
             }
-            .setNegativeButton("Отмена") { _, _ -> finish() }
-            .setOnCancelListener { finish() }
+            .setOnCancelListener {
+                manualAwaitConnect = false
+                finish()
+            }
             .show()
+    }
+
+    private fun openWifiSettings() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                startActivity(Intent(android.provider.Settings.Panel.ACTION_WIFI))
+            } else {
+                startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+            }
+        } catch (_: Exception) {
+            try { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) } catch (_: Exception) {}
+        }
+    }
+
+    /** B38: возврат из Wi-Fi настроек — если подключён к TV, продолжаем. */
+    override fun onResume() {
+        super.onResume()
+        if (!manualAwaitConnect) return
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            val info = wm.connectionInfo
+            val state = info?.supplicantState
+            @Suppress("DEPRECATION")
+            val ssid = info?.ssid?.trim('"') ?: ""
+            val connected = state == android.net.wifi.SupplicantState.COMPLETED
+            InAppLogger.d("QrScan", "onResume check: ssid=$ssid expected=$manualQrSsid connected=$connected")
+            if (connected && ssid == manualQrSsid) {
+                manualAwaitConnect = false
+                InAppLogger.d("QrScan", "manual connect OK → afterConnected")
+                statusText.text = "Подключено, отправляю…"
+                // Небольшая пауза чтобы сеть стабилизировалась
+                handler.postDelayed({ afterConnected(manualQrIp) }, 1500L)
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("QrScan", "onResume check error: ${e.message}")
+        }
     }
 
     private fun launchScanner() {
@@ -198,6 +250,9 @@ class QrScanActivity : AppCompatActivity() {
             return
         }
         InAppLogger.d("QrScan", "parsed ssid=$ssid ip=$ip")
+        manualQrSsid = ssid
+        manualQrPass = pass
+        manualQrIp = ip
         statusText.text = "Подключаюсь к $ssid…"
         connectWifi(ssid, pass, ip)
     }
