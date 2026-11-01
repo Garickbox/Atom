@@ -26,6 +26,18 @@ object CompactLog {
         return if (f.exists() && f.length() > 0) f else null
     }
 
+    /** B40: очистка всех compact-логов при смене версии. */
+    @Synchronized
+    fun clear() {
+        val d = dir ?: return
+        try {
+            File(d, "atom-compact.log").delete()
+            for (i in 1..MAX_FILES) {
+                File(d, "atom-compact.log.$i").delete()
+            }
+        } catch (_: Exception) {}
+    }
+
     private var lastSpeedMbps: Double = 0.0
 
     @Synchronized

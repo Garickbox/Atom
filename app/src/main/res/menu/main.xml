@@ -9,11 +9,6 @@
         app:showAsAction="always|withText" />
 
     <item
-        android:id="@+id/action_self_test"
-        android:title="@string/menu_self_test"
-        app:showAsAction="never" />
-
-    <item
         android:id="@+id/action_view_log"
         android:title="📋 Лог"
         app:showAsAction="never" />
@@ -25,11 +20,6 @@
     <item
         android:id="@+id/action_clear_history"
         android:title="🗑 Очистить историю"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/action_toggle_verbose"
-        android:title="🐛 Verbose log"
         app:showAsAction="never" />
 
     <item

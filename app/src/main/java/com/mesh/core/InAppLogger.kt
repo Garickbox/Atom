@@ -86,10 +86,24 @@ object InAppLogger {
 
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
-        verboseEnabled = prefs?.getBoolean("debug_verbose", false) ?: false
+        // B40: verbose всегда ON (axioma)
+        verboseEnabled = true
         val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
         base.mkdirs()
         dir = base
+    }
+
+    /** B40: очистка всех логов при смене версии. */
+    @Synchronized
+    fun clearAll() {
+        val dd = dir ?: return
+        try {
+            File(dd, "atom.log").delete()
+            File(dd, "atom-err.log").delete()
+            for (i in 1..MAX_FILES) {
+                File(dd, "atom.log.$i").delete()
+            }
+        } catch (_: Exception) {}
     }
 
     fun setVerbose(enabled: Boolean) {
@@ -104,11 +118,7 @@ object InAppLogger {
         if (!verboseEnabled) return
         val dd = dir ?: return
         try {
-            var whitelisted = false
-            for (k in WHITELIST) {
-                if (msg.contains(k)) { whitelisted = true; break }
-            }
-            if (!whitelisted) return
+            // B40: whitelist убран — пишем всё (verbose всегда ON)
             val compressed = compress(msg)
             if (compressed.isBlank()) return
             val t = fmtHm.format(Date())

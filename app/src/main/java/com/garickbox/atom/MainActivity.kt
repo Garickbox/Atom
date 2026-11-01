@@ -424,9 +424,6 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_check_update -> { checkUpdate(); true }
-            R.id.action_self_test -> {
-                startActivity(Intent(this, SelfTestActivity::class.java)); true
-            }
             R.id.action_view_log -> {
                 startActivity(Intent(this, LogViewerActivity::class.java)); true
             }
@@ -434,14 +431,6 @@ class MainActivity : AppCompatActivity() {
                 TransferHistory.clear(this)
                 renderHistory()
                 android.widget.Toast.makeText(this, "История очищена", android.widget.Toast.LENGTH_SHORT).show()
-                true
-            }
-            R.id.action_toggle_verbose -> {
-                val newVal = !com.mesh.core.InAppLogger.isVerbose()
-                com.mesh.core.InAppLogger.setVerbose(newVal)
-                Toast.makeText(this,
-                    if (newVal) "🐛 Verbose log: ON" else "Verbose log: OFF",
-                    Toast.LENGTH_SHORT).show()
                 true
             }
             R.id.action_share_log -> {

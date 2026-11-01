@@ -8,6 +8,8 @@ class AtomApp : Application() {
         super.onCreate()
         InAppLogger.init(this)
         com.mesh.core.CompactLog.init(this)
+        // B40: при смене versionCode — чистим логи (axioma)
+        checkVersionAndCleanupLogs()
         NotificationHelper.createChannels(this)
         AtomController.init(this)
         AtomController.onKnownPeersUpdated = { peers ->
@@ -15,7 +17,64 @@ class AtomApp : Application() {
         }
         try { ShortcutPublisher.update(this, AtomController.getKnownP2pPeers()) } catch (_: Exception) {}
         cleanupOldParts()
-        InAppLogger.d("AtomApp", "app started, version=${BuildConfig.VERSION_NAME}, myId=${AtomController.myId}")
+        // B40: system state в лог на каждом старте (axioma)
+        logSystemState()
+    }
+
+    private fun checkVersionAndCleanupLogs() {
+        try {
+            val prefs = getSharedPreferences("atom", MODE_PRIVATE)
+            val lastVc = prefs.getInt("last_run_version_code", -1)
+            val currentVc = BuildConfig.VERSION_CODE
+            if (lastVc != -1 && lastVc != currentVc) {
+                InAppLogger.clearAll()
+                com.mesh.core.CompactLog.clear()
+            }
+            prefs.edit().putInt("last_run_version_code", currentVc).apply()
+        } catch (e: Exception) {
+            InAppLogger.d("AtomApp", "cleanup error: ${e.message}")
+        }
+    }
+
+    private fun logSystemState() {
+        try {
+            val wm = getSystemService(android.content.Context.WIFI_SERVICE)
+                as? android.net.wifi.WifiManager
+            val pm = getSystemService(android.content.Context.POWER_SERVICE)
+                as? android.os.PowerManager
+            val wifiOn = wm?.isWifiEnabled == true
+            @Suppress("DEPRECATION")
+            val ssid = wm?.connectionInfo?.ssid?.trim('"') ?: "?"
+            val whitelist = try {
+                pm?.isIgnoringBatteryOptimizations(packageName) == true
+            } catch (_: Exception) { false }
+            val p2pSupported = try {
+                getSystemService(android.content.Context.WIFI_P2P_SERVICE) != null
+            } catch (_: Exception) { false }
+            val perms = try { PermissionsHelper.missing(this) } catch (_: Exception) { emptyList() }
+            val freeMb = try {
+                (getExternalFilesDir(null)?.usableSpace ?: 0L) / 1024 / 1024
+            } catch (_: Exception) { 0L }
+
+            InAppLogger.d("AtomApp", "═══ SYSTEM STATE ═══")
+            InAppLogger.d("AtomApp",
+                "build=${BuildConfig.VERSION_CODE} ${BuildConfig.VERSION_NAME}")
+            InAppLogger.d("AtomApp",
+                "device=${android.os.Build.MANUFACTURER}/${android.os.Build.MODEL}")
+            InAppLogger.d("AtomApp",
+                "android=${android.os.Build.VERSION.SDK_INT}/${android.os.Build.VERSION.RELEASE}")
+            InAppLogger.d("AtomApp",
+                "myId=${AtomController.myId.take(8)} myName=${AtomController.myName}")
+            InAppLogger.d("AtomApp", "wifi=$wifiOn ssid=$ssid")
+            InAppLogger.d("AtomApp", "battery_whitelist=$whitelist")
+            InAppLogger.d("AtomApp", "p2p_supported=$p2pSupported")
+            InAppLogger.d("AtomApp",
+                "perms_missing=${perms.size} ${perms.map { it.substringAfterLast('.') }}")
+            InAppLogger.d("AtomApp", "free_mb=$freeMb")
+            InAppLogger.d("AtomApp", "═══ END SYSTEM STATE ═══")
+        } catch (e: Exception) {
+            InAppLogger.d("AtomApp", "logSystemState error: ${e.message}")
+        }
     }
 
     private fun cleanupOldParts() {
