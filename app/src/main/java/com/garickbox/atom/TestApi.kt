@@ -328,7 +328,7 @@ object TestApi {
             val info = wm.connectionInfo
             if (info != null) {
                 sb.appendLine("ssid=" + info.ssid)
-                sb.appendLine("bssid=" + info.bSSID)
+                sb.appendLine("bssid=" + info.bssid)
                 sb.appendLine("networkId=" + info.networkId)
                 sb.appendLine("supplicantState=" + info.supplicantState)
                 sb.appendLine("rssi=" + info.rssi)
