@@ -29,11 +29,18 @@ class QrScanActivity : AppCompatActivity() {
     companion object {
         var boundCm: ConnectivityManager? = null
         var boundNetwork: Network? = null
+        var activeCallback: ConnectivityManager.NetworkCallback? = null
+
         fun unbind() {
             try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
+            // B37: unregister → specifier-network освобождается,
+            // Android авто-переподключается к сохранённому роутеру.
+            try {
+                activeCallback?.let { boundCm?.unregisterNetworkCallback(it) }
+            } catch (_: Exception) {}
+            activeCallback = null
             boundCm = null
             boundNetwork = null
-            // B30: вернуть udpSocket на дефолтную сеть после QR-сессии
             AtomController.meshNode?.recreateUdpSocket()
         }
     }
@@ -45,7 +52,7 @@ class QrScanActivity : AppCompatActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) launchScanner()
+        if (granted) disconnectFromWifi { launchScanner() }
         else {
             statusText.text = "Нужно разрешение на камеру"
             Toast.makeText(this, "Разреши камеру в настройках", Toast.LENGTH_LONG).show()
@@ -73,9 +80,32 @@ class QrScanActivity : AppCompatActivity() {
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED) {
-            launchScanner()
+            disconnectFromWifi { launchScanner() }
         } else {
             permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    /** B37: HyperOS POCO не поддерживает concurrent STA+STA — если подключены
+     *  к роутеру, WifiNetworkSpecifier.requestNetwork на hotspot fail'ит молча.
+     *  Отключаемся на 1.5s, requestNetwork проходит. После transfer unbind()
+     *  unregister'ит callback → Android авто-возвращает на роутер. */
+    private fun disconnectFromWifi(callback: () -> Unit) {
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            if (wm == null || !wm.isWifiEnabled) { callback(); return }
+            @Suppress("DEPRECATION")
+            val info = wm.connectionInfo
+            if (info?.networkId == -1) { callback(); return }
+            @Suppress("DEPRECATION")
+            val ssid = info.ssid ?: "?"
+            InAppLogger.d("QrScan", "disconnect from Wi-Fi: $ssid (B37)")
+            statusText.text = "Отключаюсь от Wi-Fi для прямой связи…"
+            wm.disconnect()
+            handler.postDelayed(callback, 1500L)
+        } catch (e: Exception) {
+            InAppLogger.d("QrScan", "disconnect error: ${e.message}")
+            callback()
         }
     }
 
@@ -137,12 +167,11 @@ class QrScanActivity : AppCompatActivity() {
                 cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
                         InAppLogger.d("QrScan", "wifi connected, bindProcessToNetwork($network)")
+                        activeCallback = this
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
                             boundNetwork = network
-                            // B30: старый udpSocket висит на home WiFi — пересоздать,
-                            // чтобы HELLO/FILE_OFFER шли через hotspot.
                             AtomController.meshNode?.recreateUdpSocket()
                         } catch (e: Exception) {
                             InAppLogger.d("QrScan", "bind error: ${e.message}")
