@@ -29,7 +29,10 @@ object TestApi {
         running = true
         scope.launch {
             try {
-                server = ServerSocket(PORT, 8, java.net.InetAddress.getLoopbackAddress())
+                // B45: bind 0.0.0.0 (все интерфейсы). Android loopback
+                // изолирован по netns — Termux не видит 127.0.0.1 Атома.
+                // Termux подключается через Wi-Fi IP телефона.
+                server = ServerSocket(PORT)
                 InAppLogger.d("TestApi", "HTTP listening on 127.0.0.1:$PORT")
                 val pool = Executors.newFixedThreadPool(4)
                 while (running) {
