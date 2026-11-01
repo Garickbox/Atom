@@ -79,6 +79,11 @@
             android:exported="false"
             android:label="Лог" />
 
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:label="История передач" />
+
         <receiver
             android:name=".AtomCommandReceiver"
             android:exported="true"

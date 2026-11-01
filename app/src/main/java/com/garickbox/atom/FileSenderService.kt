@@ -114,9 +114,9 @@ class FileSenderService : Service() {
     override fun onCreate() {
         try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         super.onCreate()
-        startForeground(NOTIF_ID, TransferNotification.buildRunning(
-            this, "prep", "…", "Подготовка", 0, 0
-        ))
+        // B86: НЕ startForeground немедленно — мигание "Подготовка" при каждом
+        // тапе Pause/Cancel. startForeground вызывается в onStartCommand
+        // per-action: START → buildRunning, PAUSE → buildPaused, CANCEL → нет.
         wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
 
@@ -148,6 +148,10 @@ class FileSenderService : Service() {
                 val peerName = intent.getStringExtra(EXTRA_PEER_NAME) ?: "?"
                 val uris = intent.getStringArrayListExtra(EXTRA_URIS)?.map { Uri.parse(it) } ?: emptyList()
                 if (uris.isEmpty()) { stopSelf(); return START_NOT_STICKY }
+                // B86: startForeground сейчас (было в onCreate)
+                startForeground(NOTIF_ID, TransferNotification.buildRunning(
+                    this, "prep", peerName, "Подготовка", 0, 0
+                ))
                 val pathsRaw = intent.getStringArrayListExtra(EXTRA_RELATIVE_PATHS) ?: arrayListOf()
                 val paths = pathsRaw.map { if (it.isBlank()) null else it }
                 lastPeerIp = peerIp
@@ -217,25 +221,31 @@ class FileSenderService : Service() {
 
                 // ВАЖНО: НЕ stopSelf сразу — даём 800 мс на реальную отправку пакета
                 // и на то, чтобы приёмник получил его и закрыл socket
+                // B86: cancel notification + state сразу, stopSelf через 300ms
+                try {
+                    TransferNotification.cancel(this, NOTIF_ID)
+                } catch (_: Exception) {}
+                AtomController.transferState.value = TransferState.Idle
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     stopSelf()
-                    InAppLogger.d("FileSenderService", "delayed stopSelf after cancel")
-                }, 800L)
+                    InAppLogger.d("FileSenderService", "B86 delayed stopSelf after cancel (300ms)")
+                }, 300L)
             }
             TransferNotification.ACTION_PAUSE -> {
                 val cur = AtomController.transferState.value
                 if (cur !is TransferState.Running) {
-                    // B72 code-review#5: zombie FGS при Pause на Idle/Failed/Success.
-                    // stopSelf снимает «Подготовка»-уведомление и убивает сервис.
+                    // B72/B86: zombie FGS при Pause на Idle/Failed/Success
                     InAppLogger.d("FileSenderService", "pause: not running (state=$cur) → stopSelf")
+                    try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
                     stopSelf()
                     return START_NOT_STICKY
                 }
                 // Синхронно сообщить receiver до отмены корутины
                 try {
                     val cancelJson = JSONObject().apply { put("tid", cur.transferId) }
+                    // B86: 300ms вместо 800 — задержка до Paused state была заметна
                     AtomController.meshNode?.sendPacketBlocking(
-                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 800L
+                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 300L
                     )
                 } catch (_: Exception) {}
 
