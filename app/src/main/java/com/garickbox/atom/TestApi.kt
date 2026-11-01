@@ -61,7 +61,8 @@ object TestApi {
             if (parts.size < 2) return respond(client, 400, "bad request")
             val path = parts[1]
             val (route, params) = parsePath(path)
-            val body = when (route) {
+            InAppLogger.d("TestApi", "REQ " + route)
+            val body = try { when (route) {
                 "/state" -> cmdState(ctx)
                 "/selftest" -> cmdSelftest(ctx)
                 "/hotspot" -> cmdHotspot(ctx)
@@ -73,9 +74,15 @@ object TestApi {
                 "/cleanlogs" -> cmdCleanLogs(ctx)
                 "/ping" -> "pong"
                 else -> "unknown route: $route"
+            } } catch (e: Throwable) {
+                InAppLogger.err("TestApi",
+                    "route " + route + " throw: " + e.javaClass.simpleName + ": " + e.message)
+                "EXCEPTION " + e.javaClass.simpleName + ": " + (e.message ?: "?")
             }
+            InAppLogger.d("TestApi", "RESP " + route + " len=" + body.length)
             respond(client, 200, body)
         } catch (e: Exception) {
+            InAppLogger.err("TestApi", "handle outer: " + e.message)
             try { respond(client, 500, "error: ${e.message}") } catch (_: Exception) {}
         } finally {
             try { client.close() } catch (_: Exception) {}
@@ -94,14 +101,20 @@ object TestApi {
     }
 
     private fun respond(client: Socket, code: Int, body: String) {
-        val out = PrintWriter(client.getOutputStream(), true)
-        out.println("HTTP/1.1 $code OK")
-        out.println("Content-Type: text/plain; charset=utf-8")
-        out.println("Content-Length: ${body.toByteArray().size}")
-        out.println("Connection: close")
-        out.println()
-        out.print(body)
-        out.flush()
+        try {
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            val out = PrintWriter(client.getOutputStream(), true)
+            out.println("HTTP/1.1 $code OK")
+            out.println("Content-Type: text/plain; charset=utf-8")
+            out.println("Content-Length: " + bytes.size)
+            out.println("Connection: close")
+            out.println()
+            out.print(body)
+            out.flush()
+            InAppLogger.d("TestApi", "responded $code len=" + bytes.size)
+        } catch (e: Exception) {
+            InAppLogger.err("TestApi", "respond throw: " + e.message)
+        }
     }
 
     private fun cmdState(ctx: Context): String {

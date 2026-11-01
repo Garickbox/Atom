@@ -221,10 +221,8 @@ class QrShareActivity : AppCompatActivity() {
             return
         }
         try {
-            // B54: API 30+ SoftApConfiguration(5GHz) через reflection — обходит
-            // channel conflict с 2.4GHz STA (reason=3 NO_CHANNEL).
-            if (android.os.Build.VERSION.SDK_INT >= 30 && startHotspot5GHz(wm)) return
-            // Fallback: legacy без конфига (framework сам выберет)
+            // B56: B54 (5GHz reflection) откачен — HyperOS блокирует 5GHz AP
+            // (reason=2 INCOMPATIBLE_MODE). Работает только legacy + B52 UX.
             startHotspotLegacy(wm)
         } catch (e: Exception) {
             InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
