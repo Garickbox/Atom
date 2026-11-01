@@ -175,18 +175,51 @@ class QrScanActivity : AppCompatActivity() {
         }
     }
 
-    private fun afterConnected(ip: String) {
+    /**
+     * B32: реальный IP host-AP берём из DHCP gateway, а не хардкодом из QR.
+     * На HyperOS startLocalOnlyHotspot может отдать AP с gateway не 192.168.43.1,
+     * а 192.168.232.1 / 192.168.251.1 и т.п. → HELLO на хардкод-IP уходит в никуда,
+     * приёмник «принимает» offer, но TCP-connect fail с SocketException.
+     */
+    private fun getGatewayIp(): String? {
+        return try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            val dhcp = wm.dhcpInfo
+            if (dhcp.gateway != 0) {
+                val g = dhcp.gateway
+                return "${g and 0xff}.${(g shr 8) and 0xff}.${(g shr 16) and 0xff}.${(g shr 24) and 0xff}"
+            }
+            @Suppress("DEPRECATION")
+            val myIp = wm.connectionInfo?.ipAddress ?: 0
+            if (myIp != 0) {
+                val a = myIp and 0xff
+                val b = (myIp shr 8) and 0xff
+                val c = (myIp shr 16) and 0xff
+                return "$a.$b.$c.1"
+            }
+            null
+        } catch (e: Exception) {
+            InAppLogger.d("QrScan", "getGatewayIp error: ${e.message}")
+            null
+        }
+    }
+
+    private fun afterConnected(qrIp: String) {
         statusText.text = "Подключено, отправляю…"
         val node = AtomController.meshNode
         if (node == null) {
             statusText.text = "Mesh не готов"
             return
         }
-        node.sendHello(ip)
+        val gateway = getGatewayIp()
+        val targetIp = gateway ?: qrIp
+        InAppLogger.d("QrScan", "target IP: gateway=$gateway qr=$qrIp → using $targetIp")
+        node.sendHello(targetIp)
         handler.postDelayed({
             // Через 2.5 сек — ждём HELLO
-            val peer = AtomController.peers.value.firstOrNull { it.ip == ip }
-                ?: Peer(id = "qr", name = "QR", ip = ip)
+            val peer = AtomController.peers.value.firstOrNull { it.ip == targetIp }
+                ?: Peer(id = "qr", name = "QR", ip = targetIp)
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this, peer, pendingUris)
             } else {
