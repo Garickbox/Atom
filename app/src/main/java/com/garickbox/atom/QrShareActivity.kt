@@ -155,15 +155,21 @@ class QrShareActivity : AppCompatActivity() {
         }
     }
 
-    private fun showHotspotRetryDialog() {
+    private fun showHotspotRetryDialog(reason: Int) {
+        val why = when (reason) {
+            2 -> "HyperOS не разрешает точку доступа при включённом Wi-Fi."
+            3 -> "Канал Wi-Fi занят для точки доступа."
+            else -> "Hotspot не создался."
+        }
         try {
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Wi-Fi мешает точке доступа")
                 .setMessage(
-                    "Канал Wi-Fi занят для AP.\n\n" +
-                    "1. Выключи Wi-Fi в шторке\n" +
-                    "2. Жди 10-30 секунд\n" +
-                    "3. Вернись в Атом — hotspot создастся сам"
+                    why + "\n\n" +
+                    "1. Открой шторку → выключи Wi-Fi\n" +
+                    "2. Жди 10-30 секунд (framework отпустит)\n" +
+                    "3. Вернись в Атом — создам hotspot автоматически\n\n" +
+                    "После передачи включи Wi-Fi обратно."
                 )
                 .setPositiveButton("Открыть Wi-Fi") { _, _ ->
                     try {
@@ -240,17 +246,21 @@ class QrShareActivity : AppCompatActivity() {
                 }
                 override fun onFailed(reason: Int) {
                     InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
+                    // reason=2 INCOMPATIBLE_MODE — retry до 2 раз (fast fail)
                     if (reason == 2 && hotspotRetryCount < 2) {
                         hotspotRetryCount++
-                        statusText.text = "Hotspot занят, retry…"
+                        statusText.text = "Hotspot занят, retry $hotspotRetryCount/2…"
                         handler.postDelayed({ startHotspot() }, 1500L)
                         return
                     }
-                    if (reason == 3) {
+                    // B52: reason=2 (retry исчерпан) ИЛИ reason=3 → одна инструкция:
+                    // выключить Wi-Fi. HyperOS не даёт concurrent STA+AP.
+                    if (reason == 2 || reason == 3) {
                         waitingForWifiOff = true
                         wifiWasOff = false
-                        statusText.text = "Wi-Fi мешает. Выключи в шторке → я подхвачу."
-                        showHotspotRetryDialog()
+                        hotspotRetryCount = 0
+                        statusText.text = "Выключи Wi-Fi в шторке на 10-30с → hotspot создастся"
+                        showHotspotRetryDialog(reason)
                         return
                     }
                     statusText.text = "Не удалось создать группу (код $reason)"
