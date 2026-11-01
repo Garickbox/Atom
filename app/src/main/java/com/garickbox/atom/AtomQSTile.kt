@@ -34,6 +34,13 @@ class AtomQSTile : TileService() {
         updateTile()
     }
 
+    override fun onLongClick(): Boolean {
+        // B89: long-press → открыть file picker (было только двойной тап)
+        InAppLogger.d("AtomQSTile", "B89 long-press → file picker")
+        openFilePicker()
+        return true
+    }
+
     override fun onClick() {
         super.onClick()
         // B20.4: fg-only (Атом открыт, FGS нет) → тап запускает FGS

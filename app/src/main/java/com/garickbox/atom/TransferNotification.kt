@@ -44,8 +44,17 @@ object TransferNotification {
             ctx, transferId.hashCode() + 3, pauseIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // B89: tap на уведомление → открыть Атом
+        val openIntent = Intent(ctx, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val contentPi = PendingIntent.getActivity(
+            ctx, transferId.hashCode() + 10, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentIntent(contentPi)
             .setContentTitle(
                 "📤 Отправка → $peerName" +
                 if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
