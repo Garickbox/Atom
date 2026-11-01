@@ -43,15 +43,28 @@ class QrShareActivity : AppCompatActivity() {
         groupCreated = false
         usingHotspot = false
 
+        // B39.2: явная кнопка «В главное» + Back (нет toolbar на landscape QR)
+        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener {
+            onBackPressed()
+        }
+
         // B39: hotspot напрямую (P2P+WifiNetworkSpecifier несовместимы, B26)
         startHotspot()
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // B35-TV: Back = свернуть (AP живёт в фоне). Закрыть = force-stop app.
-        InAppLogger.d("QrServer", "back → moveTaskToBack (AP alive)")
-        moveTaskToBack(true)
+        // B39.2: Back = finish (→ Main). Если передача активна — свернуть,
+        // иначе AP умрёт и передача порвётся.
+        val st = AtomController.transferState.value
+        val active = st is TransferState.Running || st is TransferState.Paused
+        if (active) {
+            InAppLogger.d("QrServer", "back: transfer active → moveTaskToBack")
+            moveTaskToBack(true)
+        } else {
+            InAppLogger.d("QrServer", "back: no transfer → finish")
+            finish()
+        }
     }
 
     private fun startP2pGroup() {
