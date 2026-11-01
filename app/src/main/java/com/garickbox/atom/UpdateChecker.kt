@@ -486,7 +486,10 @@ object UpdateChecker {
     private fun currentVersionCode(ctx: Context): Int {
         return try {
             val pkg = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
-            if (Build.VERSION.SDK_INT >= 28) pkg.longVersionCode.toInt() else pkg.versionCode
+            if (Build.VERSION.SDK_INT >= 28) {
+                // B75#19: return Int для API совместимости, но compare через Long в checkForUpdate
+                pkg.longVersionCode.toInt()
+            } else pkg.versionCode
         } catch (_: Exception) { 0 }
     }
 

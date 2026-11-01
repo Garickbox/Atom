@@ -60,6 +60,14 @@ class ShareTargetActivity : AppCompatActivity() {
     private var tvDialog: androidx.appcompat.app.AlertDialog? = null
 
     override fun onDestroy() {
+        // B75#8: restore wd.onConnected дефолтом, иначе dead closure блокирует Quick Connect
+        try {
+            AtomController.wifiDirect?.onConnected = { conn ->
+                if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
+                    AtomController.meshNode?.sendHello(conn.groupOwnerAddress)
+                }
+            }
+        } catch (_: Exception) {}
         try { tvDialog?.dismiss() } catch (_: Exception) {}
         tvDialog = null
         super.onDestroy()

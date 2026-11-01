@@ -56,10 +56,13 @@ object AtomController {
             this.myName = this@AtomController.myName
             this.onHello = { info ->
                 if (info.peerId != this@AtomController.myId) {
-                    val existing = peers.value.toMutableList()
-                    existing.removeAll { it.id == info.peerId }
-                    existing.add(Peer(info.peerId, info.name, info.ip))
-                    peers.value = existing
+                    // B75#13: atomic update — параллельные HELLO не теряют пиров
+                    peers.update { current ->
+                        current.toMutableList().apply {
+                            removeAll { it.id == info.peerId }
+                            add(Peer(info.peerId, info.name, info.ip))
+                        }
+                    }
                 }
             }
             this.onFileOffer = { offer ->
@@ -232,12 +235,14 @@ object AtomController {
     }
 
 
-    private var _transferActive: Boolean = false
-    val transferActive: Boolean get() = _transferActive
+    // B75#12: AtomicInteger counter — sender+receiver могут быть активны параллельно
+    private val _transferActive = java.util.concurrent.atomic.AtomicInteger(0)
+    val transferActive: Boolean get() = _transferActive.get() > 0
 
     fun setTransferActive(active: Boolean) {
-        _transferActive = active
-        com.mesh.core.InAppLogger.d("AtomController", "transferActive = $active")
+        val v = if (active) _transferActive.incrementAndGet() else _transferActive.decrementAndGet()
+        if (v < 0) _transferActive.set(0)
+        com.mesh.core.InAppLogger.d("AtomController", "transferActive count=${_transferActive.get()}")
     }
 
 }

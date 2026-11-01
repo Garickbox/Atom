@@ -200,6 +200,12 @@ object FileReceiver {
             val end = dis.readLong()
             val threadIdx = dis.readInt()
             val threadCount = dis.readInt()
+            // B75#17: cap от malicious peer (threadCount=MAX_INT → вечный session)
+            if (threadCount !in 1..8) {
+                InAppLogger.d("FileReceiver", "B75: reject threadCount=" + threadCount)
+                try { socket.close() } catch (_: Exception) {}
+                return
+            }
 
             InAppLogger.d("FileReceiver",
                 "TCP header: tid=${tid.take(8)} thr=$threadIdx/$threadCount range=$offset..$end size=$totalSize")
@@ -355,6 +361,11 @@ object FileReceiver {
                 val idleSec = (System.currentTimeMillis() - session.lastProgressAt) / 1000
                 InAppLogger.d("FileReceiver",
                     "watchdog tick: ${session.tid.take(8)} idle=${idleSec}s")
+                // B75#10: paused сессии не абортим watchdog'ом (иначе pause>5мин → .part удалён)
+                if (session.paused.get()) {
+                    session.lastProgressAt = System.currentTimeMillis()
+                    continue
+                }
                 if (idleSec > 300) {
                     InAppLogger.d("FileReceiver",
                         "watchdog: ${session.tid.take(8)} нет прогресса ${idleSec} сек — abort")

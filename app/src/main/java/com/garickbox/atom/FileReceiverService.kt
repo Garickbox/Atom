@@ -42,6 +42,8 @@ class FileReceiverService : Service() {
             val fi = (cur as? TransferState.Running)?.fileIndex ?: 0
             val fc = (cur as? TransferState.Running)?.fileCount ?: 0
             instance?.updateNotif(fileName, written, total, bps, fi, fc)
+            // B75#11: TCP может прийти до onStartCommand → currentTransferId пуст.
+            // Обновляем state даже без tid — peerName всё равно нужно показать.
             if (currentTransferId.isNotBlank()) {
                 AtomController.transferState.value = TransferState.Running(
                     transferId = currentTransferId,

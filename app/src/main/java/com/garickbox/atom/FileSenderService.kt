@@ -436,9 +436,17 @@ class FileSenderService : Service() {
                 return@launch
             }
             val duration = System.currentTimeMillis() - startedAt
-            AtomController.transferState.value = TransferState.Success(
-                peerName, filesOk, totalSent, duration
-            )
+            // B75#20: Success только если хоть 1 файл ушёл; иначе Failed
+            if (filesOk == 0 && uris.isNotEmpty()) {
+                AtomController.transferState.value = TransferState.Failed(
+                    "no-file", peerName, "—",
+                    "Все файлы упали (0/" + uris.size + ")", "", ""
+                )
+            } else {
+                AtomController.transferState.value = TransferState.Success(
+                    peerName, filesOk, totalSent, duration
+                )
+            }
             val ok = TransferNotification.buildSuccess(
                 this@FileSenderService, peerName, filesOk, totalSent, duration
             )
@@ -881,6 +889,11 @@ private fun displayName(uri: Uri): String? {
 
     override fun onDestroy() {
         try { QrScanActivity.unbind() } catch (_: Exception) {}
+        // B75#22: nulling callbacks — следующий onCreate переустановит
+        try {
+            AtomController.meshNode?.onFileAccept = null
+            AtomController.meshNode?.onFileDecline = null
+        } catch (_: Exception) {}
         TransferNotification.resetCache(NOTIF_ID)
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         PowerLocks.releaseWifi(wifiLock)
