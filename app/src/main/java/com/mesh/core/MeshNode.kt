@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.DatagramPacket
@@ -37,8 +38,8 @@ class MeshNode(private val ctx: Context) {
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var udpSocket: DatagramSocket? = null
-    private var tcpServer: ServerSocket? = null
+    @Volatile private var udpSocket: DatagramSocket? = null
+    @Volatile private var tcpServer: ServerSocket? = null
 
     private val hereAwaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val helloSendCounter = java.util.concurrent.atomic.AtomicLong(0)
@@ -103,18 +104,44 @@ class MeshNode(private val ctx: Context) {
     //  UDP / TCP LOOPS
     // ═══════════════════════════════════════════════════════════
 
+    /** B30: пересоздать UDP-сокет под текущую process-network.
+     *  После bindProcessToNetwork старый сокет остаётся на своей Network —
+     *  Android 10+ не переносит открытые сокеты в новую default-сеть. */
+    @Synchronized
+    fun recreateUdpSocket() {
+        try {
+            val fresh = DatagramSocket(null).apply {
+                reuseAddress = true
+                broadcast = true
+                bind(InetSocketAddress(PORT))
+            }
+            val old = udpSocket
+            udpSocket = fresh
+            try { old?.close() } catch (_: Exception) {}
+            InAppLogger.d("MeshNode", "udp socket recreated (network switch)")
+        } catch (e: Exception) {
+            InAppLogger.d("MeshNode", "recreateUdpSocket error: ${e.message}")
+        }
+    }
+
     private suspend fun udpLoop() {
         val buf = ByteArray(8192)
         while (isRunning) {
             try {
-                val sock = udpSocket ?: break
+                val sock = udpSocket ?: run {
+                    kotlinx.coroutines.delay(50)
+                    continue
+                }
                 val pkt = DatagramPacket(buf, buf.size)
                 sock.receive(pkt)
                 val packet = MeshPacket.decode(buf, pkt.length) ?: continue
                 val fromIp = pkt.address.hostAddress ?: continue
                 handleUdp(packet, fromIp)
             } catch (e: Exception) {
-                if (isRunning) InAppLogger.d("MeshNode", "udp recv: ${e.message}")
+                if (isRunning) {
+                    InAppLogger.d("MeshNode", "udp recv: ${e.message}")
+                    kotlinx.coroutines.delay(50)
+                }
             }
         }
     }

@@ -33,6 +33,8 @@ class QrScanActivity : AppCompatActivity() {
             try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
             boundCm = null
             boundNetwork = null
+            // B30: вернуть udpSocket на дефолтную сеть после QR-сессии
+            AtomController.meshNode?.recreateUdpSocket()
         }
     }
 
@@ -135,6 +137,9 @@ class QrScanActivity : AppCompatActivity() {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
                             boundNetwork = network
+                            // B30: старый udpSocket висит на home WiFi — пересоздать,
+                            // чтобы HELLO/FILE_OFFER шли через hotspot.
+                            AtomController.meshNode?.recreateUdpSocket()
                         } catch (e: Exception) {
                             InAppLogger.d("QrScan", "bind error: ${e.message}")
                         }

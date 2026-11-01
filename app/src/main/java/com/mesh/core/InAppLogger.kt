@@ -48,6 +48,8 @@ object InAppLogger {
         // B22r: discovery диагностика (иначе verbose пустой при P2P проблемах)
         "discover", "reinit", "initialized", "cleanup", "channel",
         "P2P ERROR", "requestPeers", "peers changed",
+        // B31: QR/hotspot диагностика (временно до стабилизации)
+        "HELLO", "recreate", "probe", "startTransfer", "peer resolved",
     )
 
     private fun shortTag(tag: String): String = when (tag) {
