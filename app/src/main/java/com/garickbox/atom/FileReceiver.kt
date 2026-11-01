@@ -388,9 +388,16 @@ object FileReceiver {
                 session.partFile.delete()
                 activeSessions.remove(session.tid)
                 // busy уже освобождён в handleIncomingSocket
-                AtomController.transferState.value = TransferState.Failed(
-                    session.tid, session.peerName, session.name, "Ошибка потока", "", ""
-                )
+                // B59 axiom#66: если идёт newer transfer — не перезаписываем state
+                val curF = AtomController.transferState.value
+                if (curF is TransferState.Running && curF.transferId != session.tid) {
+                    InAppLogger.d("FileReceiver",
+                        "B59: skip Failed, newer Running " + curF.transferId.take(8))
+                } else {
+                    AtomController.transferState.value = TransferState.Failed(
+                        session.tid, session.peerName, session.name, "Ошибка потока", "", ""
+                    )
+                }
                 // stop → finalizeEnd()
                 return
             }
@@ -454,21 +461,34 @@ object FileReceiver {
                     savedPath = result.displayPath
                 ))
                 if (updateVc != null && result.uri != null) {
-                    AtomController.transferState.value = TransferState.UpdatePending(
-                        apkUri = result.uri.toString(),
-                        versionCode = updateVc,
-                        peerName = session.peerName,
-                        fileName = session.name,
-                        bytesTotal = session.totalSize
-                    )
+                    val curU = AtomController.transferState.value
+                    if (curU is TransferState.Running && curU.transferId != session.tid) {
+                        InAppLogger.d("FileReceiver",
+                            "B59: skip UpdatePending, newer Running " + curU.transferId.take(8))
+                    } else {
+                        AtomController.transferState.value = TransferState.UpdatePending(
+                            apkUri = result.uri.toString(),
+                            versionCode = updateVc,
+                            peerName = session.peerName,
+                            fileName = session.name,
+                            bytesTotal = session.totalSize
+                        )
+                    }
                     InAppLogger.d("FileReceiver",
                         "UpdatePending: build=$updateVc, uri=${result.uri}")
                 } else {
-                    // Обычный успех: если идёт следующий Running — UI переключится
-                    AtomController.transferState.value = TransferState.Success(
-                        session.peerName, 1, session.totalSize, 0
-                    )
-                    InAppLogger.d("FileReceiver", "Success state set (always)")
+                    // B59 axiom#66: если идёт newer transfer — НЕ перезаписываем Success
+                    val curS = AtomController.transferState.value
+                    if (curS is TransferState.Running && curS.transferId != session.tid) {
+                        InAppLogger.d("FileReceiver",
+                            "B59: skip Success, newer Running " + curS.transferId.take(8) +
+                            " (session " + session.tid.take(8) + " already done)")
+                    } else {
+                        AtomController.transferState.value = TransferState.Success(
+                            session.peerName, 1, session.totalSize, 0
+                        )
+                        InAppLogger.d("FileReceiver", "Success state set (session=" + session.tid.take(8) + ")")
+                    }
                 }
             } else {
                 InAppLogger.d("FileReceiver", "MediaStore save failed")
