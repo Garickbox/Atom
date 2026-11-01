@@ -17,6 +17,7 @@ import com.mesh.core.InAppLogger
 class QrShareActivity : AppCompatActivity() {
 
     private var groupCreated = false
+    private var hotspotRetryCount = 0
     private var usingHotspot = false
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
 
@@ -80,27 +81,8 @@ class QrShareActivity : AppCompatActivity() {
         try {
             wm.createGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("QrServer", "createGroup OK, requestGroupInfo")
-                    try {
-                        wm.requestGroupInfo(channel) { group ->
-                            handler.removeCallbacks(timeout)
-                            if (group == null) {
-                                startHotspot(); return@requestGroupInfo
-                            }
-                            val ssid = group.networkName ?: ""
-                            val pass = group.passphrase ?: ""
-                            if (ssid.isBlank() || pass.isBlank()) {
-                                startHotspot(); return@requestGroupInfo
-                            }
-                            groupCreated = true
-                            usingHotspot = false
-                            val ip = "192.168.49.1"
-                            showQr(ssid, pass, ip, "P2P")
-                        }
-                    } catch (e: Exception) {
-                        InAppLogger.d("QrServer", "requestGroupInfo error: ${e.message}")
-                        startHotspot()
-                    }
+                    InAppLogger.d("QrServer", "createGroup OK, requestGroupInfo retry")
+                    tryRequestGroupInfo(wm, channel, timeout, 0)
                 }
                 override fun onFailure(reason: Int) {
                     handler.removeCallbacks(timeout)
@@ -112,6 +94,44 @@ class QrShareActivity : AppCompatActivity() {
             handler.removeCallbacks(timeout)
             InAppLogger.d("QrServer", "createGroup exception: ${e.message}")
             startHotspot()
+        }
+    }
+
+    private fun tryRequestGroupInfo(
+        wm: WifiP2pManager,
+        channel: WifiP2pManager.Channel,
+        timeout: Runnable,
+        attempt: Int
+    ) {
+        if (attempt >= 10) {
+            InAppLogger.d("QrServer", "requestGroupInfo 10x null → hotspot")
+            handler.removeCallbacks(timeout)
+            startHotspot()
+            return
+        }
+        try {
+            wm.requestGroupInfo(channel) { group ->
+                val ssid = group?.networkName ?: ""
+                val pass = group?.passphrase ?: ""
+                if (ssid.isNotBlank() && pass.isNotBlank()) {
+                    handler.removeCallbacks(timeout)
+                    groupCreated = true
+                    usingHotspot = false
+                    val ip = "192.168.49.1"
+                    InAppLogger.d("QrServer", "creds OK on attempt $attempt")
+                    showQr(ssid, pass, ip, "P2P")
+                } else {
+                    InAppLogger.d("QrServer", "requestGroupInfo $attempt: empty → retry 500ms")
+                    handler.postDelayed({
+                        tryRequestGroupInfo(wm, channel, timeout, attempt + 1)
+                    }, 500L)
+                }
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer", "requestGroupInfo error: ${e.message} → retry")
+            handler.postDelayed({
+                tryRequestGroupInfo(wm, channel, timeout, attempt + 1)
+            }, 500L)
         }
     }
 
@@ -141,14 +161,12 @@ class QrShareActivity : AppCompatActivity() {
                     usingHotspot = true
                     showQr(ssid, pass, "192.168.43.1", "Hotspot")
                 }
-                var retryCount = 0
                 override fun onFailed(reason: Int) {
-                    InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$retryCount")
-                    // reason 2 = ERROR_ALREADY_STARTED — stale hotspot, retry через 1s
-                    if (reason == 2 && retryCount < 2) {
-                        retryCount++
+                    InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
+                    if (reason == 2 && hotspotRetryCount < 2) {
+                        hotspotRetryCount++
                         statusText.text = "Hotspot занят, retry…"
-                        handler.postDelayed({ startHotspot() }, 1000L)
+                        handler.postDelayed({ startHotspot() }, 1500L)
                         return
                     }
                     statusText.text = "Не удалось создать группу (код $reason)"
