@@ -30,6 +30,8 @@ object InAppLogger {
 
     private var dir: File? = null
     private var prefs: SharedPreferences? = null
+    @Volatile private var appCtx: Context? = null
+    @Volatile private var lastSyncAt: Long = 0L
 
     @Volatile private var verboseEnabled: Boolean = false
 
@@ -91,6 +93,7 @@ object InAppLogger {
         val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
         base.mkdirs()
         dir = base
+        appCtx = ctx.applicationContext
     }
 
     /** B40: очистка всех логов при смене версии. */
@@ -126,6 +129,7 @@ object InAppLogger {
             val f = File(dd, "atom.log")
             if (f.exists() && f.length() > MAX_BYTES) rotate()
             f.appendText(t + st + " " + compressed + "\n")
+            throttleSyncToDownloads("atom.log")
         } catch (_: Exception) {}
     }
 
@@ -139,6 +143,54 @@ object InAppLogger {
             val f = File(dd, "atom-err.log")
             if (f.exists() && f.length() > MAX_ERR_BYTES) f.delete()
             f.appendText(line)
+            throttleSyncToDownloads("atom-err.log")
+        } catch (_: Exception) {}
+    }
+
+    /** B43 axiom#52: копия лога в Download/Atom/logs — Termux читает без root. */
+    private fun throttleSyncToDownloads(name: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastSyncAt < 5000L) return
+        lastSyncAt = now
+        val ctx = appCtx ?: return
+        val dd = dir ?: return
+        val src = File(dd, name)
+        if (!src.exists()) return
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val resolver = ctx.contentResolver
+                val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val relPath = "Download/Atom/logs/"
+                val cursor = resolver.query(collection,
+                    arrayOf(android.provider.MediaStore.Downloads._ID),
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + "=? AND " +
+                        android.provider.MediaStore.Downloads.RELATIVE_PATH + "=?",
+                    arrayOf(name, relPath), null)
+                val uri = if (cursor != null && cursor.moveToFirst()) {
+                    val id = cursor.getLong(0); cursor.close()
+                    android.content.ContentUris.withAppendedId(collection, id)
+                } else {
+                    cursor?.close()
+                    val v = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                        put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+                        put(android.provider.MediaStore.Downloads.RELATIVE_PATH, relPath)
+                    }
+                    resolver.insert(collection, v)
+                }
+                if (uri != null) {
+                    resolver.openOutputStream(uri, "wt")?.use { out ->
+                        src.inputStream().use { it.copyTo(out) }
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val pub = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS)
+                val dst = File(pub, "Atom/logs/$name")
+                dst.parentFile?.mkdirs()
+                src.copyTo(dst, overwrite = true)
+            }
         } catch (_: Exception) {}
     }
 
