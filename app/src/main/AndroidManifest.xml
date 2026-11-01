@@ -40,6 +40,12 @@
         android:theme="@style/Theme.Atom.Main">
 
         <activity
+            android:name=".ShortcutActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Atom.Transparent" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
@@ -70,14 +76,6 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_atom_info" />
-        </receiver>
-
-        <receiver
-            android:name=".ShortcutReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.garickbox.atom.SHORTCUT_RECEIVE" />
-            </intent-filter>
         </receiver>
 
         <service

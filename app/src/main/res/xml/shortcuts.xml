@@ -20,6 +20,6 @@
         <intent
             android:action="com.garickbox.atom.SHORTCUT_RECEIVE"
             android:targetPackage="com.garickbox.atom"
-            android:targetClass="com.garickbox.atom.ShortcutReceiver" />
+            android:targetClass="com.garickbox.atom.ShortcutActivity" />
     </shortcut>
 </shortcuts>

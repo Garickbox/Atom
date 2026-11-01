@@ -19,7 +19,7 @@ object ShortcutPublisher {
                 ShortcutInfoCompat.Builder(ctx, "peer_" + p.mac.takeLast(8).replace(":", ""))
                     .setShortLabel(p.name.take(10))
                     .setLongLabel("Отправить на " + p.name.take(20))
-                    .setIcon(IconCompat.createWithResource(ctx, R.drawable.ic_shortcut_peer))
+                    .setIcon(IconCompat.createResource(ctx, R.mipmap.ic_launcher))
                     .setIntent(intent)
                     .setRank(idx)
                     .build()
