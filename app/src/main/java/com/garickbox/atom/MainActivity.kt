@@ -459,7 +459,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSendPicker() {
-        val options = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка")
+        val options = arrayOf(
+            "📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка",
+            "📱  Показать QR (принять)", "🔍  Сканировать QR (отправить)"
+        )
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Что отправить?")
             .setItems(options) { _, which ->
@@ -468,6 +471,18 @@ class MainActivity : AppCompatActivity() {
                     1 -> pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly)
                     2 -> openFilePicker()
                     3 -> openFolderPicker()
+                    4 -> startActivity(Intent(this, QrShareActivity::class.java))
+                    5 -> {
+                        val i = Intent(this, QrScanActivity::class.java).apply {
+                            action = Intent.ACTION_SEND
+                        }
+                        // Открываем file picker перед сканом — файл нужен для отправки
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }, REQ_QR_PICK)
+                    }
                 }
             }
             .show()

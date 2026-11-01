@@ -20,6 +20,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -44,6 +45,18 @@
             android:exported="true"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.Atom.Transparent" />
+
+        <activity
+            android:name=".QrShareActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:label="QR приём" />
+
+        <activity
+            android:name=".QrScanActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:label="Сканировать QR" />
 
         <activity
             android:name=".MainActivity"

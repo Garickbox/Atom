@@ -1,0 +1,164 @@
+package com.garickbox.atom
+
+import android.content.Context
+import android.net.wifi.WifiConfiguration
+import android.net.wifi.WifiManager
+import android.net.wifi.p2p.WifiP2pManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.BarcodeEncoder
+import com.mesh.core.AtomController
+import com.mesh.core.InAppLogger
+
+class QrShareActivity : AppCompatActivity() {
+
+    private var groupCreated = false
+    private var usingHotspot = false
+    private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
+
+    private lateinit var qrImage: ImageView
+    private lateinit var statusText: TextView
+    private lateinit var infoText: TextView
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qr_share)
+        qrImage = findViewById(R.id.qrImage)
+        statusText = findViewById(R.id.statusText)
+        infoText = findViewById(R.id.infoText)
+
+        startP2pGroup()
+    }
+
+    private fun startP2pGroup() {
+        statusText.text = "Создаю P2P группу…"
+        val wm = getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
+        if (wm == null) {
+            InAppLogger.d("QrServer", "no WifiP2pManager → hotspot")
+            startHotspot()
+            return
+        }
+        val channel = wm.initialize(this, Looper.getMainLooper()) {}
+        if (channel == null) {
+            startHotspot(); return
+        }
+
+        // Таймаут: если за 5 сек группа не сформировалась — hotspot
+        val timeout = Runnable {
+            if (!groupCreated) {
+                InAppLogger.d("QrServer", "createGroup timeout 5s → hotspot")
+                startHotspot()
+            }
+        }
+        handler.postDelayed(timeout, 5000L)
+
+        try {
+            wm.createGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("QrServer", "createGroup OK, requestGroupInfo")
+                    try {
+                        wm.requestGroupInfo(channel) { group ->
+                            handler.removeCallbacks(timeout)
+                            if (group == null) {
+                                startHotspot(); return@requestGroupInfo
+                            }
+                            val ssid = group.networkName ?: ""
+                            val pass = group.passphrase ?: ""
+                            if (ssid.isBlank() || pass.isBlank()) {
+                                startHotspot(); return@requestGroupInfo
+                            }
+                            groupCreated = true
+                            usingHotspot = false
+                            val ip = "192.168.49.1"
+                            showQr(ssid, pass, ip, "P2P")
+                        }
+                    } catch (e: Exception) {
+                        InAppLogger.d("QrServer", "requestGroupInfo error: ${e.message}")
+                        startHotspot()
+                    }
+                }
+                override fun onFailure(reason: Int) {
+                    handler.removeCallbacks(timeout)
+                    InAppLogger.d("QrServer", "createGroup FAIL: $reason → hotspot")
+                    startHotspot()
+                }
+            })
+        } catch (e: Exception) {
+            handler.removeCallbacks(timeout)
+            InAppLogger.d("QrServer", "createGroup exception: ${e.message}")
+            startHotspot()
+        }
+    }
+
+    private fun startHotspot() {
+        statusText.text = "Создаю hotspot…"
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        if (wm == null) {
+            statusText.text = "Ошибка: WifiManager недоступен"
+            return
+        }
+        try {
+            wm.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
+                override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
+                    hotspotReservation = reservation
+                    val conf: WifiConfiguration = reservation.wifiConfiguration
+                    val ssid = conf.SSID ?: ""
+                    val pass = conf.preSharedKey ?: ""
+                    if (ssid.isBlank() || pass.isBlank()) {
+                        statusText.text = "Ошибка: пустые credentials"
+                        return
+                    }
+                    groupCreated = true
+                    usingHotspot = true
+                    showQr(ssid, pass, "192.168.43.1", "Hotspot")
+                }
+                override fun onFailed(reason: Int) {
+                    InAppLogger.d("QrServer", "hotspot FAIL: $reason")
+                    statusText.text = "Не удалось создать группу (код $reason)"
+                }
+                override fun onStopped() {
+                    InAppLogger.d("QrServer", "hotspot stopped")
+                }
+            }, handler)
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
+            statusText.text = "Ошибка: ${e.message}"
+        }
+    }
+
+    private fun showQr(ssid: String, pass: String, ip: String, mode: String) {
+        InAppLogger.d("QrServer", "READY mode=$mode ssid=$ssid ip=$ip")
+        statusText.text = if (usingHotspot) "✅ Hotspot готов" else "✅ P2P готов"
+        infoText.text = "SSID: $ssid\nПароль: $pass\nIP: $ip\nРежим: $mode"
+
+        val qrText = "WIFI:T:WPA;S:$ssid;P:$pass;IP:$ip;;"
+        try {
+            val bmp = BarcodeEncoder().encodeBitmap(qrText, BarcodeFormat.QR_CODE, 700, 700)
+            qrImage.setImageBitmap(bmp)
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer", "QR gen error: ${e.message}")
+            statusText.text = "QR ошибка: ${e.message}"
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
+        try { hotspotReservation?.close() } catch (_: Exception) {}
+        if (groupCreated && !usingHotspot) {
+            try {
+                val wm = getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
+                val channel = wm?.initialize(this, Looper.getMainLooper()) {}
+                wm?.removeGroup(channel, null)
+            } catch (_: Exception) {}
+        }
+        InAppLogger.d("QrServer", "onDestroy, group cleaned")
+    }
+}
