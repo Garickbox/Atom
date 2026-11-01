@@ -80,6 +80,19 @@
             android:label="Лог" />
 
         <receiver
+            android:name=".AtomCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="com.garickbox.atom.RECEIVE_ON" />
+                <action android:name="com.garickbox.atom.RECEIVE_OFF" />
+                <action android:name="com.garickbox.atom.SEND" />
+                <action android:name="com.garickbox.atom.CHECK_UPDATE" />
+                <action android:name="com.garickbox.atom.PING" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".AtomWidgetProvider"
             android:exported="true">
             <intent-filter>

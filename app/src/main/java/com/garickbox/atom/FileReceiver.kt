@@ -482,6 +482,8 @@ object FileReceiver {
                     InAppLogger.d("FileReceiver",
                         "UpdatePending: build=$updateVc, uri=${result.uri}")
                 } else {
+                    // B79: badge counter — непрочитанная передача
+                    try { BadgeHelper.increment(ctx) } catch (_: Exception) {}
                     // Обычный успех: если идёт следующий Running — UI переключится
                     AtomController.transferState.value = TransferState.Success(
                         session.peerName, 1, session.totalSize, 0
