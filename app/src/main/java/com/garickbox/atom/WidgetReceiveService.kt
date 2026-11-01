@@ -37,6 +37,7 @@ class WidgetReceiveService : Service() {
     }
 
     private var wifiLock: WifiManager.WifiLock? = null
+    @Volatile private var autoStopGen: Int = 0  // B74: generation for autoStop threads
     // B20.3: ticker — виджет/QS Tile раз в секунду пока приём активен
     private val tickerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val tickerRunnable = object : Runnable {
@@ -76,6 +77,7 @@ class WidgetReceiveService : Service() {
                     return START_NOT_STICKY
                 }
                 isActive = true
+                autoStopGen++  // B74: инвалидирует старые autoStop-потоки
                 activeUntil = System.currentTimeMillis() + DURATION_MS
                 startForeground(NOTIF_ID, buildNotif())
                 try { AtomController.wifiDirect?.startContinuousDiscover() } catch (_: Exception) {}
@@ -97,12 +99,15 @@ class WidgetReceiveService : Service() {
     }
 
     private fun scheduleAutoStop() {
+        // B74 code-review#7: gen-counter — старый поток не должен убивать новую сессию
+        val myGen = autoStopGen
         Thread {
             try {
                 while (true) {
+                    if (myGen != autoStopGen) return@Thread
                     val remain = activeUntil - System.currentTimeMillis()
                     if (remain > 0) Thread.sleep(remain)
-                    // B20.6: не останавливаться если идёт приём/передача
+                    if (myGen != autoStopGen) return@Thread
                     val receiving = try { FileReceiver.isBusy } catch (_: Exception) { false }
                     val sending = try { AtomController.transferActive } catch (_: Exception) { false }
                     if (receiving || sending) {
@@ -116,6 +121,11 @@ class WidgetReceiveService : Service() {
                     break
                 }
             } catch (_: Exception) {}
+            if (myGen != autoStopGen) {
+                InAppLogger.d("WidgetReceive",
+                    "B74: autoStop gen mismatch (my=$myGen now=$autoStopGen) → skip stopSelf")
+                return@Thread
+            }
             try { stopSelf() } catch (_: Exception) {}
         }.apply { isDaemon = true }.start()
     }
