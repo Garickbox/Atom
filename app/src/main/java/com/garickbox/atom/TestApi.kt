@@ -68,6 +68,8 @@ object TestApi {
                 "/discover" -> cmdDiscover(ctx)
                 "/loopback" -> cmdLoopback(ctx, params["size"]?.toLongOrNull() ?: 10_485_760L)
                 "/log" -> cmdLog(params["name"] ?: "atom")
+                "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
+                    catch (e: Exception) { "err: " + (e.message ?: "?") }
                 "/ping" -> "pong"
                 else -> "unknown route: $route"
             }

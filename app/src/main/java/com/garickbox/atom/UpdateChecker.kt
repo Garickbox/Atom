@@ -439,6 +439,54 @@ object UpdateChecker {
         }
     }
 
+    /** B47 axiom#58: auto-update из TestApi. Background download + system installer. */
+    fun startAutoUpdate(ctx: Context): String {
+        val app = ctx.applicationContext
+        if (isDownloading) return "DOWNLOADING " + (currentRelease?.tag ?: "?")
+        val release = try {
+            kotlinx.coroutines.runBlocking { checkForUpdate(app) }
+        } catch (e: Exception) {
+            InAppLogger.err("UpdateChecker", "B47 check: ${e.message}")
+            return "CHECK_ERROR " + (e.message ?: "?")
+        } ?: return "ALREADY_LATEST build=" + currentVersionCode(app)
+        if (Build.VERSION.SDK_INT >= 26 && !canInstall(app)) {
+            return "MISSING_PERMISSION REQUEST_INSTALL_PACKAGES"
+        }
+        isDownloading = true
+        currentRelease = release
+        currentDownloaded = 0L
+        currentTotal = 0L
+        Thread {
+            try {
+                val dir = File(app.cacheDir, "apk").apply { mkdirs() }
+                val out = File(dir, "atom-" + release.tag + ".apk")
+                if (out.exists()) out.delete()
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+                val ok = downloadWithRanges(client, release.apkUrl, out) { d, t ->
+                    currentDownloaded = d
+                    currentTotal = t
+                    progressListeners.forEach { l -> try { l(d, t) } catch (_: Exception) {} }
+                }
+                if (!ok) throw IllegalStateException("download failed")
+                InAppLogger.d("UpdateChecker",
+                    "B47 auto-update done: " + out.length() + "B")
+                try { saveApkToDownloads(app, out, release.tag) } catch (_: Exception) {}
+                finishListeners.forEach { l -> try { l(true) } catch (_: Exception) {} }
+                installApk(app, out)
+            } catch (e: Exception) {
+                InAppLogger.err("UpdateChecker", "B47 auto-update: ${e.message}")
+                finishListeners.forEach { l -> try { l(false) } catch (_: Exception) {} }
+            } finally {
+                isDownloading = false
+                currentRelease = null
+            }
+        }.start()
+        return "DOWNLOADING " + release.tag + " build=" + release.buildNumber
+    }
+
     private fun currentVersionCode(ctx: Context): Int {
         return try {
             val pkg = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
