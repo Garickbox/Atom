@@ -31,16 +31,9 @@ class AtomApp : Application() {
             if (lastVc != -1 && lastVc != currentVc) {
                 InAppLogger.clearAll()
                 com.mesh.core.CompactLog.clear()
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    try {
-                        contentResolver.delete(
-                            android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                            android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? OR " +
-                                android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? OR " +
-                                android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
-                            arrayOf("atom.log%", "atom-compact.log%", "atom-err.log%"))
-                    } catch (_: Exception) {}
-                }
+                // B51: MediaStore sync — только для Termux, не для чтения из Атома.
+                // Старые сироты (N) — баг HyperOS MediaStore, не удаляются user-app.
+                // Новые append-логи читаются через /log (axiom#52.1).
             }
             prefs.edit().putInt("last_run_version_code", currentVc).apply()
         } catch (e: Exception) {

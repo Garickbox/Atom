@@ -67,7 +67,7 @@ object TestApi {
                 "/hotspot" -> cmdHotspot(ctx)
                 "/discover" -> cmdDiscover(ctx)
                 "/loopback" -> cmdLoopback(ctx, params["size"]?.toLongOrNull() ?: 10_485_760L)
-                "/log" -> cmdLog(params["name"] ?: "atom")
+                "/log" -> cmdLog(params["name"] ?: "atom", ctx)
                 "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                     catch (e: Exception) { "err: " + (e.message ?: "?") }
                 "/cleanlogs" -> cmdCleanLogs(ctx)
@@ -269,7 +269,7 @@ object TestApi {
         }
     }
 
-    /** B50: удаляет все atom*.log*.txt из MediaStore, оставит 3 свежих. */
+    /** B51: удаляет старые логи через MediaStore delete + сообщает сколько осталось. */
     private fun cmdCleanLogs(ctx: Context): String {
         return try {
             val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
@@ -278,19 +278,38 @@ object TestApi {
                     android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? OR " +
                     android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
                 arrayOf("atom.log%", "atom-compact.log%", "atom-err.log%"))
-            "deleted=$deleted (all atom*.log*.txt)"
+            // Count оставшихся
+            val remaining = try {
+                ctx.contentResolver.query(collection,
+                    arrayOf(android.provider.MediaStore.Downloads._ID),
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+                    arrayOf("atom%"), null)?.use { it.count } ?: 0
+            } catch (_: Exception) { -1 }
+            "deleted=$deleted remaining=$remaining (MediaStore; сироты от старых build могут остаться)"
         } catch (e: Exception) {
             "err: ${e.message}"
         }
     }
 
-    private fun cmdLog(name: String): String {
+    private fun cmdLog(name: String, ctx: Context): String {
         return try {
-            val base = "/sdcard/Download/Atom/logs"
-            val candidates = File(base).listFiles { f -> f.name.startsWith(name) } ?: emptyArray()
-            val newest = candidates.maxByOrNull { it.lastModified() } ?: return "no logs for '$name'"
+            // B51 axiom#52.1: читаем ctx.getExternalFilesDir — реальный путь,
+            // File API видит. /sdcard/Download — MediaStore virtual FS, java.io.File не видит.
+            val base = ctx.getExternalFilesDir("logs")
+                ?: File(ctx.filesDir, "logs")
+            val direct = File(base, name + ".log")
+            if (direct.exists()) {
+                val c = direct.readText()
+                val truncated = if (c.length > 200_000) c.takeLast(200_000) else c
+                return "file=${direct.name} size=${c.length}\n$truncated"
+            }
+            // fallback: listFiles по префиксу (rotated .log.1, .log.2)
+            val candidates = base.listFiles { f -> f.name.startsWith(name) } ?: emptyArray()
+            val newest = candidates.maxByOrNull { it.lastModified() }
+                ?: return "no logs for '$name' (checked $base)"
             val content = newest.readText()
-            if (content.length > 200_000) content.takeLast(200_000) else content
+            val truncated = if (content.length > 200_000) content.takeLast(200_000) else content
+            "file=${newest.name} size=${content.length}\n$truncated"
         } catch (e: Exception) {
             "log error: ${e.message}"
         }
