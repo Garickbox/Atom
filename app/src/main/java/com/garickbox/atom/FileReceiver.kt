@@ -58,6 +58,13 @@ object FileReceiver {
         // отвечаем ACCEPT с фактическим offset из .part (без проверки busy).
         if (offer.resumeOffset > 0) {
             val existing = activeSessions[offer.transferId]
+            // B76#9: resume разрешён ТОЛЬКО тому же peer'у (tid hijack protection)
+            if (existing != null && existing.peerName != offer.peerName) {
+                InAppLogger.d("FileReceiver",
+                    "B76: reject tid hijack: existing=${existing.peerName} offer=${offer.peerName}")
+                sendDecline(ctx, offer, "tid_conflict")
+                return
+            }
             if (existing != null) {
                 // B10a: partFile.length() = totalSize всегда (raf.setLength() создаёт файл сразу).
                 // Используем received.get() — реальное число полученных байт.

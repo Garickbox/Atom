@@ -364,10 +364,22 @@ class FileSenderService : Service() {
                 if (!isActive) break
                 val name = displayName(uri) ?: "file_${idx}"
                 val size = fileSize(uri)
-                // B20.7: skip small (<1KB) — .nomedia, .DS_Store, thumbs
-                if (size in 1..1023) {
+                // B76#16: skip small AND empty (0B) с явной записью в историю
+                if (size in 0..1023) {
                     InAppLogger.d("FileSenderService",
-                        "skip small ${size}B: $name")
+                        "skip small/empty ${size}B: $name")
+                    try {
+                        TransferHistory.add(this@FileSenderService, TransferHistory.Record(
+                            id = "skip-" + System.currentTimeMillis(),
+                            peerName = peerName,
+                            fileName = name,
+                            bytes = size,
+                            durationMs = 0L,
+                            status = "skipped",
+                            timestamp = System.currentTimeMillis(),
+                            savedPath = ""
+                        ))
+                    } catch (_: Exception) {}
                     continue
                 }
                 val resumeOffset = if (idx == 0) resumeFirstOffset else 0L
@@ -527,6 +539,8 @@ class FileSenderService : Service() {
             node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, offerJson))
             val r = try {
                 kotlinx.coroutines.withTimeoutOrNull(1_500L) { deferred.await() }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e  // B76#14: pause/cancel не маскируем под timeout
             } catch (e: Exception) { null } finally {
                 pendingAccepts.remove(transferId, deferred)
             }
@@ -652,6 +666,8 @@ class FileSenderService : Service() {
                     node.sendPacket(peerIp, MeshPacket(PacketType.FILE_OFFER, retryOfferJson))
                     val r = try {
                         kotlinx.coroutines.withTimeoutOrNull(1_500L) { d.await() }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e  // B76#14
                     } catch (_: Exception) { null } finally {
                         pendingAccepts.remove(finalTid, d)
                     }
