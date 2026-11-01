@@ -192,14 +192,32 @@ class QrShareActivity : AppCompatActivity() {
                     showQr(ssid, pass, getHotspotIp(), "Hotspot")
                 }
                 override fun onFailed(reason: Int) {
-                    InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
-                    if (reason == 2 && hotspotRetryCount < 2) {
-                        hotspotRetryCount++
-                        statusText.text = "Hotspot занят, retry…"
-                        handler.postDelayed({ startHotspot() }, 1500L)
-                        return
+                    InAppLogger.d("QrServer", "hotspot FAIL: $reason")
+                    // B64: NO retry — каждый retry оставляет stale reservation в
+                    // HyperOS framework, после 2 retry все последующие вызовы
+                    // fail reason=3 за 4ms. Одна попытка → fail → инструкция.
+                    val hint = when (reason) {
+                        2 -> "Wi-Fi занят HyperOS"
+                        3 -> "Каналы 2.4GHz заняты"
+                        else -> "код $reason"
                     }
-                    statusText.text = "Не удалось создать группу (код $reason)"
+                    statusText.text = "Не удалось: $hint"
+                    val msg = when (reason) {
+                        2, 3 -> "Wi-Fi блокирует точку доступа.\n\n" +
+                            "Проверь:\n" +
+                            "1. Wi-Fi подключён к сети (не «unknown»)\n" +
+                            "2. Или выключи Wi-Fi тумблер на 10 сек\n" +
+                            "3. Вернись в Атом — попробую снова"
+                        else -> "Не удалось создать hotspot (код $reason)"
+                    }
+                    try {
+                        androidx.appcompat.app.AlertDialog.Builder(this@QrShareActivity)
+                            .setTitle("Hotspot не создался")
+                            .setMessage(msg)
+                            .setPositiveButton("ОК") { _, _ -> finish() }
+                            .setCancelable(false)
+                            .show()
+                    } catch (_: Exception) {}
                 }
                 override fun onStopped() {
                     InAppLogger.d("QrServer", "hotspot stopped")
