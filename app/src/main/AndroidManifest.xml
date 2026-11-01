@@ -72,6 +72,14 @@
                 android:resource="@xml/widget_atom_info" />
         </receiver>
 
+        <receiver
+            android:name=".ShortcutReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.garickbox.atom.SHORTCUT_RECEIVE" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".WidgetReceiveService"
             android:exported="false"

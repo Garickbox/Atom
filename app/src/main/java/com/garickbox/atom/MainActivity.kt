@@ -93,11 +93,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent?.action == ACTION_SHORTCUT_RECEIVE) {
-            try { WidgetReceiveService.toggle(this) } catch (_: Exception) {}
-            finish()
-            return
-        }
         if (!com.garickbox.atom.TvHelper.isTv(this)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }

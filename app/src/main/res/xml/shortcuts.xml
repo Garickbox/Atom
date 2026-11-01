@@ -3,7 +3,7 @@
     <shortcut
         android:shortcutId="shortcut_find"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut_find"
+        android:icon="@mipmap/ic_launcher"
         android:shortcutShortLabel="@string/shortcut_find_short"
         android:shortcutLongLabel="@string/shortcut_find_long">
         <intent
@@ -14,12 +14,12 @@
     <shortcut
         android:shortcutId="shortcut_receive"
         android:enabled="true"
-        android:icon="@drawable/ic_notification_receive"
+        android:icon="@mipmap/ic_launcher"
         android:shortcutShortLabel="@string/shortcut_recv_short"
         android:shortcutLongLabel="@string/shortcut_recv_long">
         <intent
             android:action="com.garickbox.atom.SHORTCUT_RECEIVE"
             android:targetPackage="com.garickbox.atom"
-            android:targetClass="com.garickbox.atom.MainActivity" />
+            android:targetClass="com.garickbox.atom.ShortcutReceiver" />
     </shortcut>
 </shortcuts>
