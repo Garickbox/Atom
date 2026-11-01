@@ -104,6 +104,19 @@ object TestApi {
     private fun cmdState(ctx: Context): String {
         val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        // B46: канал Wi-Fi для диагностики hotspot reason=3
+        @Suppress("DEPRECATION")
+        val freq = wm?.connectionInfo?.frequency ?: 0
+        val wifiCh = when {
+            freq in 2412..2472 -> (freq - 2407) / 5
+            freq in 5180..5825 -> (freq - 5000) / 5
+            else -> 0
+        }
+        val wifiBand = when {
+            freq in 2412..2472 -> "2.4GHz"
+            freq in 5180..5825 -> "5GHz"
+            else -> "off/unknown"
+        }
         @Suppress("DEPRECATION")
         val ssid = wm?.connectionInfo?.ssid?.trim('"') ?: "?"
         val wifiOn = wm?.isWifiEnabled == true
@@ -117,6 +130,7 @@ object TestApi {
             appendLine("device=${android.os.Build.MANUFACTURER}/${android.os.Build.MODEL}")
             appendLine("android=${android.os.Build.VERSION.SDK_INT}")
             appendLine("wifiOn=$wifiOn ssid=$ssid airplane=$airplane")
+            appendLine("wifiFreq=$freq band=$wifiBand channel=$wifiCh")
             appendLine("battery_whitelist=$whitelist")
             appendLine("perms_missing=${perms.size} ${perms.map { it.substringAfterLast('.') }}")
             appendLine("free_mb=$freeMb")
@@ -139,9 +153,23 @@ object TestApi {
     }
 
     private fun cmdHotspot(ctx: Context): String {
-        // Запускает QrShareActivity в тестовом режиме (создаёт AP, ждёт 8s, пишет timing)
         val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
             ?: return "no WifiManager"
+
+        // B46: wifi channel для диагностики
+        @Suppress("DEPRECATION")
+        val freq = wm.connectionInfo?.frequency ?: 0
+        val wifiCh = when {
+            freq in 2412..2472 -> (freq - 2407) / 5
+            freq in 5180..5825 -> (freq - 5000) / 5
+            else -> 0
+        }
+        val wifiBand = when {
+            freq in 2412..2472 -> "2.4GHz"
+            freq in 5180..5825 -> "5GHz"
+            else -> "off/unknown"
+        }
+
         val result = java.util.concurrent.CountDownLatch(1)
         var ssid = ""
         var reason = -1
@@ -163,8 +191,26 @@ object TestApi {
             return "exception: ${e.message}"
         }
         val dt = System.currentTimeMillis() - start
-        return if (ssid.isNotBlank()) "OK ssid=$ssid in ${dt}ms"
-               else "FAIL reason=$reason in ${dt}ms"
+        return if (ssid.isNotBlank()) {
+            "OK ssid=$ssid in ${dt}ms wifi=$wifiBand ch=$wifiCh"
+        } else {
+            val human = when (reason) {
+                1 -> "ERROR(generic wifi error)"
+                2 -> "INCOMPATIBLE_MODE(wifi off/airplane/other AP active)"
+                3 -> "NO_CHANNEL(all AP channels in 2.4GHz busy)"
+                4 -> "GENERIC(framework bug)"
+                else -> "UNKNOWN($reason)"
+            }
+            val hint = when (reason) {
+                3 -> "Wi-Fi на канале $wifiCh ($wifiBand). " +
+                     "Все каналы для AP заняты. Выключи Wi-Fi в шторке на 30с → hotspot создастся. " +
+                     "Или используй 5GHz Wi-Fi (недоступен по axiom #48)."
+                2 -> if (wifiBand == "off/unknown") "Wi-Fi выключен → включи в шторке"
+                     else "Другой AP активен / Wi-Fi переключается → подожди 5с"
+                else -> "Перезагрузка framework: выключи/включи Wi-Fi"
+            }
+            "FAIL reason=$reason ($human) in ${dt}ms wifi=$wifiBand ch=$wifiCh\nhint: $hint"
+        }
     }
 
     private fun cmdDiscover(ctx: Context): String {
