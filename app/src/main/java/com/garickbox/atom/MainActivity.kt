@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     }
     private var pendingShortcutFind = false
     private var pickerShownForPeer = false
+    private val REQ_QR_PICK = 5001
 
 
     private lateinit var b: ActivityMainBinding
