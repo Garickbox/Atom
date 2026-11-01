@@ -352,7 +352,10 @@ object TestApi {
             else -> return "unknown: " + layout + " (main|qr|qr_scan|widget|log_viewer)"
         }
         return try {
-            val root = android.view.LayoutInflater.from(ctx).inflate(resId, null)
+            // B58: Material-компоненты требуют Material theme. applicationContext
+            // без темы → «Error inflating class <unknown>» для Toolbar/Button.
+            val themed = android.view.ContextThemeWrapper(ctx, R.style.Theme_Atom_Main)
+            val root = android.view.LayoutInflater.from(themed).inflate(resId, null)
             val sb = StringBuilder("layout=" + layout + " root=" + root.javaClass.simpleName + "\n")
             fun walk(v: android.view.View, depth: Int) {
                 val idName = if (v.id != android.view.View.NO_ID) {
