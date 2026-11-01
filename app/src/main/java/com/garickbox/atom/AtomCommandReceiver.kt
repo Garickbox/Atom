@@ -6,16 +6,16 @@ import android.content.Intent
 import com.mesh.core.InAppLogger
 
 /**
- * B79: broadcast intents для Tasker/Automate/MacroDroid.
- * Пример:
- *   am broadcast -a com.garickbox.atom.RECEIVE_ON
- *   am broadcast -a com.garickbox.atom.RECEIVE_OFF
- *   am broadcast -a com.garickbox.atom.SEND -e peer_mac "aa:bb:cc:dd:ee:ff"
- *   am broadcast -a com.garickbox.atom.CHECK_UPDATE
- *   am broadcast -a com.garickbox.atom.PING
+ * B90: broadcast intents для Tasker/Automate/MacroDroid.
  *
- * Broadcast только локальные (не exported наружу) — разрешение через
- * android:exported="true" но требуется явный target package или adb.
+ * adb:
+ *   am broadcast -a com.garickbox.atom.RECEIVE_ON
+ *   am broadcast -a com.garickbox.atom.STATUS
+ *   am broadcast -a com.garickbox.atom.PEERS
+ *   am broadcast -a com.garickbox.atom.HISTORY -e limit 5
+ *
+ * Результат read-only в *_RESULT broadcast (setPackage = только внутри app):
+ *   STATUS_RESULT / PEERS_RESULT / HISTORY_RESULT, extra "json".
  */
 class AtomCommandReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -45,7 +45,6 @@ class AtomCommandReceiver : BroadcastReceiver() {
             ACTION_SEND -> {
                 val mac = intent.getStringExtra("peer_mac") ?: ""
                 val name = intent.getStringExtra("peer_name") ?: "?"
-                InAppLogger.d("AtomCmd", "SEND mac=" + mac)
                 try {
                     val i = Intent(ctx, MainActivity::class.java).apply {
                         this.action = MainActivity.ACTION_SHORTCUT_SEND_PEER
@@ -69,7 +68,6 @@ class AtomCommandReceiver : BroadcastReceiver() {
             ACTION_PING -> {
                 InAppLogger.d("AtomCmd", "PING received")
             }
-            // B90: broadcast intents extension — read-only, безопасно
             ACTION_STATUS -> {
                 try {
                     val reply = org.json.JSONObject().apply {
@@ -83,10 +81,11 @@ class AtomCommandReceiver : BroadcastReceiver() {
                         put("receiveActive", WidgetReceiveService.isActive)
                     }
                     InAppLogger.d("AtomCmd", "STATUS: " + reply)
-                    sendBroadcast(Intent(ACTION_STATUS_RESULT).apply {
+                    val out = Intent(ACTION_STATUS_RESULT).apply {
                         putExtra("json", reply.toString())
                         setPackage(ctx.packageName)
-                    })
+                    }
+                    ctx.sendBroadcast(out)
                 } catch (e: Exception) {
                     InAppLogger.d("AtomCmd", "STATUS error: " + e.message)
                 }
@@ -103,11 +102,12 @@ class AtomCommandReceiver : BroadcastReceiver() {
                         })
                     }
                     InAppLogger.d("AtomCmd", "PEERS: " + peers.size)
-                    sendBroadcast(Intent(ACTION_PEERS_RESULT).apply {
+                    val out = Intent(ACTION_PEERS_RESULT).apply {
                         putExtra("json", arr.toString())
                         putExtra("count", peers.size)
                         setPackage(ctx.packageName)
-                    })
+                    }
+                    ctx.sendBroadcast(out)
                 } catch (e: Exception) {
                     InAppLogger.d("AtomCmd", "PEERS error: " + e.message)
                 }
@@ -128,11 +128,12 @@ class AtomCommandReceiver : BroadcastReceiver() {
                         })
                     }
                     InAppLogger.d("AtomCmd", "HISTORY: " + records.size + " (sent " + arr.length() + ")")
-                    sendBroadcast(Intent(ACTION_HISTORY_RESULT).apply {
+                    val out = Intent(ACTION_HISTORY_RESULT).apply {
                         putExtra("json", arr.toString())
                         putExtra("total", records.size)
                         setPackage(ctx.packageName)
-                    })
+                    }
+                    ctx.sendBroadcast(out)
                 } catch (e: Exception) {
                     InAppLogger.d("AtomCmd", "HISTORY error: " + e.message)
                 }
@@ -146,5 +147,11 @@ class AtomCommandReceiver : BroadcastReceiver() {
         const val ACTION_SEND = "com.garickbox.atom.SEND"
         const val ACTION_CHECK_UPDATE = "com.garickbox.atom.CHECK_UPDATE"
         const val ACTION_PING = "com.garickbox.atom.PING"
+        const val ACTION_STATUS = "com.garickbox.atom.STATUS"
+        const val ACTION_PEERS = "com.garickbox.atom.PEERS"
+        const val ACTION_HISTORY = "com.garickbox.atom.HISTORY"
+        const val ACTION_STATUS_RESULT = "com.garickbox.atom.STATUS_RESULT"
+        const val ACTION_PEERS_RESULT = "com.garickbox.atom.PEERS_RESULT"
+        const val ACTION_HISTORY_RESULT = "com.garickbox.atom.HISTORY_RESULT"
     }
 }
