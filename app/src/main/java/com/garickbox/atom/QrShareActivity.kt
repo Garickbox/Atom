@@ -160,61 +160,10 @@ class QrShareActivity : AppCompatActivity() {
             return
         }
         try {
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                startHotspotModern(wm)
-            } else {
-                startHotspotLegacy(wm)
-            }
+            startHotspotLegacy(wm)
         } catch (e: Exception) {
             InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
             statusText.text = "Ошибка: ${e.message}"
-        }
-    }
-
-    /** B39: API 30+ — кастомный SSID (myName) + простой пароль "00000000".
-     *  На POCO/Redmi работает. На TV (API 26-28) → fallback legacy. */
-    @android.annotation.SuppressLint("NewApi")
-    private fun startHotspotModern(wm: WifiManager) {
-        val safe = safeSsid(AtomController.myName)
-        val passphrase = "00000000"
-        try {
-            val config = android.net.wifi.SoftApConfiguration.Builder()
-                .setSsid(safe)
-                .setPassphrase(passphrase,
-                    android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA2_PSK)
-                .build()
-            wm.startLocalOnlyHotspot(
-                config,
-                mainExecutor,
-                object : WifiManager.LocalOnlyHotspotCallback() {
-                    override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
-                        hotspotReservation = reservation
-                        val conf = reservation.wifiConfiguration
-                        val actualSsid = conf?.SSID?.trim('"') ?: safe
-                        val actualPass = conf?.preSharedKey?.trim('"') ?: passphrase
-                        groupCreated = true
-                        usingHotspot = true
-                        InAppLogger.d("QrServer",
-                            "B39 custom hotspot: ssid=$actualSsid")
-                        showQr(actualSsid, actualPass, getHotspotIp(), "Hotspot")
-                    }
-                    override fun onFailed(reason: Int) {
-                        InAppLogger.d("QrServer",
-                            "hotspot modern FAIL: $reason → legacy fallback")
-                        try { startHotspotLegacy(wm) } catch (e: Exception) {
-                            statusText.text = "Не удалось создать hotspot"
-                        }
-                    }
-                    override fun onStopped() {
-                        InAppLogger.d("QrServer", "hotspot modern stopped")
-                    }
-                },
-                mainExecutor
-            )
-        } catch (e: Exception) {
-            InAppLogger.d("QrServer",
-                "SoftApConfiguration rejected: ${e.message} → legacy")
-            startHotspotLegacy(wm)
         }
     }
 
