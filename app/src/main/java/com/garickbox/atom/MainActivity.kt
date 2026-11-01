@@ -677,6 +677,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderTransferPanel(state: TransferState) {
+        // B35-TV: на TV tvPanel и transferPanel перекрываются — синхронизируем
+        if (isTv()) {
+            b.tvPanel.visibility =
+                if (state is TransferState.Idle) android.view.View.VISIBLE
+                else android.view.View.GONE
+        }
         when (state) {
             is TransferState.Running -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
@@ -786,6 +792,9 @@ class MainActivity : AppCompatActivity() {
         }
         b.tvBtnSelfTest.setOnClickListener {
             startActivity(Intent(this, SelfTestActivity::class.java))
+        }
+        b.tvBtnQrReceive.setOnClickListener {
+            startActivity(Intent(this, QrShareActivity::class.java))
         }
         b.tvBtnSettings.setOnClickListener {
             startActivity(Intent(this, NameSetupActivity::class.java))

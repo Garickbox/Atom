@@ -150,6 +150,15 @@
             android:text="🔧  Самопроверка" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/tvBtnQrReceive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginBottom="12dp"
+            android:minWidth="240dp"
+            android:text="@string/tv_qr_receive" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/tvBtnSettings"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"

@@ -34,7 +34,19 @@ class QrShareActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         infoText = findViewById(R.id.infoText)
 
+        // B35-TV: reset state на повторный запуск (fix #18 — single-shot TV)
+        hotspotRetryCount = 0
+        groupCreated = false
+        usingHotspot = false
+
         startP2pGroup()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // B35-TV: Back = свернуть (AP живёт в фоне). Закрыть = force-stop app.
+        InAppLogger.d("QrServer", "back → moveTaskToBack (AP alive)")
+        moveTaskToBack(true)
     }
 
     private fun startP2pGroup() {
