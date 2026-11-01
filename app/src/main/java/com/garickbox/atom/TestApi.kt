@@ -72,6 +72,16 @@ object TestApi {
                 "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                     catch (e: Exception) { "err: " + (e.message ?: "?") }
                 "/cleanlogs" -> cmdCleanLogs(ctx)
+                "/components" -> cmdComponents(ctx)
+                "/views" -> cmdViews(ctx, params["layout"] ?: "main")
+                "/hotspot-lifecycle" -> cmdHotspotLifecycle(ctx)
+                "/file-io" -> cmdFileIo(ctx)
+                "/prefs" -> cmdPrefs(ctx)
+                "/permissions" -> cmdPermissions(ctx)
+                "/channels" -> cmdChannels(ctx)
+                "/widgets" -> cmdWidgets(ctx)
+                "/shortcuts" -> cmdShortcuts(ctx)
+                "/crash" -> cmdCrash(ctx)
                 "/ping" -> "pong"
                 else -> "unknown route: $route"
             } } catch (e: Throwable) {
@@ -302,6 +312,231 @@ object TestApi {
         } catch (e: Exception) {
             "err: ${e.message}"
         }
+    }
+
+    private fun cmdComponents(ctx: Context): String {
+        return try {
+            val pm = ctx.packageManager
+            val ai = pm.getPackageInfo(ctx.packageName,
+                android.content.pm.PackageManager.GET_ACTIVITIES or
+                android.content.pm.PackageManager.GET_SERVICES or
+                android.content.pm.PackageManager.GET_RECEIVERS or
+                android.content.pm.PackageManager.GET_PROVIDERS)
+            val sb = StringBuilder()
+            ai.activities?.forEach { a ->
+                sb.appendLine("A " + a.name.substringAfterLast('.') +
+                    " enabled=" + a.enabled + " exported=" + a.exported)
+            }
+            ai.services?.forEach { s ->
+                sb.appendLine("S " + s.name.substringAfterLast('.') +
+                    " enabled=" + s.enabled + " exported=" + s.exported)
+            }
+            ai.receivers?.forEach { r ->
+                sb.appendLine("R " + r.name.substringAfterLast('.') +
+                    " enabled=" + r.enabled + " exported=" + r.exported)
+            }
+            ai.providers?.forEach { p ->
+                sb.appendLine("P " + p.name.substringAfterLast('.'))
+            }
+            "components=\n" + sb
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdViews(ctx: Context, layout: String): String {
+        val resId = when (layout) {
+            "main" -> R.layout.activity_main
+            "qr" -> R.layout.activity_qr_share
+            "qr_scan" -> R.layout.activity_qr_scan
+            "widget" -> R.layout.widget_atom
+            "log_viewer" -> R.layout.activity_log_viewer
+            else -> return "unknown: " + layout + " (main|qr|qr_scan|widget|log_viewer)"
+        }
+        return try {
+            val root = android.view.LayoutInflater.from(ctx).inflate(resId, null)
+            val sb = StringBuilder("layout=" + layout + " root=" + root.javaClass.simpleName + "\n")
+            fun walk(v: android.view.View, depth: Int) {
+                val idName = if (v.id != android.view.View.NO_ID) {
+                    try { ctx.resources.getResourceEntryName(v.id) } catch (_: Exception) { "?" }
+                } else ""
+                val cls = v.javaClass.simpleName
+                val vis = when (v.visibility) {
+                    android.view.View.VISIBLE -> "V"
+                    android.view.View.GONE -> "G"
+                    android.view.View.INVISIBLE -> "I"
+                    else -> "?"
+                }
+                if (idName.isNotEmpty() || cls.contains("Button") || cls.contains("TextView")) {
+                    sb.append("  ".repeat(depth))
+                    sb.append(if (idName.isNotEmpty()) idName else "(no-id)")
+                    sb.append(" [").append(cls).append("] ")
+                    sb.append("w=").append(v.layoutParams?.width ?: -1)
+                    sb.append(" h=").append(v.layoutParams?.height ?: -1)
+                    sb.append(" vis=").append(vis)
+                    sb.appendLine()
+                }
+                if (v is android.view.ViewGroup) {
+                    for (i in 0 until v.childCount) walk(v.getChildAt(i), depth + 1)
+                }
+            }
+            walk(root, 0)
+            sb.toString()
+        } catch (e: Exception) { "err: ${e.javaClass.simpleName}: ${e.message}" }
+    }
+
+    private fun cmdHotspotLifecycle(ctx: Context): String {
+        val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            ?: return "no WifiManager"
+        fun cycle(tag: String): String {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var ssid = ""; var reason = -1
+            val start = System.currentTimeMillis()
+            try {
+                wm.startLocalOnlyHotspot(object : android.net.wifi.WifiManager.LocalOnlyHotspotCallback() {
+                    override fun onStarted(r: android.net.wifi.WifiManager.LocalOnlyHotspotReservation) {
+                        ssid = r.wifiConfiguration?.SSID?.trim('"') ?: "?"
+                        Thread {
+                            Thread.sleep(500)
+                            try { r.close() } catch (_: Exception) {}
+                            latch.countDown()
+                        }.start()
+                    }
+                    override fun onFailed(r: Int) { reason = r; latch.countDown() }
+                }, android.os.Handler(android.os.Looper.getMainLooper()))
+                latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (e: Exception) { return tag + " exception: " + e.message }
+            val dt = System.currentTimeMillis() - start
+            return tag + ": " + (if (ssid.isNotBlank()) "OK ssid=" + ssid + " in " + dt + "ms"
+                                else "FAIL reason=" + reason + " in " + dt + "ms")
+        }
+        val sb = StringBuilder()
+        sb.appendLine(cycle("cycle1"))
+        Thread.sleep(1000)
+        sb.appendLine(cycle("cycle2"))
+        return sb.toString()
+    }
+
+    private fun cmdFileIo(ctx: Context): String {
+        val sb = StringBuilder()
+        try {
+            val f = File(ctx.cacheDir, "test_io.bin")
+            f.writeBytes(ByteArray(1024) { (it and 0xff).toByte() })
+            sb.appendLine("cache: " + f.length() + "B ok=" + (f.length() == 1024L))
+            f.delete()
+        } catch (e: Exception) { sb.appendLine("cache: FAIL " + e.message) }
+        try {
+            val base = ctx.getExternalFilesDir(null) ?: throw Exception("no ext")
+            val f = File(base, "test_io.bin")
+            f.writeBytes(ByteArray(1024))
+            sb.appendLine("external: " + f.length() + "B ok=" + (f.length() == 1024L))
+            f.delete()
+        } catch (e: Exception) { sb.appendLine("external: FAIL " + e.message) }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val resolver = ctx.contentResolver
+                val v = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "test_io_" + System.currentTimeMillis() + ".bin")
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/Atom/test/")
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { it.write(ByteArray(1024)) }
+                    resolver.delete(uri, null, null)
+                    sb.appendLine("MediaStore: OK")
+                } else sb.appendLine("MediaStore: insert=null")
+            } else sb.appendLine("MediaStore: API<29 skip")
+        } catch (e: Exception) { sb.appendLine("MediaStore: FAIL " + e.message) }
+        return sb.toString()
+    }
+
+    private fun cmdPrefs(ctx: Context): String {
+        return try {
+            val p = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
+            val keys = p.all.keys.sorted()
+            val sb = StringBuilder("prefs=" + keys.size + "\n")
+            keys.forEach { k ->
+                val v = p.all[k]
+                val shown = when (v) {
+                    is Boolean -> v.toString()
+                    is Int -> v.toString()
+                    is Long -> if (k.contains("_at") || k.contains("ms"))
+                        (System.currentTimeMillis() - v).toString() + "ms_ago"
+                        else v.toString()
+                    is String -> if (k.contains("token") || k.contains("password")) "***"
+                        else if (v.length > 30) v.take(30) + "…" else v
+                    else -> "?"
+                }
+                sb.appendLine("  " + k + "=" + shown)
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdPermissions(ctx: Context): String {
+        return try {
+            val pm = ctx.packageManager
+            val ai = pm.getPackageInfo(ctx.packageName,
+                android.content.pm.PackageManager.GET_PERMISSIONS)
+            val sb = StringBuilder()
+            ai.requestedPermissions?.forEach { perm ->
+                val short = perm.substringAfterLast('.')
+                val granted = try {
+                    android.content.pm.PackageManager.PERMISSION_GRANTED ==
+                        ctx.checkSelfPermission(perm)
+                } catch (_: Exception) { false }
+                sb.appendLine(short + " declared g=" + granted)
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdChannels(ctx: Context): String {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT < 26) return "API<26 skip"
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE)
+                as android.app.NotificationManager
+            val sb = StringBuilder()
+            nm.notificationChannels?.forEach { ch ->
+                sb.appendLine(ch.id + " imp=" + ch.importance + " badge=" + ch.canShowBadge)
+            }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdWidgets(ctx: Context): String {
+        return try {
+            val pm = ctx.packageManager
+            val ai = pm.getPackageInfo(ctx.packageName,
+                android.content.pm.PackageManager.GET_RECEIVERS)
+            val sb = StringBuilder()
+            ai.receivers?.filter { it.name.contains("Widget") }?.forEach { r ->
+                sb.appendLine(r.name.substringAfterLast('.') + " enabled=" + r.enabled)
+            }
+            if (sb.isEmpty()) sb.appendLine("(no widget receivers)")
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdShortcuts(ctx: Context): String {
+        return try {
+            val sm = androidx.core.content.pm.ShortcutManagerCompat.getShortcuts(ctx,
+                androidx.core.content.pm.ShortcutManagerCompat.FLAG_MATCH_DYNAMIC)
+            "dynamic=" + sm.size + "\n" + sm.joinToString("\n") { "  " + it.shortLabel }
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdCrash(ctx: Context): String {
+        return try {
+            val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
+            val errFile = File(base, "atom-err.log")
+            if (!errFile.exists()) return "no atom-err.log (чисто)"
+            val lines = errFile.readLines().takeLast(200)
+            val bad = lines.filter {
+                it.contains("FATAL", true) || it.contains("Exception", true) ||
+                it.contains("crash", true)
+            }
+            "errors=" + bad.size + "/" + lines.size + "\n" + bad.takeLast(20).joinToString("\n")
+        } catch (e: Exception) { "err: " + e.message }
     }
 
     private fun cmdLog(name: String, ctx: Context): String {
