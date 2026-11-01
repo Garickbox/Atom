@@ -52,7 +52,7 @@ object InAppLogger {
         "HELLO", "recreate", "probe", "startTransfer", "peer resolved",
         // B82: код-ревью теги B73-B81 (fix-строки должны попадать в atom.log)
         "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B82",
-        "B83", "B84", "B85", "B86", "B87", "Shortcut", "History",
+        "B83", "B84", "B85", "B86", "B87", "B88", "Settings", "Shortcut", "History",
         "findDownloadedApk", "saveApkToDownloads", "skip Failed",
         "skip Success", "skip UpdatePending", "skip Update", "Badge",
         "findDownloadedApk", "saveApkToDownloads", "skip Failed",

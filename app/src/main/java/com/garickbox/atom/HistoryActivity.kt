@@ -42,6 +42,62 @@ class HistoryActivity : AppCompatActivity() {
         loadHistory()
     }
 
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menuInflater.inflate(R.menu.history, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_export_csv -> { exportToCsv(); true }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun exportToCsv() {
+        val records = TransferHistory.list(this)
+        if (records.isEmpty()) {
+            Toast.makeText(this, "История пуста", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val csv = StringBuilder()
+            csv.appendLine("timestamp,peer,file,bytes,status,duration_ms,saved_path")
+            val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+            records.forEach { r ->
+                csv.append(fmt.format(Date(r.timestamp))).append(',')
+                csv.append(escapeCsv(r.peerName)).append(',')
+                csv.append(escapeCsv(r.fileName)).append(',')
+                csv.append(r.bytes).append(',')
+                csv.append(r.status).append(',')
+                csv.append(r.durationMs).append(',')
+                csv.append(escapeCsv(r.savedPath)).appendLine()
+            }
+            val fileName = "history-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".csv"
+            val tempFile = java.io.File(cacheDir, fileName)
+            tempFile.writeText(csv.toString())
+            val result = MediaStoreSaver.save(this, tempFile, fileName, "text/csv")
+            tempFile.delete()
+            if (result.uri != null || result.displayPath.isNotBlank()) {
+                Toast.makeText(this,
+                    "CSV сохранён: " + result.displayPath, Toast.LENGTH_LONG).show()
+                InAppLogger.d("History", "B88 CSV export: " + records.size + " records")
+            } else {
+                Toast.makeText(this, "Ошибка сохранения", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Ошибка: " + e.message, Toast.LENGTH_LONG).show()
+            InAppLogger.err("History", "B88 CSV: " + (e.message ?: "?"))
+        }
+    }
+
+    private fun escapeCsv(s: String): String {
+        if (s.isBlank()) return ""
+        return if (s.contains(',') || s.contains('"') || s.contains('\n'))
+            "\"" + s.replace("\"", "\"\"") + "\""
+        else s
+    }
+
     private fun loadHistory() {
         val records = TransferHistory.list(this)
         InAppLogger.d("History", "records=" + records.size)

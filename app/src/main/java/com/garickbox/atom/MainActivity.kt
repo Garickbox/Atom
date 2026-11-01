@@ -498,6 +498,9 @@ class MainActivity : AppCompatActivity() {
             R.id.action_history -> {
                 startActivity(Intent(this, HistoryActivity::class.java)); true
             }
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java)); true
+            }
             R.id.action_about -> { showAbout(); true }
             else -> super.onOptionsItemSelected(item)
         }

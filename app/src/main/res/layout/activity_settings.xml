@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:title="⚙️ Настройки" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp" android:paddingTop="16dp"
+                android:paddingEnd="16dp" android:paddingBottom="8dp"
+                android:text="ПРОФИЛЬ"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:id="@+id/nameRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <TextView
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Имя устройства" android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/nameValue"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textSize="15sp" android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/peersRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <TextView
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Известные peers" android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/peersCount"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textSize="15sp" android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp" android:paddingTop="24dp"
+                android:paddingEnd="16dp" android:paddingBottom="8dp"
+                android:text="ДАННЫЕ"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:id="@+id/clearHistoryRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="📜 Очистить историю" android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/clearLogsRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="📋 Очистить логи" android:textSize="15sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp" android:paddingTop="24dp"
+                android:paddingEnd="16dp" android:paddingBottom="8dp"
+                android:text="ИНФО"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp">
+                <TextView
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Версия" android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/buildValue"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textSize="15sp" android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp">
+                <TextView
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Устройство" android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/deviceValue"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textSize="14sp" android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp">
+                <TextView
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="MyId" android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/myIdValue"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textSize="14sp" android:fontFamily="monospace" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

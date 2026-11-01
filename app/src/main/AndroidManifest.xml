@@ -84,6 +84,11 @@
             android:exported="false"
             android:label="История передач" />
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Настройки" />
+
         <receiver
             android:name=".AtomCommandReceiver"
             android:exported="true"

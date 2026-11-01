@@ -184,7 +184,9 @@ class FileReceiverService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            // B88: явная Cancel action (была, но проверяем что не потеряна)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отменить", cancelPi)
+            .setDeleteIntent(cancelPi)
             .build()
     }
 
