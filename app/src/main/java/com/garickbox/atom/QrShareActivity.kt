@@ -118,7 +118,7 @@ class QrShareActivity : AppCompatActivity() {
                     groupCreated = true
                     usingHotspot = false
                     val ip = "192.168.49.1"
-                    InAppLogger.d("QrServer", "creds OK on attempt $attempt")
+                    InAppLogger.d("QrServer", "creds OK on attempt $attempt, ip=$ip")
                     showQr(ssid, pass, ip, "P2P")
                 } else {
                     InAppLogger.d("QrServer", "requestGroupInfo $attempt: empty → retry 500ms")

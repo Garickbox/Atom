@@ -26,6 +26,15 @@ import com.journeyapps.barcodescanner.ScanOptions
 import com.mesh.core.InAppLogger
 
 class QrScanActivity : AppCompatActivity() {
+    companion object {
+        var boundCm: ConnectivityManager? = null
+        var boundNetwork: Network? = null
+        fun unbind() {
+            try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
+            boundCm = null
+            boundNetwork = null
+        }
+    }
 
     private lateinit var statusText: TextView
     private var pendingUris: List<Uri> = emptyList()
@@ -121,7 +130,14 @@ class QrScanActivity : AppCompatActivity() {
                 val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                 cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
-                        InAppLogger.d("QrScan", "wifi connected → sendHello($ip)")
+                        InAppLogger.d("QrScan", "wifi connected, bindProcessToNetwork($network)")
+                        try {
+                            cm.bindProcessToNetwork(network)
+                            boundCm = cm
+                            boundNetwork = network
+                        } catch (e: Exception) {
+                            InAppLogger.d("QrScan", "bind error: ${e.message}")
+                        }
                         handler.post { afterConnected(ip) }
                     }
                     override fun onUnavailable() {
@@ -163,7 +179,7 @@ class QrScanActivity : AppCompatActivity() {
         }
         node.sendHello(ip)
         handler.postDelayed({
-            // Через 1.5 сек — ищем peer с этим IP в AtomController.peers
+            // Через 2.5 сек — ждём HELLO
             val peer = AtomController.peers.value.firstOrNull { it.ip == ip }
                 ?: Peer(id = "qr", name = "QR", ip = ip)
             if (pendingUris.isNotEmpty()) {
@@ -172,6 +188,6 @@ class QrScanActivity : AppCompatActivity() {
                 Toast.makeText(this, "Нет файлов", Toast.LENGTH_SHORT).show()
             }
             finish()
-        }, 1500L)
+        }, 2500L)
     }
 }

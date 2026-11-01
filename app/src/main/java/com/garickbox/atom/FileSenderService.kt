@@ -876,6 +876,7 @@ private fun displayName(uri: Uri): String? {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        try { QrScanActivity.unbind() } catch (_: Exception) {}
         TransferNotification.resetCache(NOTIF_ID)
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         PowerLocks.releaseWifi(wifiLock)
