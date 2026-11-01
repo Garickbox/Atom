@@ -43,28 +43,15 @@ class QrShareActivity : AppCompatActivity() {
         groupCreated = false
         usingHotspot = false
 
-        // B39.2: явная кнопка «В главное» + Back (нет toolbar на landscape QR)
-        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener {
-            onBackPressed()
-        }
-
         // B39: hotspot напрямую (P2P+WifiNetworkSpecifier несовместимы, B26)
         startHotspot()
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // B39.2: Back = finish (→ Main). Если передача активна — свернуть,
-        // иначе AP умрёт и передача порвётся.
-        val st = AtomController.transferState.value
-        val active = st is TransferState.Running || st is TransferState.Paused
-        if (active) {
-            InAppLogger.d("QrServer", "back: transfer active → moveTaskToBack")
-            moveTaskToBack(true)
-        } else {
-            InAppLogger.d("QrServer", "back: no transfer → finish")
-            finish()
-        }
+        // B35-TV: Back = свернуть (AP живёт в фоне). Закрыть = force-stop app.
+        InAppLogger.d("QrServer", "back → moveTaskToBack (AP alive)")
+        moveTaskToBack(true)
     }
 
     private fun startP2pGroup() {
@@ -202,32 +189,14 @@ class QrShareActivity : AppCompatActivity() {
                     showQr(ssid, pass, getHotspotIp(), "Hotspot")
                 }
                 override fun onFailed(reason: Int) {
-                    // B39.6: убран auto-toggle Wi-Fi (wm.isWifiEnabled=true бросает
-                    // SecurityException на API 33+, Wi-Fi оставался OFF). Только диагностика.
-                    var wifiOn = false
-                    var airplane = false
-                    try {
-                        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE)
-                            as? WifiManager
-                        wifiOn = wm?.isWifiEnabled == true
-                        airplane = android.provider.Settings.Global.getInt(
-                            contentResolver,
-                            android.provider.Settings.Global.AIRPLANE_MODE_ON, 0) == 1
-                    } catch (_: Exception) {}
-                    InAppLogger.d("QrServer",
-                        "B39.6 FAIL: reason=$reason wifiOn=$wifiOn airplane=$airplane")
-
-                    val human = when (reason) {
-                        2 -> when {
-                            airplane -> "Авиарежим включён — выключи в шторке"
-                            !wifiOn -> "Wi-Fi выключен — включи в шторке"
-                            else -> "Wi-Fi занят (AP/hotspot уже активен)"
-                        }
-                        3 -> "Все каналы 2.4GHz заняты — включи 5GHz если возможно"
-                        1 -> "Общая ошибка Wi-Fi (framework)"
-                        else -> "Код $reason"
+                    InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
+                    if (reason == 2 && hotspotRetryCount < 2) {
+                        hotspotRetryCount++
+                        statusText.text = "Hotspot занят, retry…"
+                        handler.postDelayed({ startHotspot() }, 1500L)
+                        return
                     }
-                    statusText.text = "Не удалось создать hotspot:\n$human\n\nПроверь Wi-Fi в шторке и вернись в Атом"
+                    statusText.text = "Не удалось создать группу (код $reason)"
                 }
                 override fun onStopped() {
                     InAppLogger.d("QrServer", "hotspot stopped")
@@ -279,10 +248,14 @@ class QrShareActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
-        // B39.4: AP закрываем в onDestroy (стабильно на HyperOS).
-        // Back = finish = AP умирает. Новое открытие = новый AP.
         try { hotspotReservation?.close() } catch (_: Exception) {}
-        hotspotReservation = null
-        InAppLogger.d("QrServer", "onDestroy, AP closed")
+        if (groupCreated && !usingHotspot) {
+            try {
+                val wm = getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
+                val channel = wm?.initialize(this, Looper.getMainLooper()) {}
+                wm?.removeGroup(channel, null)
+            } catch (_: Exception) {}
+        }
+        InAppLogger.d("QrServer", "onDestroy, group cleaned")
     }
 }
