@@ -127,12 +127,12 @@ object FileReceiver {
 
             AtomController.setTransferActive(true)
             sendAccept(ctx, offer, 0L)
-            accepted = true
             InAppLogger.d("FileReceiver",
                 "CAS OK — accepted, waiting TCP (tid=${offer.transferId.take(8)})")
 
             FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
             node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
+            accepted = true
         } finally {
             if (!accepted) {
                 InAppLogger.d("FileReceiver", "releasing busy — не приняли")
@@ -299,7 +299,20 @@ object FileReceiver {
             InAppLogger.d("FileReceiver",
                 "handleIncomingSocket error ($phase): $errClass: ${e.message}")
             try { socket.close() } catch (_: Exception) {}
-            if (!registered) _isBusy.set(false)
+            if (!registered) {
+                _isBusy.set(false)
+            } else {
+                // B29: session создана, но thread-launch не стартовал (exception
+                // между sockets.add и scope.launch). Закрываем raf/channel + release busy.
+                val s = activeSessions.remove(tidForLog)
+                if (s != null) {
+                    s.failed.set(true)
+                    try { s.channel.close() } catch (_: Exception) {}
+                    try { s.raf.close() } catch (_: Exception) {}
+                    s.partFile.delete()
+                }
+                _isBusy.set(false)
+            }
         }
     }
 

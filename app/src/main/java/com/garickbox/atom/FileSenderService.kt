@@ -317,6 +317,7 @@ class FileSenderService : Service() {
         totalFileCount: Int = -1,
         relativePaths: List<String?> = emptyList()
     ) {
+        currentJob?.cancel()
         currentJob = scope.launch {
             val node = AtomController.meshNode
             // Defensive: callbacks могли не установиться, если meshNode был null в onCreate.
