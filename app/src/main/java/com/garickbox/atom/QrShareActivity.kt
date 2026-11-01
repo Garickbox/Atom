@@ -271,7 +271,8 @@ class QrShareActivity : AppCompatActivity() {
             )
 
             val latch = java.util.concurrent.CountDownLatch(1)
-            @Volatile var success = false
+            // B54.1: AtomicBoolean вместо @Volatile var (не применим к локальным)
+            val success = java.util.concurrent.atomic.AtomicBoolean(false)
             method.invoke(wm, config, executor,
                 object : WifiManager.LocalOnlyHotspotCallback() {
                     override fun onStarted(r: WifiManager.LocalOnlyHotspotReservation) {
@@ -280,7 +281,7 @@ class QrShareActivity : AppCompatActivity() {
                         val pass2 = r.wifiConfiguration?.preSharedKey?.trim('"') ?: "00000000"
                         groupCreated = true
                         usingHotspot = true
-                        success = true
+                        success.set(true)
                         runOnUiThread {
                             showQr(ssid2, pass2, getHotspotIp(), "Hotspot 5GHz")
                         }
@@ -295,7 +296,7 @@ class QrShareActivity : AppCompatActivity() {
                 }
             )
             latch.await(8, java.util.concurrent.TimeUnit.SECONDS)
-            success
+            success.get()
         } catch (e: Throwable) {
             InAppLogger.d("QrServer",
                 "B54 reflection error: " + e.javaClass.simpleName + ": " + e.message)
