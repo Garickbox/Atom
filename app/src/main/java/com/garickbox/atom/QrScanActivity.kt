@@ -96,17 +96,67 @@ class QrScanActivity : AppCompatActivity() {
             if (wm == null || !wm.isWifiEnabled) { callback(); return }
             @Suppress("DEPRECATION")
             val info = wm.connectionInfo
-            if (info?.networkId == -1) { callback(); return }
+            // B37.1: networkId всегда -1 на Android 12+ (deprecated).
+            // Определяем наличие подключения через supplicantState.
+            val isConnected = info?.supplicantState == android.net.wifi.SupplicantState.COMPLETED
+            if (!isConnected) { callback(); return }
             @Suppress("DEPRECATION")
             val ssid = info.ssid ?: "?"
-            InAppLogger.d("QrScan", "disconnect from Wi-Fi: $ssid (B37)")
+            InAppLogger.d("QrScan", "disconnect from Wi-Fi: $ssid (B37.1)")
             statusText.text = "Отключаюсь от Wi-Fi для прямой связи…"
+            @Suppress("DEPRECATION")
             wm.disconnect()
-            handler.postDelayed(callback, 1500L)
+            handler.postDelayed({
+                try {
+                    @Suppress("DEPRECATION")
+                    val check = wm.connectionInfo
+                    val stillConnected =
+                        check?.supplicantState == android.net.wifi.SupplicantState.COMPLETED
+                    if (stillConnected) {
+                        // HyperOS не даёт user-app disconnect — просим вручную
+                        InAppLogger.d("QrScan", "disconnect no-op, prompting user (B37.1)")
+                        showManualWifiOffDialog(callback)
+                    } else {
+                        InAppLogger.d("QrScan", "disconnected OK")
+                        callback()
+                    }
+                } catch (e: Exception) {
+                    InAppLogger.d("QrScan", "check disconnect error: ${e.message}")
+                    callback()
+                }
+            }, 1200L)
         } catch (e: Exception) {
             InAppLogger.d("QrScan", "disconnect error: ${e.message}")
             callback()
         }
+    }
+
+    /** B37.1: HyperOS иногда игнорирует wm.disconnect() для user-app. */
+    private fun showManualWifiOffDialog(callback: () -> Unit) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Wi-Fi не отключается")
+            .setMessage("HyperOS не разрешает приложению отключиться от роутера.\n\n" +
+                "1. Выключи Wi-Fi в шторке на 2 секунды\n" +
+                "2. Включи снова\n" +
+                "3. Вернись в Атом и сканируй QR\n\n" +
+                "Или открой настройки Wi-Fi и выключи вручную.")
+            .setPositiveButton("Открыть Wi-Fi") { _, _ ->
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        startActivity(Intent(android.provider.Settings.Panel.ACTION_WIFI))
+                    } else {
+                        startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                    }
+                } catch (_: Exception) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                    } catch (_: Exception) {}
+                }
+                finish()
+            }
+            .setNegativeButton("Отмена") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
     }
 
     private fun launchScanner() {
