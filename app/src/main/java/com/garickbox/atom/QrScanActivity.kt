@@ -19,7 +19,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import com.mesh.core.AtomController
 import com.mesh.core.InAppLogger
 
 class QrScanActivity : AppCompatActivity() {

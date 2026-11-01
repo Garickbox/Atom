@@ -12,7 +12,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
-import com.mesh.core.AtomController
 import com.mesh.core.InAppLogger
 
 class QrShareActivity : AppCompatActivity() {
@@ -109,6 +108,10 @@ class QrShareActivity : AppCompatActivity() {
                 override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
                     hotspotReservation = reservation
                     val conf: WifiConfiguration = reservation.wifiConfiguration
+                        ?: run {
+                            statusText.text = "Ошибка: wifiConfiguration null"
+                            return
+                        }
                     val ssid = conf.SSID ?: ""
                     val pass = conf.preSharedKey ?: ""
                     if (ssid.isBlank() || pass.isBlank()) {
