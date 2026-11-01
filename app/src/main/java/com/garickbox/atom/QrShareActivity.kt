@@ -43,7 +43,8 @@ class QrShareActivity : AppCompatActivity() {
         groupCreated = false
         usingHotspot = false
 
-        startP2pGroup()
+        // B39: hotspot напрямую (P2P+WifiNetworkSpecifier несовместимы, B26)
+        startHotspot()
     }
 
     @Deprecated("Deprecated in Java")
@@ -159,6 +160,67 @@ class QrShareActivity : AppCompatActivity() {
             return
         }
         try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                startHotspotModern(wm)
+            } else {
+                startHotspotLegacy(wm)
+            }
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
+            statusText.text = "Ошибка: ${e.message}"
+        }
+    }
+
+    /** B39: API 30+ — кастомный SSID (myName) + простой пароль "00000000".
+     *  На POCO/Redmi работает. На TV (API 26-28) → fallback legacy. */
+    @android.annotation.SuppressLint("NewApi")
+    private fun startHotspotModern(wm: WifiManager) {
+        val safe = safeSsid(AtomController.myName)
+        val passphrase = "00000000"
+        try {
+            val config = android.net.wifi.SoftApConfiguration.Builder()
+                .setSsid(safe)
+                .setPassphrase(passphrase,
+                    android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA2_PSK)
+                .build()
+            wm.startLocalOnlyHotspot(
+                config,
+                mainExecutor,
+                object : WifiManager.LocalOnlyHotspotCallback() {
+                    override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
+                        hotspotReservation = reservation
+                        val conf = reservation.wifiConfiguration
+                        val actualSsid = conf?.SSID?.trim('"') ?: safe
+                        val actualPass = conf?.preSharedKey?.trim('"') ?: passphrase
+                        groupCreated = true
+                        usingHotspot = true
+                        InAppLogger.d("QrServer",
+                            "B39 custom hotspot: ssid=$actualSsid")
+                        showQr(actualSsid, actualPass, getHotspotIp(), "Hotspot")
+                    }
+                    override fun onFailed(reason: Int) {
+                        InAppLogger.d("QrServer",
+                            "hotspot modern FAIL: $reason → legacy fallback")
+                        try { startHotspotLegacy(wm) } catch (e: Exception) {
+                            statusText.text = "Не удалось создать hotspot"
+                        }
+                    }
+                    override fun onStopped() {
+                        InAppLogger.d("QrServer", "hotspot modern stopped")
+                    }
+                },
+                mainExecutor
+            )
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer",
+                "SoftApConfiguration rejected: ${e.message} → legacy")
+            startHotspotLegacy(wm)
+        }
+    }
+
+    /** B39: API < 30 (TV 26-28) — SSID/пароль framework генерирует, показываем как есть. */
+    private fun startHotspotLegacy(wm: WifiManager) {
+        try {
             wm.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
                 override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
                     hotspotReservation = reservation
@@ -167,15 +229,15 @@ class QrShareActivity : AppCompatActivity() {
                             statusText.text = "Ошибка: wifiConfiguration null"
                             return
                         }
-                    val ssid = conf.SSID ?: ""
-                    val pass = conf.preSharedKey ?: ""
+                    val ssid = conf.SSID?.trim('"') ?: ""
+                    val pass = conf.preSharedKey?.trim('"') ?: ""
                     if (ssid.isBlank() || pass.isBlank()) {
                         statusText.text = "Ошибка: пустые credentials"
                         return
                     }
                     groupCreated = true
                     usingHotspot = true
-                    showQr(ssid, pass, "192.168.43.1", "Hotspot")
+                    showQr(ssid, pass, getHotspotIp(), "Hotspot")
                 }
                 override fun onFailed(reason: Int) {
                     InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
@@ -192,9 +254,31 @@ class QrShareActivity : AppCompatActivity() {
                 }
             }, handler)
         } catch (e: Exception) {
-            InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
+            InAppLogger.d("QrServer", "hotspot legacy exception: ${e.message}")
             statusText.text = "Ошибка: ${e.message}"
         }
+    }
+
+    /** B39: SSID до 32 байт UTF-8 (framework reject длиннее). */
+    private fun safeSsid(raw: String): String {
+        val trimmed = raw.trim().ifBlank { "Atom" }
+        var s = trimmed
+        while (s.toByteArray(Charsets.UTF_8).size > 32 && s.length > 1) {
+            s = s.dropLast(1)
+        }
+        return s.ifBlank { "Atom" }
+    }
+
+    /** B39: реальный AP-IP для QR (вместо хардкода 43.1). */
+    private fun getHotspotIp(): String {
+        return try {
+            java.net.NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { java.util.Collections.list(it.inetAddresses) }
+                .filterIsInstance<java.net.Inet4Address>()
+                .firstOrNull { it.hostAddress?.startsWith("192.168.") == true }
+                ?.hostAddress ?: "192.168.43.1"
+        } catch (_: Exception) { "192.168.43.1" }
     }
 
     private fun showQr(ssid: String, pass: String, ip: String, mode: String) {
