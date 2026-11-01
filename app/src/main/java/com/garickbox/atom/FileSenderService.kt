@@ -300,11 +300,6 @@ class FileSenderService : Service() {
                 currentProgressBytes = off
                 val resumePaths = pausedRemainingRelativePaths
                 pausedRemainingRelativePaths = emptyList()
-                // B85: после pause/resume P2P часто stale → force fresh connect перед transfer
-                try {
-                    InAppLogger.d("FileSenderService", "B85 resume: forceFreshConnect к $ip")
-                    AtomController.wifiDirect?.forceFreshConnect(AtomController.lastPeer?.mac ?: "")
-                } catch (_: Exception) {}
                 runTransfer(ip, id, name, uris, resumeFirstOffset = off, resumeFirstTid = tid, fileIndexOffset = fi - 1, totalFileCount = fc, relativePaths = resumePaths)
             }
             else -> {
@@ -338,22 +333,12 @@ class FileSenderService : Service() {
                 return@launch
             }
 
-            // B85 axiom#96: probe 1.5s. Если fail — P2P stale (после pause/resume),
-            // без него все файлы серии timeout'ят одинаково (axiom#97).
-            val alive = node.probePeer(peerIp, 1500)
+            // Probe — только в лог, не блокирует
+            val alive = node.probePeer(peerIp, 500)
             if (alive) {
-                InAppLogger.d("FileSenderService", "B85 probe OK for $peerIp")
+                InAppLogger.d("FileSenderService", "probe OK for $peerIp")
             } else {
-                InAppLogger.d("FileSenderService",
-                    "B85 probe FAIL — P2P потерян после pause/resume, abort серии")
-                AtomController.transferState.value = TransferState.Failed(
-                    resumeFirstTid ?: "pre", peerName, "—",
-                    "Соединение потеряно, переподключись", peerIp, ""
-                )
-                com.mesh.core.CompactLog.sessionEnd(0, uris.size, 0L, 0.0)
-                try { com.mesh.core.CompactLog.file(1, 0, 0, 0, 1500, 0, 0.0, "probe_fail") } catch (_: Exception) {}
-                finishWithError(peerName, "Соединение потеряно")
-                return@launch
+                InAppLogger.d("FileSenderService", "probe timeout — продолжаем FILE_OFFER")
             }
             AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
             com.mesh.core.CompactLog.sessionStart(uris.size, resumeFirstOffset > 0)
@@ -375,7 +360,6 @@ class FileSenderService : Service() {
             }
 
             val finalFileCount = if (totalFileCount > 0) totalFileCount else uris.size
-            var failStreak = 0  // B85 axiom#97
             for ((idx, uri) in uris.withIndex()) {
                 if (!isActive) break
                 val name = displayName(uri) ?: "file_${idx}"
@@ -424,20 +408,10 @@ class FileSenderService : Service() {
                     return@launch
                 }
                 if (sent < 0) {
-                    failStreak++  // B85 axiom#97: считаем последовательные fails
                     com.mesh.core.CompactLog.file(realIdx, size / 1024,
                         stAcceptMs, stBusyCnt, 0, stHashMs, 0.0, lastFailReason)
                     InAppLogger.d("FileSenderService",
-                        "file ${idx + 1}/${uris.size} SKIP: $name failed (streak=$failStreak) — продолжаем")
-                    if (failStreak >= 2) {
-                        InAppLogger.d("FileSenderService",
-                            "B85 axiom#97: 2 fails подряд ($lastFailReason) — abort серии")
-                        AtomController.transferState.value = TransferState.Failed(
-                            transferId, peerName, name,
-                            "2 ошибки подряд: $lastFailReason", peerIp, "")
-                        com.mesh.core.CompactLog.sessionEnd(filesOk, uris.size - filesOk, 0L, 0.0)
-                        return@launch
-                    }
+                        "file ${idx + 1}/${uris.size} SKIP: $name failed — продолжаем")
                     TransferHistory.add(this@FileSenderService, TransferHistory.Record(
                         id = transferId,
                         peerName = peerName,
@@ -452,7 +426,6 @@ class FileSenderService : Service() {
                 }
                 com.mesh.core.CompactLog.file(realIdx, size / 1024,
                     stAcceptMs, stBusyCnt, stTransMs, stHashMs, stSpeedMbps, null)
-                failStreak = 0  // B85 axiom#97: success → reset
                 totalSent += sent
                 filesOk++
                 TransferHistory.add(this@FileSenderService, TransferHistory.Record(
