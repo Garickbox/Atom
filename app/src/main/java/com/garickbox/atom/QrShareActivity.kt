@@ -49,15 +49,34 @@ class QrShareActivity : AppCompatActivity() {
             startHotspot(); return
         }
 
-        // Таймаут: если за 5 сек группа не сформировалась — hotspot
+        // Таймаут: если за 8 сек группа не сформировалась — hotspot
         val timeout = Runnable {
             if (!groupCreated) {
-                InAppLogger.d("QrServer", "createGroup timeout 5s → hotspot")
+                InAppLogger.d("QrServer", "createGroup timeout 8s → hotspot")
                 startHotspot()
             }
         }
-        handler.postDelayed(timeout, 5000L)
+        handler.postDelayed(timeout, 8000L)
 
+        // Сначала removeGroup — иначе BUSY от stale group
+        try {
+            wm.removeGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    InAppLogger.d("QrServer", "removeGroup OK, createGroup in 500ms")
+                    handler.postDelayed({ doCreateGroup(wm, channel, timeout) }, 500L)
+                }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("QrServer", "removeGroup fail $reason, createGroup anyway")
+                    handler.postDelayed({ doCreateGroup(wm, channel, timeout) }, 500L)
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.d("QrServer", "removeGroup exception: ${e.message}")
+            doCreateGroup(wm, channel, timeout)
+        }
+    }
+
+    private fun doCreateGroup(wm: WifiP2pManager, channel: WifiP2pManager.Channel, timeout: Runnable) {
         try {
             wm.createGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
@@ -122,8 +141,16 @@ class QrShareActivity : AppCompatActivity() {
                     usingHotspot = true
                     showQr(ssid, pass, "192.168.43.1", "Hotspot")
                 }
+                var retryCount = 0
                 override fun onFailed(reason: Int) {
-                    InAppLogger.d("QrServer", "hotspot FAIL: $reason")
+                    InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$retryCount")
+                    // reason 2 = ERROR_ALREADY_STARTED — stale hotspot, retry через 1s
+                    if (reason == 2 && retryCount < 2) {
+                        retryCount++
+                        statusText.text = "Hotspot занят, retry…"
+                        handler.postDelayed({ startHotspot() }, 1000L)
+                        return
+                    }
                     statusText.text = "Не удалось создать группу (код $reason)"
                 }
                 override fun onStopped() {
