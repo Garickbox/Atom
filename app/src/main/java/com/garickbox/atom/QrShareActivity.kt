@@ -202,62 +202,32 @@ class QrShareActivity : AppCompatActivity() {
                     showQr(ssid, pass, getHotspotIp(), "Hotspot")
                 }
                 override fun onFailed(reason: Int) {
-                    InAppLogger.d("QrServer",
-                        "hotspot FAIL: reason=$reason retry=$hotspotRetryCount")
-                    // B39.5: диагностика — что реально в системе
+                    // B39.6: убран auto-toggle Wi-Fi (wm.isWifiEnabled=true бросает
+                    // SecurityException на API 33+, Wi-Fi оставался OFF). Только диагностика.
+                    var wifiOn = false
+                    var airplane = false
                     try {
                         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE)
                             as? WifiManager
-                        val wifiOn = wm?.isWifiEnabled == true
-                        val airplane = android.provider.Settings.Global.getInt(
+                        wifiOn = wm?.isWifiEnabled == true
+                        airplane = android.provider.Settings.Global.getInt(
                             contentResolver,
                             android.provider.Settings.Global.AIRPLANE_MODE_ON, 0) == 1
-                        InAppLogger.d("QrServer",
-                            "B39.5 state: wifiOn=$wifiOn airplane=$airplane reason=$reason")
                     } catch (_: Exception) {}
-
-                    // reason=2 = ERROR_INCOMPATIBLE_MODE (не BUSY):
-                    //  - Wi-Fi off → просим включить
-                    //  - stale AP → reset Wi-Fi state (попытка)
-                    //  - airplane → просим выключить
-                    if (reason == 2 && hotspotRetryCount == 0) {
-                        hotspotRetryCount++
-                        statusText.text = "Сбрасываю Wi-Fi state…"
-                        InAppLogger.d("QrServer", "B39.5: try Wi-Fi state reset")
-                        try {
-                            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE)
-                                as? WifiManager
-                            if (wm != null && !wm.isWifiEnabled) {
-                                @Suppress("DEPRECATION")
-                                wm.isWifiEnabled = true
-                                handler.postDelayed({ startHotspot() }, 2500L)
-                                return
-                            } else if (wm != null) {
-                                // Wi-Fi ON — toggle для сброса stale AP state
-                                @Suppress("DEPRECATION")
-                                wm.isWifiEnabled = false
-                                handler.postDelayed({
-                                    try {
-                                        @Suppress("DEPRECATION")
-                                        wm.isWifiEnabled = true
-                                    } catch (_: Exception) {}
-                                    handler.postDelayed({ startHotspot() }, 3000L)
-                                }, 1500L)
-                                return
-                            }
-                        } catch (e: Exception) {
-                            InAppLogger.d("QrServer", "B39.5 reset error: ${e.message}")
-                        }
-                    }
+                    InAppLogger.d("QrServer",
+                        "B39.6 FAIL: reason=$reason wifiOn=$wifiOn airplane=$airplane")
 
                     val human = when (reason) {
-                        1 -> "ERROR (общая ошибка Wi-Fi)"
-                        2 -> "INCOMPATIBLE_MODE (Wi-Fi выкл / AP занят / авиарежим)"
-                        3 -> "ERROR_NO_CHANNEL (нет свободного канала)"
-                        4 -> "ERROR_GENERIC"
-                        else -> "код $reason"
+                        2 -> when {
+                            airplane -> "Авиарежим включён — выключи в шторке"
+                            !wifiOn -> "Wi-Fi выключен — включи в шторке"
+                            else -> "Wi-Fi занят (AP/hotspot уже активен)"
+                        }
+                        3 -> "Все каналы 2.4GHz заняты — включи 5GHz если возможно"
+                        1 -> "Общая ошибка Wi-Fi (framework)"
+                        else -> "Код $reason"
                     }
-                    statusText.text = "Не удалось создать hotspot: $human"
+                    statusText.text = "Не удалось создать hotspot:\n$human\n\nПроверь Wi-Fi в шторке и вернись в Атом"
                 }
                 override fun onStopped() {
                     InAppLogger.d("QrServer", "hotspot stopped")
