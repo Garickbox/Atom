@@ -162,24 +162,18 @@ object InAppLogger {
                 val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
                 val relPath = "Download/Atom/logs/"
                 // B43.2: MediaStore добавляет .txt (MIME text/plain) → LIKE + _id DESC
-                val cursor = resolver.query(collection,
-                    arrayOf(android.provider.MediaStore.Downloads._ID),
-                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? AND " +
-                        android.provider.MediaStore.Downloads.RELATIVE_PATH + "=?",
-                    arrayOf("$name%", relPath),
-                    android.provider.MediaStore.Downloads._ID + " DESC")
-                val uri = if (cursor != null && cursor.moveToFirst()) {
-                    val id = cursor.getLong(0); cursor.close()
-                    android.content.ContentUris.withAppendedId(collection, id)
-                } else {
-                    cursor?.close()
-                    val v = android.content.ContentValues().apply {
-                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
-                        put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
-                        put(android.provider.MediaStore.Downloads.RELATIVE_PATH, relPath)
-                    }
-                    resolver.insert(collection, v)
+                try {
+                    resolver.delete(collection,
+                        android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? AND " +
+                            android.provider.MediaStore.Downloads.RELATIVE_PATH + " LIKE ?",
+                        arrayOf("$name%", relPath.trimEnd('/') + "%"))
+                } catch (_: Exception) {}
+                val v = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, relPath)
                 }
+                val uri = resolver.insert(collection, v)
                 if (uri != null) {
                     resolver.openOutputStream(uri, "wt")?.use { out ->
                         src.inputStream().use { it.copyTo(out) }

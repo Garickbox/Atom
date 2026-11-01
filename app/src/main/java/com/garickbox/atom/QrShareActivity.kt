@@ -20,6 +20,8 @@ class QrShareActivity : AppCompatActivity() {
     private var hotspotRetryCount = 0
     private var usingHotspot = false
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
+    private var waitingForWifiOff = false
+    private var wifiWasOff = false
 
     private lateinit var qrImage: ImageView
     private lateinit var statusText: TextView
@@ -152,6 +154,53 @@ class QrShareActivity : AppCompatActivity() {
         }
     }
 
+    private fun showHotspotRetryDialog() {
+        try {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Wi-Fi мешает точке доступа")
+                .setMessage(
+                    "Канал Wi-Fi занят для AP.\n\n" +
+                    "1. Выключи Wi-Fi в шторке\n" +
+                    "2. Жди 10-30 секунд\n" +
+                    "3. Вернись в Атом — hotspot создастся сам"
+                )
+                .setPositiveButton("Открыть Wi-Fi") { _, _ ->
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= 29) {
+                            startActivity(Intent(android.provider.Settings.Panel.ACTION_WIFI))
+                        } else {
+                            startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                        }
+                    } catch (_: Exception) {}
+                }
+                .setNegativeButton("Отмена") { _, _ -> finish() }
+                .setCancelable(false)
+                .show()
+        } catch (_: Exception) {}
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!waitingForWifiOff) return
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                ?: return
+            if (!wm.isWifiEnabled) {
+                if (!wifiWasOff) {
+                    wifiWasOff = true
+                    InAppLogger.d("QrServer", "B48: Wi-Fi off detected")
+                    statusText.text = "Wi-Fi выключен. Жду включения…"
+                }
+            } else if (wifiWasOff) {
+                InAppLogger.d("QrServer", "B48: Wi-Fi on → retry hotspot")
+                waitingForWifiOff = false
+                wifiWasOff = false
+                hotspotRetryCount = 0
+                startHotspot()
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun startHotspot() {
         statusText.text = "Создаю hotspot…"
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -194,6 +243,13 @@ class QrShareActivity : AppCompatActivity() {
                         hotspotRetryCount++
                         statusText.text = "Hotspot занят, retry…"
                         handler.postDelayed({ startHotspot() }, 1500L)
+                        return
+                    }
+                    if (reason == 3) {
+                        waitingForWifiOff = true
+                        wifiWasOff = false
+                        statusText.text = "Wi-Fi мешает. Выключи в шторке → я подхвачу."
+                        showHotspotRetryDialog()
                         return
                     }
                     statusText.text = "Не удалось создать группу (код $reason)"
