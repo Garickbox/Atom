@@ -70,6 +70,7 @@ object TestApi {
                 "/log" -> cmdLog(params["name"] ?: "atom")
                 "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                     catch (e: Exception) { "err: " + (e.message ?: "?") }
+                "/cleanlogs" -> cmdCleanLogs(ctx)
                 "/ping" -> "pong"
                 else -> "unknown route: $route"
             }
@@ -265,6 +266,21 @@ object TestApi {
             }
         } finally {
             testFile.delete()
+        }
+    }
+
+    /** B50: удаляет все atom*.log*.txt из MediaStore, оставит 3 свежих. */
+    private fun cmdCleanLogs(ctx: Context): String {
+        return try {
+            val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            val deleted = ctx.contentResolver.delete(collection,
+                android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? OR " +
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? OR " +
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+                arrayOf("atom.log%", "atom-compact.log%", "atom-err.log%"))
+            "deleted=$deleted (all atom*.log*.txt)"
+        } catch (e: Exception) {
+            "err: ${e.message}"
         }
     }
 
