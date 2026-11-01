@@ -127,11 +127,12 @@ class MeshNode(private val ctx: Context) {
     private suspend fun udpLoop() {
         val buf = ByteArray(8192)
         while (isRunning) {
+            val sock = udpSocket
+            if (sock == null || sock.isClosed) {
+                kotlinx.coroutines.delay(50)
+                continue
+            }
             try {
-                val sock = udpSocket ?: run {
-                    kotlinx.coroutines.delay(50)
-                    continue
-                }
                 val pkt = DatagramPacket(buf, buf.size)
                 sock.receive(pkt)
                 val packet = MeshPacket.decode(buf, pkt.length) ?: continue
