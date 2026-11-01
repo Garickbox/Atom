@@ -57,9 +57,19 @@ class SettingsActivity : AppCompatActivity() {
                 .setMessage("Удалить atom.log, atom-err.log, atom-compact.log")
                 .setPositiveButton("Очистить") { _, _ ->
                     try {
-                        InAppLogger.clearAll()
-                        CompactLog.clear()
-                        Toast.makeText(this, "Логи очищены", Toast.LENGTH_SHORT).show()
+                        // B88.1: прямая очистка файлов (clearAll/clear откачены в B65)
+                        val bases = listOfNotNull(
+                            getExternalFilesDir("logs"),
+                            java.io.File(filesDir, "logs")
+                        )
+                        var deleted = 0
+                        bases.forEach { base ->
+                            base.listFiles()?.forEach { f ->
+                                if (f.delete()) deleted++
+                            }
+                        }
+                        Toast.makeText(this,
+                            "Удалено файлов: " + deleted, Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Ошибка: " + e.message, Toast.LENGTH_LONG).show()
                     }
