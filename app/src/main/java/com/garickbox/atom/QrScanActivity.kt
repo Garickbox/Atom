@@ -17,6 +17,10 @@ import android.os.Looper
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.activity.result.contract.ActivityResultContracts
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.mesh.core.InAppLogger
@@ -26,6 +30,16 @@ class QrScanActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private var pendingUris: List<Uri> = emptyList()
     private val handler = Handler(Looper.getMainLooper())
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchScanner()
+        else {
+            statusText.text = "Нужно разрешение на камеру"
+            Toast.makeText(this, "Разреши камеру в настройках", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         if (result.contents.isNullOrBlank()) {
@@ -42,6 +56,15 @@ class QrScanActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         pendingUris = collectUris(intent)
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED) {
+            launchScanner()
+        } else {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun launchScanner() {
         val opts = ScanOptions().apply {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("Наведите на QR на другом телефоне")

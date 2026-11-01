@@ -27,7 +27,25 @@ class MainActivity : AppCompatActivity() {
     }
     private var pendingShortcutFind = false
     private var pickerShownForPeer = false
-    private val REQ_QR_PICK = 5001
+    private val qrFilePicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK || result.data == null) return@registerForActivityResult
+        val data = result.data!!
+        val uris = mutableListOf<android.net.Uri>()
+        data.clipData?.let { clip ->
+            for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+        }
+        data.data?.let { uris.add(it) }
+        if (uris.isNotEmpty()) {
+            val i = Intent(this, QrScanActivity::class.java).apply {
+                action = Intent.ACTION_SEND_MULTIPLE
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(i)
+        }
+    }
 
 
     private lateinit var b: ActivityMainBinding
@@ -474,15 +492,11 @@ class MainActivity : AppCompatActivity() {
                     3 -> openFolderPicker()
                     4 -> startActivity(Intent(this, QrShareActivity::class.java))
                     5 -> {
-                        val i = Intent(this, QrScanActivity::class.java).apply {
-                            action = Intent.ACTION_SEND
-                        }
-                        // Открываем file picker перед сканом — файл нужен для отправки
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        qrFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "*/*"
                             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        }, REQ_QR_PICK)
+                        })
                     }
                 }
             }
