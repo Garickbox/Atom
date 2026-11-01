@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- B83: Direct Share — top of share sheet. 3 recent peers -->
+    <share-target android:targetClass="com.garickbox.atom.ShareTargetActivity">
+        <data android:mimeType="*/*" />
+        <category android:name="com.garickbox.atom.share_target" />
+    </share-target>
     <shortcut
         android:shortcutId="shortcut_find"
         android:enabled="true"

@@ -105,6 +105,15 @@ class ShareTargetActivity : AppCompatActivity() {
             } catch (_: Exception) {}
         }
 
+        // B83: Direct Share — intent прямо из share sheet, peer в extras
+        val directMac = intent?.getStringExtra("atom_direct_peer_mac") ?: ""
+        val directName = intent?.getStringExtra("atom_direct_peer_name") ?: "?"
+        if (directMac.isNotBlank() && !isTv()) {
+            InAppLogger.d("ShareTarget", "B83 direct share → " + directName)
+            connectP2pQuick(directMac, directName)
+            return
+        }
+
         // B24: preselected peer из shortcut → сразу connect
         val presel = MainActivity.pendingPeerForShareTarget
         if (presel != null && presel.mac.isNotBlank() && !isTv()) {
