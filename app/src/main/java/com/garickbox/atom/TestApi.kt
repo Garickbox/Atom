@@ -497,7 +497,7 @@ object TestApi {
                 as android.app.NotificationManager
             val sb = StringBuilder()
             nm.notificationChannels?.forEach { ch ->
-                sb.appendLine(ch.id + " imp=" + ch.importance + " badge=" + ch.canShowBadge)
+                sb.appendLine(ch.id + " imp=" + ch.importance + " badge=" + ch.canShowBadge())
             }
             sb.toString()
         } catch (e: Exception) { "err: " + e.message }
