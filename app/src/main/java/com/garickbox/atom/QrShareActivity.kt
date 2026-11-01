@@ -159,11 +159,39 @@ class QrShareActivity : AppCompatActivity() {
             statusText.text = "Ошибка: WifiManager недоступен"
             return
         }
+        // B66: reason=2 INCOMPATIBLE_MODE = Wi-Fi "not ready" / connecting.
+        // Ждём supplicantState=COMPLETED до 60 сек, потом hotspot.
+        waitWifiReadyThenHotspot(wm, 0)
+    }
+
+    private fun waitWifiReadyThenHotspot(wm: WifiManager, attempt: Int) {
         try {
-            startHotspotLegacy(wm)
+            @Suppress("DEPRECATION")
+            val info = wm.connectionInfo
+            val state = info?.supplicantState
+            @Suppress("DEPRECATION")
+            val ssid = info?.ssid?.trim('"') ?: ""
+            InAppLogger.d("QrServer", "B66 wait: state=" + state + " ssid=" + ssid +
+                " attempt=" + attempt)
+            if (state == android.net.wifi.SupplicantState.COMPLETED &&
+                ssid.isNotBlank() && ssid != "<unknown>") {
+                InAppLogger.d("QrServer", "B66: Wi-Fi COMPLETED → hotspot")
+                try { startHotspotLegacy(wm) } catch (e: Exception) {
+                    InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
+                    statusText.text = "Ошибка: ${e.message}"
+                }
+                return
+            }
+            if (attempt >= 20) {
+                statusText.text = "Wi-Fi не готов: ssid=" + ssid + " state=" + state +
+                    ". Проверь Настройки → Wi-Fi"
+                return
+            }
+            statusText.text = "Wi-Fi готовится… (" + (attempt + 1) + "/20)"
+            handler.postDelayed({ waitWifiReadyThenHotspot(wm, attempt + 1) }, 3000L)
         } catch (e: Exception) {
-            InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
-            statusText.text = "Ошибка: ${e.message}"
+            InAppLogger.d("QrServer", "B66 err: " + e.message)
+            try { startHotspotLegacy(wm) } catch (_: Exception) {}
         }
     }
 

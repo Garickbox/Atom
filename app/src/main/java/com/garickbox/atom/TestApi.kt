@@ -73,6 +73,7 @@ object TestApi {
                     catch (e: Exception) { "err: " + (e.message ?: "?") }
                 "/cleanlogs" -> cmdCleanLogs(ctx)
                 "/components" -> cmdComponents(ctx)
+                "/wifi-diag" -> cmdWifiDiag(ctx)
                 "/views" -> cmdViews(ctx, params["layout"] ?: "main")
                 "/hotspot-lifecycle" -> cmdHotspotLifecycle(ctx)
                 "/file-io" -> cmdFileIo(ctx)
@@ -312,6 +313,63 @@ object TestApi {
         } catch (e: Exception) {
             "err: ${e.message}"
         }
+    }
+
+    /** B67: полный Wi-Fi state + AP attempt — что блокирует startLocalOnlyHotspot. */
+    private fun cmdWifiDiag(ctx: Context): String {
+        val sb = StringBuilder()
+        try {
+            val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                ?: return "no WifiManager"
+            sb.appendLine("wifiEnabled=" + wm.isWifiEnabled)
+            sb.appendLine("wifiState=" + wm.wifiState +
+                " (0=DISABLING 1=DISABLED 2=ENABLING 3=ENABLED)")
+            @Suppress("DEPRECATION")
+            val info = wm.connectionInfo
+            if (info != null) {
+                sb.appendLine("ssid=" + info.ssid)
+                sb.appendLine("bssid=" + info.bSSID)
+                sb.appendLine("networkId=" + info.networkId)
+                sb.appendLine("supplicantState=" + info.supplicantState)
+                sb.appendLine("rssi=" + info.rssi)
+                sb.appendLine("linkSpeed=" + info.linkSpeed + "Mbps")
+                sb.appendLine("frequency=" + info.frequency + "MHz")
+            } else sb.appendLine("connectionInfo=null")
+            val locEnabled = try { LocationHelper.isEnabled(ctx) } catch (_: Exception) { false }
+            sb.appendLine("locationEnabled=" + locEnabled)
+            val fineLoc = android.content.pm.PackageManager.PERMISSION_GRANTED ==
+                ctx.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            sb.appendLine("perm_ACCESS_FINE_LOCATION=" + fineLoc)
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                val nearby = android.content.pm.PackageManager.PERMISSION_GRANTED ==
+                    ctx.checkSelfPermission(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+                sb.appendLine("perm_NEARBY_WIFI_DEVICES=" + nearby)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                try { sb.appendLine("supports5GHz=" + wm.is5GHzBandSupported) } catch (_: Exception) {}
+                try { sb.appendLine("supports6GHz=" + wm.is6GHzBandSupported) } catch (_: Exception) {}
+            }
+            try { sb.appendLine("scanAlwaysAvailable=" + wm.isScanAlwaysAvailable) } catch (_: Exception) {}
+            sb.appendLine("--- startLocalOnlyHotspot attempt ---")
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var ssid = ""; var reason = -1
+            val start = System.currentTimeMillis()
+            try {
+                wm.startLocalOnlyHotspot(object : android.net.wifi.WifiManager.LocalOnlyHotspotCallback() {
+                    override fun onStarted(r: android.net.wifi.WifiManager.LocalOnlyHotspotReservation) {
+                        ssid = r.wifiConfiguration?.SSID?.trim('"') ?: "?"
+                        try { r.close() } catch (_: Exception) {}
+                        latch.countDown()
+                    }
+                    override fun onFailed(r: Int) { reason = r; latch.countDown() }
+                }, android.os.Handler(android.os.Looper.getMainLooper()))
+                latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (e: Exception) { sb.appendLine("start exception: " + e.message) }
+            val dt = System.currentTimeMillis() - start
+            if (ssid.isNotBlank()) sb.appendLine("AP_OK ssid=" + ssid + " in " + dt + "ms")
+            else sb.appendLine("AP_FAIL reason=" + reason + " in " + dt + "ms")
+        } catch (e: Exception) { sb.appendLine("err: " + e.message) }
+        return sb.toString()
     }
 
     private fun cmdComponents(ctx: Context): String {
