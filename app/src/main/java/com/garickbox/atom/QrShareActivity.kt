@@ -1,7 +1,6 @@
 package com.garickbox.atom
 
 import android.content.Context
-import android.content.Intent
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pManager
@@ -21,8 +20,6 @@ class QrShareActivity : AppCompatActivity() {
     private var hotspotRetryCount = 0
     private var usingHotspot = false
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
-    private var waitingForWifiOff = false
-    private var wifiWasOff = false
 
     private lateinit var qrImage: ImageView
     private lateinit var statusText: TextView
@@ -41,10 +38,8 @@ class QrShareActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         infoText = findViewById(R.id.infoText)
 
-        // B53: кнопка «← В главное» (axiom#52 — видимая навигация на QR-экране)
-        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener {
-            finish()
-        }
+        // B63: btnClose (кнопка ← В главное, id в layout от B53, bind потерян откатом)
+        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener { finish() }
 
         // B35-TV: reset state на повторный запуск (fix #18 — single-shot TV)
         hotspotRetryCount = 0
@@ -160,59 +155,6 @@ class QrShareActivity : AppCompatActivity() {
         }
     }
 
-    private fun showHotspotRetryDialog(reason: Int) {
-        val why = when (reason) {
-            2 -> "HyperOS не разрешает точку доступа при включённом Wi-Fi."
-            3 -> "Канал Wi-Fi занят для точки доступа."
-            else -> "Hotspot не создался."
-        }
-        try {
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Wi-Fi мешает точке доступа")
-                .setMessage(
-                    why + "\n\n" +
-                    "1. Открой шторку → выключи Wi-Fi\n" +
-                    "2. Жди 10-30 секунд (framework отпустит)\n" +
-                    "3. Вернись в Атом — создам hotspot автоматически\n\n" +
-                    "После передачи включи Wi-Fi обратно."
-                )
-                .setPositiveButton("Открыть Wi-Fi") { _, _ ->
-                    try {
-                        if (android.os.Build.VERSION.SDK_INT >= 29) {
-                            startActivity(Intent(android.provider.Settings.Panel.ACTION_WIFI))
-                        } else {
-                            startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
-                        }
-                    } catch (_: Exception) {}
-                }
-                .setNegativeButton("Отмена") { _, _ -> finish() }
-                .setCancelable(false)
-                .show()
-        } catch (_: Exception) {}
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (!waitingForWifiOff) return
-        try {
-            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                ?: return
-            if (!wm.isWifiEnabled) {
-                if (!wifiWasOff) {
-                    wifiWasOff = true
-                    InAppLogger.d("QrServer", "B48: Wi-Fi off detected")
-                    statusText.text = "Wi-Fi выключен. Жду включения…"
-                }
-            } else if (wifiWasOff) {
-                InAppLogger.d("QrServer", "B48: Wi-Fi on → retry hotspot")
-                waitingForWifiOff = false
-                wifiWasOff = false
-                hotspotRetryCount = 0
-                startHotspot()
-            }
-        } catch (_: Exception) {}
-    }
-
     private fun startHotspot() {
         statusText.text = "Создаю hotspot…"
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -221,84 +163,10 @@ class QrShareActivity : AppCompatActivity() {
             return
         }
         try {
-            // B56: B54 (5GHz reflection) откачен — HyperOS блокирует 5GHz AP
-            // (reason=2 INCOMPATIBLE_MODE). Работает только legacy + B52 UX.
             startHotspotLegacy(wm)
         } catch (e: Exception) {
             InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
             statusText.text = "Ошибка: ${e.message}"
-        }
-    }
-
-    /** B54: reflection SoftApConfiguration(5GHz) — API 30+, compile SDK 34 не видит
-     *  метод startLocalOnlyHotspot(SoftApConfiguration, Executor, Callback) в
-     *  standard path (hidden API list). Reflection обходит. Если что-то не так —
-     *  возвращает false, startHotspot → legacy. */
-    @android.annotation.SuppressLint("NewApi", "SoonBlockedPrivateApi")
-    private fun startHotspot5GHz(wm: WifiManager): Boolean {
-        return try {
-            val cfgBuilderCls = Class.forName("android.net.wifi.SoftApConfiguration\$Builder")
-            val builder = cfgBuilderCls.getDeclaredConstructor().newInstance()
-            // setBand(BAND_5GHZ = 2) — hidden constant в SoftApConfiguration
-            val setBand = cfgBuilderCls.getMethod("setBand", Int::class.javaPrimitiveType)
-            setBand.invoke(builder, 2)  // BAND_5GHZ
-            // setSsid(String) — с именем юзера
-            val ssid = AtomController.myName.trim().ifBlank { "Atom" }
-            val safeSsid = if (ssid.toByteArray(Charsets.UTF_8).size > 32)
-                ssid.take(15) else ssid
-            try {
-                cfgBuilderCls.getMethod("setSsid", String::class.java).invoke(builder, safeSsid)
-            } catch (_: Exception) {}
-            // setPassphrase(pass, SECURITY_TYPE_WPA2_PSK = 1)
-            try {
-                cfgBuilderCls.getMethod("setPassphrase", String::class.java, Int::class.javaPrimitiveType)
-                    .invoke(builder, "00000000", 1)
-            } catch (_: Exception) {}
-            val config = cfgBuilderCls.getMethod("build").invoke(builder)
-
-            // Executor
-            val executor = android.os.Handler(android.os.Looper.getMainLooper())
-                .let { h -> java.util.concurrent.Executor { r -> h.post(r) } }
-
-            // startLocalOnlyHotspot(SoftApConfiguration, Executor, Callback)
-            val cfgCls = Class.forName("android.net.wifi.SoftApConfiguration")
-            val method = WifiManager::class.java.getMethod(
-                "startLocalOnlyHotspot",
-                cfgCls, java.util.concurrent.Executor::class.java,
-                WifiManager.LocalOnlyHotspotCallback::class.java
-            )
-
-            val latch = java.util.concurrent.CountDownLatch(1)
-            // B54.1: AtomicBoolean вместо @Volatile var (не применим к локальным)
-            val success = java.util.concurrent.atomic.AtomicBoolean(false)
-            method.invoke(wm, config, executor,
-                object : WifiManager.LocalOnlyHotspotCallback() {
-                    override fun onStarted(r: WifiManager.LocalOnlyHotspotReservation) {
-                        hotspotReservation = r
-                        val ssid2 = r.wifiConfiguration?.SSID?.trim('"') ?: safeSsid
-                        val pass2 = r.wifiConfiguration?.preSharedKey?.trim('"') ?: "00000000"
-                        groupCreated = true
-                        usingHotspot = true
-                        success.set(true)
-                        runOnUiThread {
-                            showQr(ssid2, pass2, getHotspotIp(), "Hotspot 5GHz")
-                        }
-                        InAppLogger.d("QrServer", "B54 5GHz AP: ssid=" + ssid2)
-                        latch.countDown()
-                    }
-                    override fun onFailed(reason: Int) {
-                        InAppLogger.d("QrServer",
-                            "B54 5GHz FAIL: reason=" + reason + " → legacy")
-                        latch.countDown()
-                    }
-                }
-            )
-            latch.await(8, java.util.concurrent.TimeUnit.SECONDS)
-            success.get()
-        } catch (e: Throwable) {
-            InAppLogger.d("QrServer",
-                "B54 reflection error: " + e.javaClass.simpleName + ": " + e.message)
-            false
         }
     }
 
@@ -325,21 +193,10 @@ class QrShareActivity : AppCompatActivity() {
                 }
                 override fun onFailed(reason: Int) {
                     InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
-                    // reason=2 INCOMPATIBLE_MODE — retry до 2 раз (fast fail)
                     if (reason == 2 && hotspotRetryCount < 2) {
                         hotspotRetryCount++
-                        statusText.text = "Hotspot занят, retry $hotspotRetryCount/2…"
+                        statusText.text = "Hotspot занят, retry…"
                         handler.postDelayed({ startHotspot() }, 1500L)
-                        return
-                    }
-                    // B52: reason=2 (retry исчерпан) ИЛИ reason=3 → одна инструкция:
-                    // выключить Wi-Fi. HyperOS не даёт concurrent STA+AP.
-                    if (reason == 2 || reason == 3) {
-                        waitingForWifiOff = true
-                        wifiWasOff = false
-                        hotspotRetryCount = 0
-                        statusText.text = "Выключи Wi-Fi в шторке на 10-30с → hotspot создастся"
-                        showHotspotRetryDialog(reason)
                         return
                     }
                     statusText.text = "Не удалось создать группу (код $reason)"

@@ -17,8 +17,9 @@ class AtomApp : Application() {
         }
         try { ShortcutPublisher.update(this, AtomController.getKnownP2pPeers()) } catch (_: Exception) {}
         cleanupOldParts()
-        // B40: system state в лог на каждом старте (axioma)
-        logSystemState()
+        // B63: logSystemState отключён — wm.connectionInfo deprecated на API 31+,
+        // на HyperOS может держать WiFiService LOCK → ломает startLocalOnlyHotspot.
+        // System state пишется из TestApi /state по запросу.
         // B44: HTTP API для автотестов (только debug build)
         try { TestApi.start(this) } catch (_: Exception) {}
     }
