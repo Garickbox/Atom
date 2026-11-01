@@ -27,6 +27,8 @@ class MainActivity : AppCompatActivity() {
     }
     private var pendingShortcutFind = false
     private var pickerShownForPeer = false
+    // B41: защита от бесконечного цикла onboarding в onResume
+    private var onboardingInProgress = false
     private val qrFilePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -524,8 +526,12 @@ class MainActivity : AppCompatActivity() {
         val denied = results.filterValues { !it }.keys.toList()
         if (denied.isEmpty()) {
             InAppLogger.d("MainActivity", "all permissions granted")
+            runOnboarding()
         } else {
-            InAppLogger.d("MainActivity", "permissions denied: $denied")
+            // B41: пользователь отказал — стоп, не зацикливаемся
+            InAppLogger.d("MainActivity",
+                "permissions denied: $denied — stop onboarding")
+            onboardingInProgress = false
             android.widget.Toast.makeText(
                 this,
                 "Без этих разрешений Атом не сможет находить устройства.\n" +
@@ -533,7 +539,6 @@ class MainActivity : AppCompatActivity() {
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
-        runOnboarding()
     }
 
     override fun onResume() {
@@ -562,7 +567,10 @@ class MainActivity : AppCompatActivity() {
         InAppLogger.d("MainActivity",
             "preflight (silent): ${PreflightChecker.summary(issues)}")
 
-        runOnboarding()
+        if (!OnboardingHelper.isDone(this) && !onboardingInProgress) {
+            onboardingInProgress = true
+            runOnboarding()
+        }
 
         // История скрыта — минимализм
 

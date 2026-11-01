@@ -68,6 +68,21 @@ object OnboardingHelper {
                     next(activity, onNeedPermissions)
                     return
                 }
+                // B41: не более 2 попыток — иначе бесконечный цикл если
+                // permission перманентно denied (HyperOS granular / "don't ask again").
+                val prefs = activity.getSharedPreferences(
+                    "atom", android.content.Context.MODE_PRIVATE)
+                val attempts = prefs.getInt("onboarding_perm_attempts", 0)
+                if (attempts >= 2) {
+                    InAppLogger.d("Onboarding",
+                        "step=0: skip after $attempts attempts, moving to step 1")
+                    setStep(activity, 1)
+                    next(activity, onNeedPermissions)
+                    return
+                }
+                prefs.edit().putInt("onboarding_perm_attempts", attempts + 1).apply()
+                InAppLogger.d("Onboarding",
+                    "step=0: request attempt ${attempts + 1}/2")
                 onNeedPermissions(missing)
             }
             1 -> {
