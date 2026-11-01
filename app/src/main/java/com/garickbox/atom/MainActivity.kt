@@ -598,6 +598,32 @@ class MainActivity : AppCompatActivity() {
         if (UpdateChecker.isDownloading && downloadDialog == null) {
             showDownloadDialog(UpdateChecker.currentRelease)
             attachDownloadListeners()
+        } else if (!UpdateChecker.isDownloading) {
+            // B78: download не активен, но APK мог быть скачан — предложить установить
+            try {
+                val ready = UpdateChecker.findDownloadedApk(this)
+                if (ready != null) {
+                    val key = ready.name + "_" + ready.dateAdded
+                    val prefs = getSharedPreferences("atom", MODE_PRIVATE)
+                    if (prefs.getString("b78_last_offered_apk", "") != key) {
+                        prefs.edit().putString("b78_last_offered_apk", key).apply()
+                        androidx.appcompat.app.AlertDialog.Builder(this)
+                            .setTitle("⬆️ Обновление готово")
+                            .setMessage("Установить " + ready.name + "?")
+                            .setPositiveButton("Установить") { _, _ ->
+                                try {
+                                    UpdateChecker.installApkFromUriPublic(this, ready.uri)
+                                } catch (e: Exception) {
+                                    Toast.makeText(this, "Ошибка: " + e.message,
+                                        Toast.LENGTH_LONG).show()
+                                }
+                            }
+                            .setNegativeButton("Позже", null)
+                            .show()
+                        InAppLogger.d("MainActivity", "B78: ready APK dialog shown")
+                    }
+                }
+            } catch (_: Exception) {}
         }
         // Тихая проверка всех условий (в лог, без диалогов)
         val issues = PreflightChecker.issues(this)

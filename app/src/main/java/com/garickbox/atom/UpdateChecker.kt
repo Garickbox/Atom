@@ -147,8 +147,29 @@ object UpdateChecker {
             showNotification(activity, release, 0, 0, true)
         }
 
+        // B78: если готовый APK уже скачан — НЕ пере-скачивать, НЕ удалять,
+        // сразу installer. axiom#45: файл не должен пропадать при возврате в Атом.
+        val existingApk = findDownloadedApk(activity)
+        if (existingApk != null) {
+            InAppLogger.d("UpdateChecker",
+                "B78: reuse downloaded APK " + existingApk.name + " → installer")
+            isDownloading = false
+            currentRelease = null
+            if (useNotification) hideNotification(activity)
+            try {
+                installApkFromUri(activity, existingApk.uri)
+            } catch (e: Exception) {
+                InAppLogger.err("UpdateChecker", "B78 reuse install: " + e.message)
+                Toast.makeText(activity,
+                    "Не удалось открыть установщик: " + e.message, Toast.LENGTH_LONG).show()
+            }
+            finishListeners.forEach { l -> try { l(true) } catch (_: Exception) {} }
+            if (onFinish != null) activity.runOnUiThread { onFinish.invoke(true) }
+            return
+        }
+
         // B10d.1: удалить старые Atom*.apk ДО начала скачивания (не после).
-        // Селект ловит Atom.apk, Atom (1).apk, Atom (2).apk... — всё что в Download/Atom/Documents.
+        // B78: сюда доходит только если findDownloadedApk вернул null — файла нет, чистим остатки.
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             try {
                 val deleted = activity.contentResolver.delete(
@@ -164,7 +185,9 @@ object UpdateChecker {
 
         Thread {
             try {
-                val dir = File(activity.cacheDir, "apk").apply { mkdirs() }
+                // B78: external files — HyperOS не чистит cacheDir/apk между сессиями
+                val dir = (activity.getExternalFilesDir(null)?.let { File(it, "apk") }
+                    ?: File(activity.cacheDir, "apk")).apply { mkdirs() }
                 val out = File(dir, "atom-${release.tag}.apk")
                 if (out.exists()) out.delete()
                 val client = OkHttpClient.Builder()
@@ -422,6 +445,47 @@ object UpdateChecker {
             Toast.makeText(ctx, "Не удалось открыть установщик: ${e.message}",
                 Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** B78: скачанный APK в Downloads — переиспользовать вместо пере-скачивания. */
+    data class DownloadedApk(val uri: android.net.Uri, val name: String, val dateAdded: Long)
+
+    internal fun findDownloadedApk(ctx: Context): DownloadedApk? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null
+        return try {
+            val cursor = ctx.contentResolver.query(
+                android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(
+                    android.provider.MediaStore.Downloads._ID,
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME,
+                    android.provider.MediaStore.Downloads.DATE_ADDED
+                ),
+                android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? AND " +
+                    android.provider.MediaStore.Downloads.RELATIVE_PATH + " LIKE ?",
+                arrayOf("Atom%.apk", "Download/Atom/Documents%"),
+                android.provider.MediaStore.Downloads.DATE_ADDED + " DESC")
+            cursor?.use { c ->
+                if (c.moveToFirst()) {
+                    val id = c.getLong(0)
+                    val name = c.getString(1) ?: "Atom.apk"
+                    val date = c.getLong(2)
+                    val uri = android.content.ContentUris.withAppendedId(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                    InAppLogger.d("UpdateChecker",
+                        "findDownloadedApk: " + name + " date=" + date)
+                    return DownloadedApk(uri, name, date)
+                }
+            }
+            null
+        } catch (e: Exception) {
+            InAppLogger.d("UpdateChecker", "findDownloadedApk error: " + e.message)
+            null
+        }
+    }
+
+    /** B78: публичный installer для MainActivity диалога. */
+    fun installApkFromUriPublic(ctx: Context, apkUri: android.net.Uri) {
+        installApkFromUri(ctx, apkUri)
     }
 
     internal fun saveApkToDownloads(ctx: Context, apk: File, tag: String): android.net.Uri? {
