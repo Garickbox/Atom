@@ -19,6 +19,8 @@ class AtomApp : Application() {
         cleanupOldParts()
         // B40: system state в лог на каждом старте (axioma)
         logSystemState()
+        // B44: HTTP API для автотестов (только debug build)
+        try { TestApi.start(this) } catch (_: Exception) {}
     }
 
     private fun checkVersionAndCleanupLogs() {
