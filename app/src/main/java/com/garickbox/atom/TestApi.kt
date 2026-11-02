@@ -351,15 +351,6 @@ object TestApi {
         } catch (e: Exception) { "err: " + e.message }
     }
 
-    private fun cmdScreenshot(ctx: Context): String {
-        return try {
-            val f = MediaProjectionService.capture(ctx)
-            if (f != null) {
-                f.absolutePath + "|" + f.length()
-            } else "FAIL"
-        } catch (e: Exception) { "err: " + e.message }
-    }
-
     private fun cmdSelftest(ctx: Context): String {
         return try {
             val results = kotlinx.coroutines.runBlocking { SelfTestRunner.runAll(ctx) }
