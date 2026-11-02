@@ -621,9 +621,11 @@ class FileSenderService : Service() {
                 "acceptedOffset=$acceptedOffset (requested=$resumeOffset)")
         }
         // 3) Multi-thread: 4 потока если size >= 8 MB, иначе 1
-        val threadCount = 1  // single-thread как build-37 — быстрее на 2.4 GHz
+        // B91: multi-thread для больших файлов (sendMultiThread готов, был отключён)
+        // axiom#93: 4 потока только для size ≥ 4MB (для маленьких overhead > выигрыш)
+        val threadCount = if (size >= 4L * 1024 * 1024) 4 else 1
         InAppLogger.d("FileSenderService",
-            "start transfer: ${threadCount} thread(s) for $size bytes")
+            "B91 start transfer: ${threadCount} thread(s) for $size bytes")
 
         // B8: retry при connection error (ConnectionReset/Broken pipe).
         // Receiver иногда "холодный" на первом TCP после P2P connect —

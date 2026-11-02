@@ -73,6 +73,17 @@ object TransferNotification {
             .build()
     }
 
+    // B91: общий contentIntent — tap → MainActivity (для всех типов уведомлений)
+    private fun openAppPi(ctx: Context, reqCode: Int): PendingIntent {
+        val openIntent = Intent(ctx, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        return PendingIntent.getActivity(ctx, reqCode, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
     fun buildPaused(
         ctx: Context,
         transferId: String,
@@ -102,6 +113,7 @@ object TransferNotification {
         )
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentIntent(openAppPi(ctx, transferId.hashCode() + 20))
             .setContentTitle(
                 "⏸ Пауза → $peerName" +
                 if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
@@ -141,6 +153,7 @@ object TransferNotification {
         )
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentIntent(openAppPi(ctx, transferId.hashCode() + 21))
             .setContentTitle("⚠️ Передача прервана")
             .setContentText("$fileName — $reason")
             .setOngoing(false)
@@ -160,6 +173,7 @@ object TransferNotification {
         val speed = if (durationMs > 0) (bytesTotal * 1000 / durationMs) else 0L
         return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentIntent(openAppPi(ctx, 22))
             .setContentTitle("✅ Отправлено: $fileCount файл(ов)")
             .setContentText("$peerName · ${formatBytes(bytesTotal)} · ${formatBytes(speed)}/с")
             .setOngoing(false)

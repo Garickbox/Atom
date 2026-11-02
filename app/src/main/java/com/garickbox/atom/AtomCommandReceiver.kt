@@ -81,9 +81,9 @@ class AtomCommandReceiver : BroadcastReceiver() {
                         put("receiveActive", WidgetReceiveService.isActive)
                     }
                     InAppLogger.d("AtomCmd", "STATUS: " + reply)
+                    // B91: без setPackage — Tasker/Automate ловят через Intent Received
                     val out = Intent(ACTION_STATUS_RESULT).apply {
                         putExtra("json", reply.toString())
-                        setPackage(ctx.packageName)
                     }
                     ctx.sendBroadcast(out)
                 } catch (e: Exception) {
@@ -102,10 +102,10 @@ class AtomCommandReceiver : BroadcastReceiver() {
                         })
                     }
                     InAppLogger.d("AtomCmd", "PEERS: " + peers.size)
+                    // B91: без setPackage
                     val out = Intent(ACTION_PEERS_RESULT).apply {
                         putExtra("json", arr.toString())
                         putExtra("count", peers.size)
-                        setPackage(ctx.packageName)
                     }
                     ctx.sendBroadcast(out)
                 } catch (e: Exception) {
@@ -128,10 +128,10 @@ class AtomCommandReceiver : BroadcastReceiver() {
                         })
                     }
                     InAppLogger.d("AtomCmd", "HISTORY: " + records.size + " (sent " + arr.length() + ")")
+                    // B91: без setPackage
                     val out = Intent(ACTION_HISTORY_RESULT).apply {
                         putExtra("json", arr.toString())
                         putExtra("total", records.size)
-                        setPackage(ctx.packageName)
                     }
                     ctx.sendBroadcast(out)
                 } catch (e: Exception) {

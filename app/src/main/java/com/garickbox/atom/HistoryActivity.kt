@@ -23,6 +23,8 @@ import java.util.Locale
  */
 class HistoryActivity : AppCompatActivity() {
     private lateinit var b: ActivityHistoryBinding
+    // B91: фильтр all|success|failed
+    private var currentFilter: String = "all"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +51,9 @@ class HistoryActivity : AppCompatActivity() {
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_filter_all -> { currentFilter = "all"; loadHistory(); true }
+            R.id.action_filter_success -> { currentFilter = "success"; loadHistory(); true }
+            R.id.action_filter_failed -> { currentFilter = "failed"; loadHistory(); true }
             R.id.action_export_csv -> { exportToCsv(); true }
             else -> super.onOptionsItemSelected(item)
         }
@@ -99,8 +104,13 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun loadHistory() {
-        val records = TransferHistory.list(this)
-        InAppLogger.d("History", "records=" + records.size)
+        val all = TransferHistory.list(this)
+        val records = when (currentFilter) {
+            "success" -> all.filter { it.status == "success" }
+            "failed" -> all.filter { it.status == "failed" || it.status == "skipped" }
+            else -> all
+        }
+        InAppLogger.d("History", "B91 filter=" + currentFilter + " records=" + records.size + "/" + all.size)
         if (records.isEmpty()) {
             b.emptyText.visibility = View.VISIBLE
             b.recycler.visibility = View.GONE
