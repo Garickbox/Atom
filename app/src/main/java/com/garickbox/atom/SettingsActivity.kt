@@ -51,6 +51,31 @@ class SettingsActivity : AppCompatActivity() {
         b.deviceValue.text = android.os.Build.MANUFACTURER + "/" + android.os.Build.MODEL
         b.myIdValue.text = AtomController.myId.take(8) + "…"
 
+        b.forceUpdateRow.setOnClickListener {
+            UpdateChecker.setForceReinstall(true)
+            val ready = UpdateChecker.findDownloadedApk(this)
+            if (ready != null) {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Переустановить")
+                    .setMessage("Найден " + ready.name + ". Установить заново?")
+                    .setPositiveButton("Установить") { _, _ ->
+                        try {
+                            UpdateChecker.installApkFromUriPublic(this, ready.uri)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(this,
+                                "Ошибка: " + e.message, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .setNegativeButton("Отмена", null)
+                    .show()
+            } else {
+                // Нет скачанного APK → обычный /update
+                val r = UpdateChecker.startAutoUpdate(this)
+                android.widget.Toast.makeText(this, "OTA: " + r, android.widget.Toast.LENGTH_LONG).show()
+            }
+            UpdateChecker.setForceReinstall(false)
+        }
+
         b.clearHistoryRow.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Очистить историю?")

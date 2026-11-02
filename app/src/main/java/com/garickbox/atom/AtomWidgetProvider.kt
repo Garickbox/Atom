@@ -33,7 +33,8 @@ class AtomWidgetProvider : AppWidgetProvider() {
         private fun refreshInternal(ctx: Context, force: Boolean) {
             try {
                 val now = System.currentTimeMillis()
-                if (!force && now - lastRefresh < 1000L) return
+                // B94: 500ms вместо 1000ms — multi-thread обновляет прогресс чаще
+                if (!force && now - lastRefresh < 500L) return
                 lastRefresh = now
                 val mgr = AppWidgetManager.getInstance(ctx)
                 val ids = mgr.getAppWidgetIds(ComponentName(ctx, AtomWidgetProvider::class.java))

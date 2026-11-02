@@ -571,12 +571,22 @@ fun cancelActiveReceive(ctx: Context) {
         val session = activeSessions.remove(transferId)
         if (session != null) {
             session.failed.set(true)
+            // B94: закрываем sockets/raf, но _isBusy отпускаем ТОЛЬКО когда все
+            // threads finish (иначе multi-thread (B91) параллельно пишут в raf
+            // после _isBusy=false → corrupt нового файла)
             session.sockets.forEach { try { it.close() } catch (_: Exception) {} }
             try { session.channel.close() } catch (_: Exception) {}
             try { session.raf.close() } catch (_: Exception) {}
-            session.partFile.delete()
+            try { session.partFile.delete() } catch (_: Exception) {}
+            // Ждём 300мс на thread finalization
+            Thread {
+                Thread.sleep(300)
+                _isBusy.set(false)
+                InAppLogger.d("FileReceiver", "B94: busy released after cancel wait")
+            }.apply { isDaemon = true }.start()
+        } else {
+            _isBusy.set(false)
         }
-        _isBusy.set(false)
         AtomController.transferState.value = TransferState.Idle
         FileReceiverService.stop(ctx)
     }

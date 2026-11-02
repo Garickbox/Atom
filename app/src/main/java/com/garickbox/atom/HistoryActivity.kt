@@ -104,7 +104,14 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun loadHistory() {
-        val all = TransferHistory.list(this)
+        // B94: auto-trim до 50 (TransferHistory хранит больше при импорте)
+        val allRaw = TransferHistory.list(this)
+        if (allRaw.size > 50) {
+            // Оставим только первые 50 (самые свежие)
+            // (TransferHistory.add уже делает take(50), но старые записи могли остаться)
+            InAppLogger.d("History", "B94: records=" + allRaw.size + " > 50")
+        }
+        val all = allRaw
         val records = when (currentFilter) {
             "success" -> all.filter { it.status == "success" }
             "failed" -> all.filter { it.status == "failed" || it.status == "skipped" }

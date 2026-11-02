@@ -450,13 +450,18 @@ object UpdateChecker {
     /** B78: скачанный APK в Downloads — переиспользовать вместо пере-скачивания. */
     data class DownloadedApk(val uri: android.net.Uri, val name: String, val dateAdded: Long)
 
+    // B94: forceReinstall — Settings → «Проверить обновления» игнорирует
+    // axiom#85 check (savedVc<=currentVc → skip). Force = переустановка.
+    @Volatile private var forceReinstall: Boolean = false
+    fun setForceReinstall(v: Boolean) { forceReinstall = v }
+
     internal fun findDownloadedApk(ctx: Context): DownloadedApk? {
         if (android.os.Build.VERSION.SDK_INT < 29) return null
         // B80 axiom#85: APK готов к установке только если versionCode > текущего.
         // Иначе после OTA "Готово, установить" бесконечно повторяется (уже установлено).
         val savedVc = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
             .getInt("last_downloaded_apk_vc", 0)
-        if (savedVc > 0 && savedVc <= BuildConfig.VERSION_CODE) {
+        if (savedVc > 0 && savedVc <= BuildConfig.VERSION_CODE && !forceReinstall) {
             InAppLogger.d("UpdateChecker",
                 "B80 findDownloadedApk: savedVc=" + savedVc +
                 " <= currentVc=" + BuildConfig.VERSION_CODE + " → skip (уже установлено)")

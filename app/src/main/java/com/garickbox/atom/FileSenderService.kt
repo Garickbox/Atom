@@ -916,7 +916,16 @@ private fun displayName(uri: Uri): String? {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        try { QrScanActivity.unbind() } catch (_: Exception) {}
+        // B94: unbind только если нет активной передачи (axiom#98 — иначе
+        // сломает следующий QR-сеанс или параллельную передачу)
+        try {
+            if (!AtomController.transferActive) {
+                QrScanActivity.unbind()
+                InAppLogger.d("FileSenderService", "B94: unbind (no active transfer)")
+            } else {
+                InAppLogger.d("FileSenderService", "B94: skip unbind (transfer active)")
+            }
+        } catch (_: Exception) {}
         // B75#22: nulling callbacks — следующий onCreate переустановит
         try {
             AtomController.meshNode?.onFileAccept = null
