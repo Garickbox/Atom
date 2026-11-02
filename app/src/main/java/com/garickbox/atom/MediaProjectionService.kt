@@ -83,7 +83,15 @@ class MediaProjectionService : Service() {
         }
         try {
             val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            projection = mgr.getMediaProjection(code, data)
+            val p = mgr.getMediaProjection(code, data)
+            // B97rev4: Android 14+ требует registerCallback ДО createVirtualDisplay
+            p?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    InAppLogger.d("MPService", "projection stopped by system")
+                    projection = null
+                }
+            }, Handler(Looper.getMainLooper()))
+            projection = p
             InAppLogger.d("MPService", "ready=" + (projection != null))
         } catch (e: Exception) {
             InAppLogger.err("MPService", "getProjection: " + e.message)
