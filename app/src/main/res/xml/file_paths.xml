@@ -4,4 +4,6 @@
     <external-path name="downloads" path="Download/Atom/" />
     <cache-path name="cache" path="." />
     <cache-path name="apk" path="apk/" />
+    <!-- B96: B78 переключил APK на getExternalFilesDir("apk") — нужен external-files path -->
+    <external-files-path name="apk_external" path="apk/" />
 </paths>

@@ -425,7 +425,7 @@ object UpdateChecker {
             ctx.startActivity(intent)
             InAppLogger.d("UpdateChecker", "installer started")
         } catch (e: Exception) {
-            InAppLogger.d("UpdateChecker", "install error: ${e.message}")
+            InAppLogger.err("UpdateChecker", "B96 install error: ${e.message}")
             Toast.makeText(ctx, "Не удалось открыть установщик: ${e.message}",
                 Toast.LENGTH_LONG).show()
         }
@@ -441,7 +441,7 @@ object UpdateChecker {
             ctx.startActivity(intent)
             InAppLogger.d("UpdateChecker", "installer started from uri: $apkUri")
         } catch (e: Exception) {
-            InAppLogger.d("UpdateChecker", "installApkFromUri error: ${e.message}")
+            InAppLogger.err("UpdateChecker", "B96 installApkFromUri error: ${e.message}")
             Toast.makeText(ctx, "Не удалось открыть установщик: ${e.message}",
                 Toast.LENGTH_LONG).show()
         }
@@ -504,6 +504,20 @@ object UpdateChecker {
     }
 
     internal fun saveApkToDownloads(ctx: Context, apk: File, tag: String): android.net.Uri? {
+        // B96: удалить старый Atom*.apk перед сохранением (не копить (1), (2), (3))
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                val deleted = ctx.contentResolver.delete(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ? AND " +
+                        android.provider.MediaStore.Downloads.RELATIVE_PATH + " LIKE ?",
+                    arrayOf("Atom%.apk", "Download/Atom/Documents%"))
+                if (deleted > 0) {
+                    InAppLogger.d("UpdateChecker",
+                        "B96: delete old Atom*.apk=$deleted before save")
+                }
+            } catch (_: Exception) {}
+        }
         return try {
             val result = com.garickbox.atom.MediaStoreSaver.save(
                 ctx, apk, "Atom.apk", "application/vnd.android.package-archive"
