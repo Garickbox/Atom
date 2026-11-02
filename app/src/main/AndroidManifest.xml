@@ -177,6 +177,11 @@
         </activity>
 
         <service
+            android:name=".MediaProjectionService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <service
             android:name=".FileSenderService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

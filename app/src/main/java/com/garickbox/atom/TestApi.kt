@@ -63,7 +63,7 @@ object TestApi {
                     "/file-io" -> cmdFileIo(ctx)
                     "/crash" -> cmdCrash(ctx)
                     "/selftest" -> cmdSelftest(ctx)
-                    "/screenshot_ready" -> if (ScreenshotService.isReady()) "ready" else "not_ready"
+                    "/screenshot_ready" -> if (MediaProjectionService.isReady()) "ready" else "not_ready"
                     "/screenshot" -> cmdScreenshot(ctx)
                     "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                         catch (e: Exception) { "err: " + (e.message ?: "?") }
@@ -355,7 +355,7 @@ object TestApi {
 
     private fun cmdScreenshot(ctx: Context): String {
         return try {
-            val f = ScreenshotService.capture(ctx)
+            val f = MediaProjectionService.capture(ctx)
             if (f != null) {
                 f.absolutePath + "|" + f.length()
             } else "FAIL"
