@@ -63,6 +63,8 @@ object TestApi {
                     "/file-io" -> cmdFileIo(ctx)
                     "/crash" -> cmdCrash(ctx)
                     "/selftest" -> cmdSelftest(ctx)
+                    "/screenshot_ready" -> if (ScreenshotService.isReady()) "ready" else "not_ready"
+                    "/screenshot" -> cmdScreenshot(ctx)
                     "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                         catch (e: Exception) { "err: " + (e.message ?: "?") }
                     "/prefs" -> cmdPrefs(ctx)
@@ -348,6 +350,15 @@ object TestApi {
                 }
                 else -> "unknown action: " + action + " (get|set|clear|incr)"
             }
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdScreenshot(ctx: Context): String {
+        return try {
+            val f = ScreenshotService.capture(ctx)
+            if (f != null) {
+                f.absolutePath + "|" + f.length()
+            } else "FAIL"
         } catch (e: Exception) { "err: " + e.message }
     }
 
