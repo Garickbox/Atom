@@ -27,7 +27,6 @@ class SettingsActivity : AppCompatActivity() {
         b.toolbar.setNavigationOnClickListener { finish() }
 
         // B94: battery row — статус + кнопка "Разрешить" если не whitelisted
-        refreshBatteryRow()
         b.batteryRow.setOnClickListener {
             if (!BatteryOptimizationHelper.isWhitelisted(this)) {
                 try {
