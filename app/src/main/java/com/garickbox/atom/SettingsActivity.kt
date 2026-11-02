@@ -26,6 +26,20 @@ class SettingsActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         b.toolbar.setNavigationOnClickListener { finish() }
 
+        // B94: battery row — статус + кнопка "Разрешить" если не whitelisted
+        refreshBatteryRow()
+        b.batteryRow.setOnClickListener {
+            if (!BatteryOptimizationHelper.isWhitelisted(this)) {
+                try {
+                    BatteryOptimizationHelper.requestWhitelist(this)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Ошибка: " + e.message, Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(this, "✅ Фоновая работа уже разрешена", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         b.nameValue.text = AtomController.myName.ifBlank { "(не задано)" }
         b.nameRow.setOnClickListener {
             startActivity(Intent(this, NameSetupActivity::class.java))
