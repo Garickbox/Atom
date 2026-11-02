@@ -43,11 +43,6 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/action_screenshot"
-        android:title="📷 Скриншот (pairing)"
-        app:showAsAction="never" />
-
-    <item
         android:id="@+id/action_about"
         android:title="@string/menu_about"
         app:showAsAction="never" />

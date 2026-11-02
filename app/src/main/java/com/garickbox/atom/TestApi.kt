@@ -63,8 +63,6 @@ object TestApi {
                     "/file-io" -> cmdFileIo(ctx)
                     "/crash" -> cmdCrash(ctx)
                     "/selftest" -> cmdSelftest(ctx)
-                    "/screenshot_ready" -> if (MediaProjectionService.isReady()) "ready" else "not_ready"
-                    "/screenshot" -> cmdScreenshot(ctx)
                     "/update" -> try { UpdateChecker.startAutoUpdate(ctx) }
                         catch (e: Exception) { "err: " + (e.message ?: "?") }
                     "/prefs" -> cmdPrefs(ctx)

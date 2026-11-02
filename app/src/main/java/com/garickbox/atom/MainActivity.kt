@@ -252,29 +252,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private val mediaProjLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK && result.data != null) {
-            InAppLogger.d("MainActivity", "B97: projection granted")
-            MediaProjectionService.start(this, result.resultCode, result.data!!)
-            Toast.makeText(this, "Скриншот активен до перезапуска Атома", Toast.LENGTH_LONG).show()
-        } else {
-            InAppLogger.d("MainActivity", "B97: projection denied")
-            Toast.makeText(this, "Скриншот не разрешён", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun requestScreenshotPermission() {
-        try {
-            val mgr = getSystemService(android.media.projection.MediaProjectionManager::class.java)
-            mediaProjLauncher.launch(mgr.createScreenCaptureIntent())
-        } catch (e: Exception) {
-            Toast.makeText(this, "Ошибка: " + e.message, Toast.LENGTH_LONG).show()
-            InAppLogger.err("MainActivity", "B97: " + e.message)
-        }
-    }
-
     private fun showAbout() {
         AboutDialog.show(this)
     }
@@ -524,7 +501,6 @@ class MainActivity : AppCompatActivity() {
             R.id.action_settings -> {
                 startActivity(Intent(this, SettingsActivity::class.java)); true
             }
-            R.id.action_screenshot -> { requestScreenshotPermission(); true }
             R.id.action_about -> { showAbout(); true }
             else -> super.onOptionsItemSelected(item)
         }
