@@ -118,6 +118,13 @@ object FileReceiver {
 
         var accepted = false
         try {
+            // B100a axiom#46: reject absurd size (Long overflow bypasses free-check)
+            if (offer.size !in 0..100L * 1024 * 1024 * 1024) {
+                InAppLogger.d("FileReceiver",
+                    "B100-sec: reject absurd size ${offer.size}")
+                sendDecline(ctx, offer, "bad_size")
+                return
+            }
             val required = offer.size + 5 * 1024 * 1024
             val free = ctx.getExternalFilesDir(null)?.usableSpace ?: 0L
             if (free < required) {
@@ -200,6 +207,13 @@ object FileReceiver {
             val senderHash = String(readN(dis, hashLen), Charsets.UTF_8)
 
             val nameLen = dis.readInt()
+            // B100a axiom#46: cap peer-controlled header lengths (OOM protection)
+            if (tidLen !in 1..256 || hashLen !in 1..128 || nameLen !in 1..512) {
+                InAppLogger.d("FileReceiver",
+                    "B100-sec: bad header len tid=$tidLen hash=$hashLen name=$nameLen")
+                try { socket.close() } catch (_: Exception) {}
+                return
+            }
             val name = String(readN(dis, nameLen), Charsets.UTF_8)
 
             val totalSize = dis.readLong()
