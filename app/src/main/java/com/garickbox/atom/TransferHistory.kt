@@ -35,6 +35,68 @@ object TransferHistory {
         } catch (_: Exception) { emptyList() }
     }
 
+    /** B107: import CSV → merge (skip duplicate id, cap MAX_ITEMS) */
+    fun importCsv(ctx: Context, csvText: String): Int {
+        val lines = csvText.split("\n").filter { it.isNotBlank() }
+        if (lines.size < 2) return 0
+        val incoming = mutableListOf<Record>()
+        for (i in 1 until lines.size) {
+            val f = parseCsvLine(lines[i])
+            if (f.size < 7) continue
+            try {
+                incoming.add(Record(
+                    id = f[0], peerName = f[1], fileName = f[2],
+                    bytes = f[3].toLongOrNull() ?: 0L,
+                    status = f[4],
+                    durationMs = f[5].toLongOrNull() ?: 0L,
+                    timestamp = parseTimestamp(f[6]),
+                    savedPath = ""
+                ))
+            } catch (_: Exception) {}
+        }
+        if (incoming.isEmpty()) return 0
+        synchronized(lock) {
+            val current = list(ctx).toMutableList()
+            val existing = current.map { it.id }.toHashSet()
+            var added = 0
+            for (rec in incoming) {
+                if (rec.id in existing) continue
+                current.add(rec); added++
+            }
+            if (added > 0) {
+                current.sortByDescending { it.timestamp }
+                save(ctx, current.take(MAX_ITEMS))
+                com.mesh.core.InAppLogger.err("TransferHistory",
+                    "B107: importCsv added=$added total=${current.size}")
+            }
+            return added
+        }
+    }
+
+    private fun parseTimestamp(f: String): Long {
+        val num = f.toLongOrNull()
+        if (num != null) return num
+        return try {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .parse(f)?.time ?: System.currentTimeMillis()
+        } catch (_: Exception) { System.currentTimeMillis() }
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val out = mutableListOf<String>()
+        val sb = StringBuilder()
+        var inQuotes = false
+        for (c in line) {
+            when {
+                c == '"' -> inQuotes = !inQuotes
+                c == ',' && !inQuotes -> { out.add(sb.toString()); sb.clear() }
+                else -> sb.append(c)
+            }
+        }
+        out.add(sb.toString())
+        return out
+    }
+
     fun add(ctx: Context, rec: Record) {
         // B101i-v3: err() вместо d() — гарантированная запись (без whitelist)
         try {
