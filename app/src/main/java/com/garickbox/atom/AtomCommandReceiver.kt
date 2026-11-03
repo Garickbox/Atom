@@ -68,6 +68,19 @@ class AtomCommandReceiver : BroadcastReceiver() {
             ACTION_PING -> {
                 InAppLogger.d("AtomCmd", "PING received")
             }
+            ACTION_SET_VERBOSE -> {
+                try {
+                    val on = intent.getBooleanExtra("on", true)
+                    com.mesh.core.InAppLogger.setVerbose(on)
+                    InAppLogger.d("AtomCmd", "SET_VERBOSE on=$on")
+                    val out = Intent(ACTION_SET_VERBOSE_RESULT).apply {
+                        putExtra("verbose", on)
+                    }
+                    ctx.sendBroadcast(out)
+                } catch (e: Exception) {
+                    InAppLogger.d("AtomCmd", "SET_VERBOSE error: " + e.message)
+                }
+            }
             ACTION_STATUS -> {
                 try {
                     val reply = org.json.JSONObject().apply {
@@ -150,6 +163,8 @@ class AtomCommandReceiver : BroadcastReceiver() {
         const val ACTION_STATUS = "com.garickbox.atom.STATUS"
         const val ACTION_PEERS = "com.garickbox.atom.PEERS"
         const val ACTION_HISTORY = "com.garickbox.atom.HISTORY"
+        const val ACTION_SET_VERBOSE = "com.garickbox.atom.SET_VERBOSE"
+        const val ACTION_SET_VERBOSE_RESULT = "com.garickbox.atom.SET_VERBOSE_RESULT"
         const val ACTION_STATUS_RESULT = "com.garickbox.atom.STATUS_RESULT"
         const val ACTION_PEERS_RESULT = "com.garickbox.atom.PEERS_RESULT"
         const val ACTION_HISTORY_RESULT = "com.garickbox.atom.HISTORY_RESULT"

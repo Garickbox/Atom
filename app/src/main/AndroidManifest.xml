@@ -102,6 +102,7 @@
                 <action android:name="com.garickbox.atom.STATUS" />
                 <action android:name="com.garickbox.atom.PEERS" />
                 <action android:name="com.garickbox.atom.HISTORY" />
+                <action android:name="com.garickbox.atom.SET_VERBOSE" />
             </intent-filter>
         </receiver>
 

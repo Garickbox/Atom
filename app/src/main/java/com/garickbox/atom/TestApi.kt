@@ -73,6 +73,7 @@ object TestApi {
                     "/widgets" -> cmdWidgets(ctx)
                     "/find_apk" -> cmdFindApk(ctx)
                     "/badge" -> cmdBadge(ctx, params["action"] ?: "get", params["n"]?.toIntOrNull() ?: 0)
+                    "/verbose" -> cmdVerbose(params["on"])
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
             } catch (e: Throwable) {
@@ -124,6 +125,7 @@ object TestApi {
             appendLine("free_mb=" + freeMb)
             appendLine("transferState=" + AtomController.transferState.value.javaClass.simpleName)
             appendLine("known_peers=" + AtomController.getKnownP2pPeers().size)
+            appendLine("verbose=" + com.mesh.core.InAppLogger.isVerbose())
         }
     }
 
@@ -326,6 +328,19 @@ object TestApi {
                     appendLine("APK_READY=null (правильно если savedVc<=currentVc)")
                 }
             }
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    /** B101: toggle verbose (axiom#26 — без этого TV-логи невидимы) */
+    private fun cmdVerbose(onParam: String?): String {
+        return try {
+            val on = when (onParam?.lowercase()) {
+                null, "1", "true", "on", "yes" -> true
+                "0", "false", "off", "no" -> false
+                else -> true
+            }
+            com.mesh.core.InAppLogger.setVerbose(on)
+            "verbose=" + com.mesh.core.InAppLogger.isVerbose()
         } catch (e: Exception) { "err: " + e.message }
     }
 
