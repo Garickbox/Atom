@@ -96,7 +96,7 @@ class FileSenderService : Service() {
     private var lastRelativePaths: List<String?> = emptyList()
     private var pausedRemainingRelativePaths: List<String?> = emptyList()
     private var lastUriIndex: Int = 0
-    private var currentProgressBytes: Long = 0L
+    private val currentProgressBytes = java.util.concurrent.atomic.AtomicLong(0L)
     private var pausedOffset: Long = 0L
     private var pausedTid: String? = null
     private var pausedName: String? = null
@@ -160,7 +160,7 @@ class FileSenderService : Service() {
                 lastUris = uris.map { it.toString() }
                 lastRelativePaths = paths
                 lastUriIndex = 0
-                currentProgressBytes = 0L
+                currentProgressBytes.set(0L)
                 runTransfer(peerIp, peerId, peerName, uris, relativePaths = paths)
             }
             TransferNotification.ACTION_CANCEL -> {
@@ -249,7 +249,7 @@ class FileSenderService : Service() {
                     )
                 } catch (_: Exception) {}
 
-                pausedOffset = currentProgressBytes
+                pausedOffset = currentProgressBytes.get()
                 pausedTid = cur.transferId
                 pausedName = cur.fileName
                 pausedPeerIp = lastPeerIp
@@ -307,7 +307,7 @@ class FileSenderService : Service() {
                 lastPeerName = name
                 lastUris = uris.map { it.toString() }
                 lastUriIndex = 0
-                currentProgressBytes = off
+                currentProgressBytes.set(off)
                 val resumePaths = pausedRemainingRelativePaths
                 pausedRemainingRelativePaths = emptyList()
                 runTransfer(ip, id, name, uris, resumeFirstOffset = off, resumeFirstTid = tid, fileIndexOffset = fi - 1, totalFileCount = fc, relativePaths = resumePaths)
@@ -396,7 +396,7 @@ class FileSenderService : Service() {
                 val transferId = if (idx == 0 && resumeFirstTid != null) resumeFirstTid else UUID.randomUUID().toString()
                 val realIdx = idx + fileIndexOffset + 1
                 lastUriIndex = idx
-                currentProgressBytes = resumeOffset
+                currentProgressBytes.set(resumeOffset)
                 InAppLogger.d("FileSenderService",
                     "file $realIdx/$finalFileCount: $name ($size b) resume=$resumeOffset tid=${transferId.take(8)}")
                 AtomController.transferState.value = TransferState.Running(
@@ -798,7 +798,7 @@ class FileSenderService : Service() {
                                 pos += read
                                 val total = progress.addAndGet(read.toLong())
                                 val displayTotal = resumeOffset + total
-                                currentProgressBytes = displayTotal
+                                currentProgressBytes.set(displayTotal)
 
                                 val now = System.currentTimeMillis()
                                 val prev = lastNotif.get()
