@@ -211,8 +211,8 @@ object FileReceiver {
             if (tidLen !in 1..256 || hashLen !in 1..128 || nameLen !in 1..512) {
                 InAppLogger.err("FileReceiver",
                     "B100-sec: bad header len tid=$tidLen hash=$hashLen name=$nameLen")
-                try { socket.close() } catch (_: Exception) {}
-                return
+                // B101a: throw -> catch releases _isBusy
+                throw IllegalArgumentException("B100-sec: bad header len")
             }
             val name = String(readN(dis, nameLen), Charsets.UTF_8)
 
@@ -224,8 +224,8 @@ object FileReceiver {
             // B75#17: cap от malicious peer (threadCount=MAX_INT → вечный session)
             if (threadCount !in 1..8) {
                 InAppLogger.d("FileReceiver", "B75: reject threadCount=" + threadCount)
-                try { socket.close() } catch (_: Exception) {}
-                return
+                // B101a: throw -> catch releases _isBusy
+                throw IllegalArgumentException("B75: reject threadCount=$threadCount")
             }
 
             InAppLogger.d("FileReceiver",
