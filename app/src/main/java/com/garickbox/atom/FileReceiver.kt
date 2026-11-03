@@ -252,10 +252,8 @@ object FileReceiver {
             }
             session.sockets.add(socket)
             registered = true
-            // B6b: при resume установить received на offset (только если session свежая)
-            if (offset > 0 && session.received.get() == 0L) {
-                session.received.set(offset)
-            }
+            // B101g: over-count fix — не праймить received здесь (multi-thread race)
+            // (было: session.received.set(offset) при offset>0 && received==0)
 
             startWatchdogOnce(session, ctx)
 
@@ -278,6 +276,13 @@ object FileReceiver {
                         }
                         pos += written
                         val total = session.received.addAndGet(written.toLong())
+                        // B101g: защита от over-count (axiom#98 — race detection)
+                        if (total > session.totalSize) {
+                            InAppLogger.err("FileReceiver",
+                                "B101g: over-count total=$total size=${session.totalSize} tid=${session.tid.take(8)}")
+                            session.failed.set(true)
+                            break
+                        }
                         session.lastProgressAt = System.currentTimeMillis()
                         FileReceiverService.updateProgress(ctx, name, total, totalSize)
                         val pct = (total * 100 / totalSize).toInt()
@@ -480,8 +485,9 @@ object FileReceiver {
             activeSessions.remove(session.tid)
             // busy уже освобождён в handleIncomingSocket
 
-            if (result.uri != null) {
-                InAppLogger.d("FileReceiver", "saved to ${result.displayPath}")
+            // B101h: на API 28 saveLegacy возвращает uri=null, но displayPath заполнен
+            if (result.uri != null || result.displayPath.isNotBlank()) {
+                InAppLogger.d("FileReceiver", "B101h: saved uri=${result.uri} path=${result.displayPath}")
                 TransferHistory.add(ctx, TransferHistory.Record(
                     id = session.tid,
                     peerName = session.peerName,
@@ -526,7 +532,15 @@ object FileReceiver {
                     }
                 }
             } else {
-                InAppLogger.d("FileReceiver", "MediaStore save failed")
+                // B101h: явный Failed вместо тихого игнора
+                InAppLogger.err("FileReceiver",
+                    "B101h: save failed uri=${result.uri} path='${result.displayPath}'")
+                val curH = AtomController.transferState.value
+                if (curH is TransferState.Running && curH.transferId == session.tid) {
+                    AtomController.transferState.value = TransferState.Failed(
+                        session.tid, session.peerName, session.name,
+                        "Не сохранилось (нет места/SELinux)", "", "")
+                }
             }
             // stop → finalizeEnd()
         } catch (e: Exception) {
