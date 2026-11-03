@@ -171,7 +171,8 @@ class MeshNode(private val ctx: Context) {
                 if (hp.peerId == myId) return
                 InAppLogger.d("MeshNode", "received HELLO from ${hp.name} @ $fromIp")
                 onHello?.invoke(HelloInfo(hp.peerId, hp.name, fromIp))
-                sendPacket(fromIp, MeshPacket(PacketType.HERE, hp.toJson()))
+                // B113: HERE = наша identity, не эхо sender. Иначе client видит свой peerId и не узнаёт GO
+                sendPacket(fromIp, MeshPacket(PacketType.HERE, HelloPayload(myId, myName).toJson()))
             }
             PacketType.HERE -> {
                 val hp = HelloPayload.fromJson(packet.payload)

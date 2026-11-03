@@ -118,17 +118,25 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        when (intent?.action) {
-            AtomWidgetProvider.ACTION_WIDGET_SEND -> pendingWidgetSend = true
-            ACTION_SHORTCUT_FIND -> pendingShortcutFind = true
-            ACTION_SHORTCUT_SEND_PEER -> {
-                pendingPeerForShareTarget = Peer(
-                    id = intent.getStringExtra("atom_peer_mac") ?: "",
-                    name = intent.getStringExtra("atom_peer_name") ?: "?",
-                    ip = "",
-                    mac = intent.getStringExtra("atom_peer_mac") ?: ""
-                )
-                pickerShownForPeer = false
+        // B113: при recreate (rotate) — не повторяем intent.action; восстанавливаем pickerShownForPeer
+        if (savedInstanceState != null) {
+            pendingWidgetSend = false
+            pendingShortcutFind = false
+            pendingPeerForShareTarget = null
+            pickerShownForPeer = savedInstanceState.getBoolean("picker_shown", false)
+        } else {
+            when (intent?.action) {
+                AtomWidgetProvider.ACTION_WIDGET_SEND -> pendingWidgetSend = true
+                ACTION_SHORTCUT_FIND -> pendingShortcutFind = true
+                ACTION_SHORTCUT_SEND_PEER -> {
+                    pendingPeerForShareTarget = Peer(
+                        id = intent.getStringExtra("atom_peer_mac") ?: "",
+                        name = intent.getStringExtra("atom_peer_name") ?: "?",
+                        ip = "",
+                        mac = intent.getStringExtra("atom_peer_mac") ?: ""
+                    )
+                    pickerShownForPeer = false
+                }
             }
         }
 
@@ -420,6 +428,11 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // B113: guard от showSendPicker на paused/finishing Activity
+        if (isFinishing || isDestroyed) {
+            InAppLogger.d("MainActivity", "B113: onNewIntent ignored (finishing)")
+            return
+        }
         when (intent?.action) {
             AtomWidgetProvider.ACTION_WIDGET_SEND -> processWidgetSend()
             ACTION_SHORTCUT_FIND -> showSendPicker()
@@ -430,11 +443,16 @@ class MainActivity : AppCompatActivity() {
                     ip = "",
                     mac = intent.getStringExtra("atom_peer_mac") ?: ""
                 )
-                // B112: pickerShownForPeer=true ДО показа — иначе onResume покажет второй диалог
                 pickerShownForPeer = true
                 showSendPicker()
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // B113: сохраняем pickerShownForPeer для recreate
+        outState.putBoolean("picker_shown", pickerShownForPeer)
     }
 
     private fun processWidgetSend() {
@@ -610,6 +628,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (pendingPeerForShareTarget != null && !pickerShownForPeer) {
             pickerShownForPeer = true
+            // B113: очищаем pending — иначе ShareTargetActivity подхватит старый peer из след. сессии
+            val peer = pendingPeerForShareTarget
+            pendingPeerForShareTarget = null
             try { intent?.action = null } catch (_: Exception) {}
             showSendPicker()
         }

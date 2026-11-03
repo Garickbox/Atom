@@ -34,6 +34,10 @@ object UpdateChecker {
     private var pendingRelease: Release? = null
 
     private val checkMutex = java.util.concurrent.atomic.AtomicBoolean(false)
+    // B113: долгоживущий scope с SupervisorJob — без утечки на каждый вызов
+    private val autoUpdateScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    private val autoUpdateMutex = java.util.concurrent.atomic.AtomicBoolean(false)
 
     // B10d: shared state для OTA-загрузки (выживает сворачивание Activity)
     @Volatile var isDownloading: Boolean = false
@@ -217,12 +221,13 @@ object UpdateChecker {
                 try { saveApkToDownloads(activity, out, release.tag) } catch (_: Exception) {}
                 if (useNotification) hideNotification(activity)
                 activity.runOnUiThread {
+                    // B113: listeners вызываем ДО isFinishing — диалог должен закрыться
+                    finishListeners.forEach { l -> try { l(true) } catch (_: Exception) {} }
                     if (activity.isFinishing || activity.isDestroyed) {
                         InAppLogger.d("UpdateChecker",
-                            "B110: skip UI после destroy, APK в ${out.absolutePath}")
+                            "B113: skip installer (destroyed), APK в ${out.absolutePath}")
                         return@runOnUiThread
                     }
-                    finishListeners.forEach { l -> try { l(true) } catch (_: Exception) {} }
                     if (onFinish != null) {
                         onFinish.invoke(true)
                     } else if (!useNotification) {
@@ -558,16 +563,18 @@ object UpdateChecker {
     fun startAutoUpdate(ctx: Context): String {
         val app = ctx.applicationContext
         if (isDownloading) return "DOWNLOADING " + (currentRelease?.tag ?: "?")
-        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-            InAppLogger.d("UpdateChecker", "B112: main thread → SCHEDULED (background)")
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                try { startAutoUpdateBlocking(app) } catch (e: Exception) {
-                    InAppLogger.err("UpdateChecker", "B112 bg check: ${e.message}")
-                }
-            }
-            return "SCHEDULED"
+        // B113: единый scope + mutex (без утечки на каждый broadcast)
+        if (!autoUpdateMutex.compareAndSet(false, true)) {
+            return "ALREADY_SCHEDULED"
         }
-        return startAutoUpdateBlocking(app)
+        autoUpdateScope.launch {
+            try { startAutoUpdateBlocking(app) } catch (e: Exception) {
+                InAppLogger.err("UpdateChecker", "B113 autoUpdate: ${e.message}")
+            } finally {
+                autoUpdateMutex.set(false)
+            }
+        }
+        return "SCHEDULED"
     }
 
     private fun startAutoUpdateBlocking(app: Context): String {

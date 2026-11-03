@@ -40,6 +40,7 @@ class QrScanActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private var pendingUris: List<Uri> = emptyList()
+    private var pendingRelativePaths: List<String?> = emptyList()  // B113
     private val handler = Handler(Looper.getMainLooper())
 
     private val permissionLauncher = registerForActivityResult(
@@ -66,6 +67,9 @@ class QrScanActivity : AppCompatActivity() {
         setContentView(R.layout.activity_qr_scan)
         statusText = findViewById(R.id.statusText)
         pendingUris = collectUris(intent)
+        // B113: atom_relative_paths для папок (иначе плоско)
+        pendingRelativePaths = intent?.getStringArrayListExtra("atom_relative_paths")
+            ?.map { it.ifBlank { null } } ?: emptyList()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED) {
@@ -221,7 +225,8 @@ class QrScanActivity : AppCompatActivity() {
             val peer = AtomController.peers.value.firstOrNull { it.ip == targetIp }
                 ?: Peer(id = "qr", name = "QR", ip = targetIp)
             if (pendingUris.isNotEmpty()) {
-                FileSenderService.startTransfer(this, peer, pendingUris)
+                // B113: передаём relative paths (папки)
+                FileSenderService.startTransfer(this, peer, pendingUris, pendingRelativePaths)
             } else {
                 Toast.makeText(this, "Нет файлов", Toast.LENGTH_SHORT).show()
             }

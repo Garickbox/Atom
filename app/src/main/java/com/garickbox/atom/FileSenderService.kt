@@ -118,7 +118,15 @@ class FileSenderService : Service() {
         // startForeground() в 5 сек, иначе RemoteServiceException FATAL.
         // B86 снял это — неверно для widget-flow. Возвращаем с реальным state
         // (Running/Paused/Idle-placeholder), не мигает "Подготовка".
-        try { startForeground(NOTIF_ID, buildInitialFgsNotif()) } catch (_: Exception) {}
+        // B113: FGS failure → stopSelf (иначе RemoteServiceException через 5с)
+        try {
+            startForeground(NOTIF_ID, buildInitialFgsNotif())
+        } catch (e: Exception) {
+            InAppLogger.err("FileSenderService", "B113: startForeground fail: ${e.message}")
+            try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+            stopSelf()
+            return
+        }
         wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
 

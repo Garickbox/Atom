@@ -49,7 +49,8 @@ object FileReceiver {
         @Volatile var lastProgressAt: Long = System.currentTimeMillis(),
         @Volatile var watchdogStarted: Boolean = false,
         val relativePath: String? = null,  // B15
-        val generation: AtomicInteger = AtomicInteger(1)  // B112: resume race guard
+        val generation: AtomicInteger = AtomicInteger(1),  // B112: resume race guard
+        val peerId: String = ""  // B113: hijack по peerId (peerName не уникален)
     )
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
@@ -60,10 +61,13 @@ object FileReceiver {
         // отвечаем ACCEPT с фактическим offset из .part (без проверки busy).
         if (offer.resumeOffset > 0) {
             val existing = activeSessions[offer.transferId]
-            // B76#9: resume разрешён ТОЛЬКО тому же peer'у (tid hijack protection)
-            if (existing != null && existing.peerName != offer.peerName) {
+            // B76#9 + B113: hijack по peerId (уникален), fallback на peerName для legacy
+            if (existing != null && (
+                (existing.peerId.isNotBlank() && offer.peerId.isNotBlank() && existing.peerId != offer.peerId) ||
+                (existing.peerId.isBlank() || offer.peerId.isBlank()) && existing.peerName != offer.peerName
+            )) {
                 InAppLogger.d("FileReceiver",
-                    "B76: reject tid hijack: existing=${existing.peerName} offer=${offer.peerName}")
+                    "B113: reject tid hijack: existing peerId=${existing.peerId.take(8)} offer peerId=${offer.peerId.take(8)}")
                 sendDecline(ctx, offer, "tid_conflict")
                 return
             }
@@ -149,7 +153,7 @@ object FileReceiver {
                 return
             }
 
-            AtomController.setTransferActive(true)
+            // B113: transferActive ++ только через FileReceiverService.onCreate (устраняет +1 leak)
             sendAccept(ctx, offer, 0L)
             InAppLogger.d("FileReceiver",
                 "CAS OK — accepted, waiting TCP (tid=${offer.transferId.take(8)})")
@@ -161,7 +165,7 @@ object FileReceiver {
             if (!accepted) {
                 InAppLogger.d("FileReceiver", "releasing busy — не приняли")
                 _isBusy.set(false)
-                AtomController.setTransferActive(false)
+                // B113: setTransferActive(false) НЕ вызываем — counter не инкрементировали
             }
         }
     }
@@ -284,6 +288,7 @@ object FileReceiver {
                     tid = tid, hash = senderHash, name = name,
                     totalSize = totalSize, threadCount = threadCount,
                     peerName = offer.peerName, relativePath = offer.relativePath,
+                    peerId = offer.peerId,  // B113
                     targetFile = directTarget,
                     partFile = wf, raf = wr, channel = wr.channel
                 )
@@ -335,7 +340,8 @@ object FileReceiver {
                 } catch (e: Exception) {
                     InAppLogger.d("FileReceiver",
                         "thread $threadIdx error: ${e.javaClass.simpleName}: ${e.message}")
-                    session.failed.set(true)
+                    // B113: gen-guard — старая нить после resume не валит новую сессию
+                    if (myGen == session.generation.get()) session.failed.set(true)
                 } finally {
                     session.sockets.remove(socket)
                     // B112: gen check — старый thread после resume не трогает counters новой сессии
@@ -375,14 +381,15 @@ object FileReceiver {
             if (!registered) {
                 _isBusy.set(false)
             } else {
-                // B29: session создана, но thread-launch не стартовал (exception
-                // между sockets.add и scope.launch). Закрываем raf/channel + release busy.
-                val s = activeSessions.remove(tidForLog)
-                if (s != null) {
-                    s.failed.set(true)
-                    try { s.channel.close() } catch (_: Exception) {}
-                    try { s.raf.close() } catch (_: Exception) {}
-                    s.partFile.delete()
+                // B113: при ошибке после sockets.add — если сессия уже заменена resume'ом,
+                // не трогаем её (иначе убьём новую)
+                val cur = activeSessions[tidForLog]
+                if (cur != null && cur.generation.get() == 1) {
+                    activeSessions.remove(tidForLog)
+                    cur.failed.set(true)
+                    try { cur.channel.close() } catch (_: Exception) {}
+                    try { cur.raf.close() } catch (_: Exception) {}
+                    cur.partFile.delete()
                 }
                 _isBusy.set(false)
             }
