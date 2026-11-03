@@ -233,7 +233,11 @@ class QrShareActivity : AppCompatActivity() {
         statusText.text = if (usingHotspot) "✅ Hotspot готов" else "✅ P2P готов"
         infoText.text = "SSID: $ssid\nПароль: $pass\nIP: $ip\nРежим: $mode"
 
-        val qrText = "WIFI:T:WPA;S:$ssid;P:$pass;IP:$ip;;"
+        // P2: fp в QR (axiom#76 — hotspot код не тронут, только строка)
+        val fp = try { com.garickbox.atom.tls.AtomIdentity.spkiFingerprint(this) } catch (_: Exception) { "" }
+        val qrText = if (fp.isNotBlank())
+            "WIFI:T:WPA;S:$ssid;P:$pass;IP:$ip;FP:$fp;;"
+        else "WIFI:T:WPA;S:$ssid;P:$pass;IP:$ip;;"
         // B102b: динамический размер по qrImage.width (phone ~400dp / TV ~1000dp)
         qrImage.post {
             try {

@@ -108,6 +108,13 @@ class QrScanActivity : AppCompatActivity() {
         val ssid = parts["S"] ?: ""
         val pass = parts["P"] ?: ""
         val ip = parts["IP"] ?: ""
+        val fp = parts["FP"] ?: ""
+        if (fp.isNotBlank()) {
+            try {
+                com.garickbox.atom.tls.TofuPinStore(this).put("qr:" + ssid, fp)
+                com.mesh.core.InAppLogger.d("QrScan", "TOFU pin saved for ssid=$ssid")
+            } catch (_: Exception) {}
+        }
         if (ssid.isBlank() || ip.isBlank()) {
             statusText.text = "Неверный QR"
             handler.postDelayed({ finish() }, 1500L)

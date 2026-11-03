@@ -310,6 +310,36 @@ class MeshNode(private val ctx: Context) {
         _activeSockets.clear()
     }
 
+    /** P2: TLS open (используется если prefs tls_enabled=true). */
+    fun openTlsTo(ctx: android.content.Context, ip: String,
+                  peerId: String, expectedSpki: String?, connectTimeoutMs: Int = 8000): Socket {
+        try {
+            val id = com.garickbox.atom.tls.AtomIdentity.load(ctx)
+            val tm = com.garickbox.atom.tls.TofuTrustManager(
+                com.garickbox.atom.tls.TofuPinStore(ctx), peerId, expectedSpki)
+            val kmf = javax.net.ssl.KeyManagerFactory.getInstance("X509").apply { init(id.keyStore, id.password) }
+            val sslCtx = javax.net.ssl.SSLContext.getInstance("TLS").apply {
+                init(kmf.keyManagers, arrayOf(tm), java.security.SecureRandom())
+            }
+            val raw = Socket().apply {
+                sendBufferSize = 4 * 1024 * 1024
+                receiveBufferSize = 4 * 1024 * 1024
+                tcpNoDelay = false
+                connect(InetSocketAddress(ip, PORT), connectTimeoutMs)
+            }
+            val ssl = sslCtx.socketFactory.createSocket(raw, ip, PORT, true) as javax.net.ssl.SSLSocket
+            ssl.useClientMode = true
+            ssl.enabledProtocols = ssl.supportedProtocols
+                .filter { it == "TLSv1.3" || it == "TLSv1.2" }.toTypedArray()
+            ssl.startHandshake()
+            InAppLogger.d("MeshNode", "TLS OK → $ip peer=$peerId proto=${ssl.session.protocol}")
+            return ssl
+        } catch (e: Exception) {
+            InAppLogger.err("MeshNode", "TLS handshake fail → $ip: ${e.message}")
+            throw e
+        }
+    }
+
     fun openTcpTo(ip: String, connectTimeoutMs: Int = 5000): Socket {
         val tcpStart = System.currentTimeMillis()
         InAppLogger.d("MeshNode", "tcp START → $ip (timeout=${connectTimeoutMs}ms)")

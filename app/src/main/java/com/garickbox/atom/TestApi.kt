@@ -74,6 +74,12 @@ object TestApi {
                     "/find_apk" -> cmdFindApk(ctx)
                     "/badge" -> cmdBadge(ctx, params["action"] ?: "get", params["n"]?.toIntOrNull() ?: 0)
                     "/verbose" -> cmdVerbose(params["on"])
+                    "/tls" -> {
+                        val on = params["on"] == "1"
+                        ctx.getSharedPreferences("atom", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean("tls_enabled", on).apply()
+                        "tls_enabled=$on (spki=${try { com.garickbox.atom.tls.AtomIdentity.spkiFingerprint(ctx).take(16) } catch (_: Exception) { "?" }})"
+                    }
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
             } catch (e: Throwable) {
