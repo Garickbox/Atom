@@ -74,6 +74,14 @@ class ShareTargetActivity : AppCompatActivity() {
         } catch (_: Exception) {}
         try { tvDialog?.dismiss() } catch (_: Exception) {}
         tvDialog = null
+        // B115peer #1: восстановить continuous discover — иначе после шаринга
+        // ProcessLifecycleOwner.onStart не сработает (процесс уже foreground)
+        try {
+            if (AtomController.appForeground) {
+                AtomController.wifiDirect?.startContinuousDiscover()
+                InAppLogger.d("ShareTarget", "B115peer: continuous discover restored")
+            }
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 
@@ -269,6 +277,8 @@ class ShareTargetActivity : AppCompatActivity() {
     private fun connectP2pQuick(mac: String, name: String) {
         InAppLogger.d("ShareTarget", "quick connect START: mac=$mac name=$name")
         val wd = AtomController.wifiDirect ?: return
+        // B115peer #1b: стоп discovery — иначе doDiscoverTick конфликтует с connect (BUSY)
+        try { wd.stopContinuousDiscover() } catch (_: Exception) {}
 
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Подключаюсь к $name…")
@@ -297,6 +307,19 @@ class ShareTargetActivity : AppCompatActivity() {
             }
         }
 
+        // B115peer #3: early fail на onError (BUSY / ERROR) — не ждём 20s
+        wd.onError = err@{ err ->
+            InAppLogger.d("ShareTarget", "quick connect error: $err")
+            if (done) return@err
+            done = true
+            try { timeoutJob.cancel() } catch (_: Exception) {}
+            try { reinvokeCheckJob.cancel() } catch (_: Exception) {}
+            try { dialog.dismiss() } catch (_: Exception) {}
+            try { wd.disconnect() } catch (_: Exception) {}
+            Toast.makeText(this@ShareTargetActivity, err, Toast.LENGTH_LONG).show()
+            finish()
+        }
+
         wd.onConnected = onConnected@ { conn ->
             if (done) return@onConnected
             done = true
@@ -311,8 +334,9 @@ class ShareTargetActivity : AppCompatActivity() {
             }
             lifecycleScope.launch {
                 delay(2500)
+                // B115peer #5: exact GO IP
                 val peer = AtomController.peers.value.firstOrNull {
-                    it.ip.startsWith("192.168.49.") && it.id != AtomController.myId
+                    it.ip == conn.groupOwnerAddress && it.id != AtomController.myId
                 }
                 try { dialog.dismiss() } catch (_: Exception) {}
                 if (peer != null) {
@@ -484,7 +508,8 @@ class ShareTargetActivity : AppCompatActivity() {
     private fun connectP2pTv(mac: String, name: String) {
         InAppLogger.d("ShareTarget", "TV connect START: mac=$mac name=$name")
         val wd = AtomController.wifiDirect ?: return
-
+        // B115peer #1b
+        try { wd.stopContinuousDiscover() } catch (_: Exception) {}
         tvDialog?.dismiss()
         tvDialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Подключаюсь к $name…")
@@ -521,8 +546,9 @@ class ShareTargetActivity : AppCompatActivity() {
 
             lifecycleScope.launch {
                 delay(2500)
+                // B115peer #5: exact GO IP
                 val peer = AtomController.peers.value.firstOrNull {
-                    it.ip.startsWith("192.168.49.") && it.id != AtomController.myId
+                    it.ip == conn.groupOwnerAddress && it.id != AtomController.myId
                 }
                 tvDialog?.dismiss()
                 if (peer != null) {
@@ -625,6 +651,8 @@ class ShareTargetActivity : AppCompatActivity() {
     private fun connectP2p(mac: String, name: String, parent: BottomSheetDialog) {
         InAppLogger.d("ShareTarget", "connect START: mac=$mac name=$name")
         val wd = AtomController.wifiDirect ?: return
+        // B115peer #1b
+        try { wd.stopContinuousDiscover() } catch (_: Exception) {}
         val b = SheetSearchBinding.inflate(LayoutInflater.from(this))
         parent.setContentView(b.root)
         b.spinner.visibility = View.VISIBLE
@@ -660,8 +688,9 @@ class ShareTargetActivity : AppCompatActivity() {
             // Ждём 2-3 сек чтобы пир узнал наш IP / мы узнали его IP
             lifecycleScope.launch {
                 delay(2500)
+                // B115peer #5: exact GO IP
                 val peer = AtomController.peers.value.firstOrNull {
-                    it.ip.startsWith("192.168.49.") && it.id != AtomController.myId
+                    it.ip == conn.groupOwnerAddress && it.id != AtomController.myId
                 }
                 if (peer != null) {
                     InAppLogger.d("ShareTarget", "p2p peer resolved: ${peer.name} @ ${peer.ip}")

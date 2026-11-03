@@ -611,6 +611,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // B77: one-shot battery prompt — независим от OnboardingHelper.isDone
         maybePromptBatteryOnce()
+        // B115peer #1c: страховка — если discovery был остановлен (шаринг/QR), возобновляем
+        try { AtomController.wifiDirect?.startContinuousDiscover() } catch (_: Exception) {}
         // B79: при возврате в Атом — сбросить badge counter
         try { BadgeHelper.clear(this) } catch (_: Exception) {}
         try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
