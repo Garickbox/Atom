@@ -73,8 +73,15 @@ object FileReceiver {
                 val actualOffset = if (actualReceived > 0 && actualReceived <= offer.size) actualReceived else 0L
                 InAppLogger.d("FileReceiver",
                     "resume: tid=${offer.transferId.take(8)} offer=${offer.resumeOffset} received=$actualReceived → ACK $actualOffset")
+                // B110: очистка состояния перед resume (axiom#98 — обе стороны)
+                existing.sockets.forEach { try { it.close() } catch (_: Exception) {} }
+                existing.sockets.clear()
+                existing.finished.set(0)
+                existing.failed.set(false)
                 existing.paused.set(false)
                 existing.lastProgressAt = System.currentTimeMillis()
+                InAppLogger.d("FileReceiver",
+                    "B110: resume tid=${offer.transferId.take(8)} reset sockets/finished/failed")
                 sendAccept(ctx, offer, actualOffset)
                 return
             } else {

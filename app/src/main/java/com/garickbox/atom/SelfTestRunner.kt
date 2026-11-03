@@ -157,8 +157,18 @@ object SelfTestRunner {
             val m = ctx.getSystemService(Context.WIFI_P2P_SERVICE)
                 as? android.net.wifi.p2p.WifiP2pManager
             if (m == null) return TestResult("P2P группа", true, "не поддерживается")
-            val ch = m.initialize(ctx, android.os.Looper.getMainLooper()) {}
+            // B110: переиспользуем channel из AtomController.wifiDirect,
+            // иначе каждый selftest создаёт новый channel → framework BUSY
+            val existing = try {
+                AtomController.wifiDirect
+            } catch (_: Exception) { null }
+            if (existing == null) return TestResult("P2P группа", true, "skip (wifiDirect null)")
+            var ch: android.net.wifi.p2p.WifiP2pManager.Channel? = null
+            try {
+                ch = m.initialize(ctx, android.os.Looper.getMainLooper()) {}
+            } catch (_: Exception) {}
             if (ch == null) return TestResult("P2P группа", true, "channel null (skip)")
+            InAppLogger.d("SelfTest", "B110: checkP2pStale reuses manager channel")
             var res: TestResult? = null
             val latch = java.util.concurrent.CountDownLatch(1)
             try {
