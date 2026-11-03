@@ -64,7 +64,7 @@ object AtomIdentity {
         b.addExtension(Extension.basicConstraints, true, BasicConstraints(false))
         b.addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.digitalSignature))
         b.addExtension(Extension.extendedKeyUsage, false,
-            ExtendedKeyUsage(listOf(KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth)))
+            ExtendedKeyUsage(arrayOf(KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth)))
         val signer = JcaContentSignerBuilder("SHA256withECDSA").build(kp.private)
         val holder: org.bouncycastle.cert.X509CertificateHolder = b.build(signer)
         val der: ByteArray = holder.encoded
