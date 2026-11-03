@@ -240,15 +240,8 @@ class FileSenderService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                // Синхронно сообщить receiver до отмены корутины
-                try {
-                    val cancelJson = JSONObject().apply { put("tid", cur.transferId) }
-                    // B86: 300ms вместо 800 — задержка до Paused state была заметна
-                    AtomController.meshNode?.sendPacketBlocking(
-                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 300L
-                    )
-                } catch (_: Exception) {}
-
+                // B100f axiom#34: state=Paused ПЕРВЫМ ДЕЛОМ — иначе повторный
+                // tap Pause (за 50-300ms пока sendPacketBlocking) снова пройдёт guard.
                 pausedOffset = currentProgressBytes.get()
                 pausedTid = cur.transferId
                 pausedName = cur.fileName
@@ -259,6 +252,19 @@ class FileSenderService : Service() {
                 pausedFileCount = cur.fileCount
                 pausedRemainingUris = lastUris.drop(lastUriIndex)
                 pausedRemainingRelativePaths = lastRelativePaths.drop(lastUriIndex)
+                AtomController.transferState.value = TransferState.Paused(
+                    cur.transferId, cur.peerName, cur.fileName,
+                    pausedOffset, cur.bytesTotal, cur.fileIndex, cur.fileCount
+                )
+
+                // Синхронно сообщить receiver — теперь уже в Paused state
+                try {
+                    val cancelJson = JSONObject().apply { put("tid", cur.transferId) }
+                    AtomController.meshNode?.sendPacketBlocking(
+                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 300L
+                    )
+                } catch (_: Exception) {}
+
                 try { com.mesh.core.CompactLog.pause(cur.fileIndex) } catch (_: Exception) {}
                 InAppLogger.d("FileSenderService",
                     "pause: offset=$pausedOffset/${cur.bytesTotal} remaining=${pausedRemainingUris.size}")
@@ -266,10 +272,6 @@ class FileSenderService : Service() {
                 currentJob?.cancel()
                 keepAliveJob?.cancel()
                 keepAliveJob = null
-                AtomController.transferState.value = TransferState.Paused(
-                    cur.transferId, cur.peerName, cur.fileName,
-                    pausedOffset, cur.bytesTotal, cur.fileIndex, cur.fileCount
-                )
                 TransferNotification.update(this, NOTIF_ID,
                     TransferNotification.buildPaused(
                         this, cur.transferId, cur.peerName, cur.fileName,
