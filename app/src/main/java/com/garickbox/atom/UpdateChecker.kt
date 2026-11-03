@@ -34,10 +34,16 @@ object UpdateChecker {
     private var pendingRelease: Release? = null
 
     private val checkMutex = java.util.concurrent.atomic.AtomicBoolean(false)
+    // B119: TTL-кеш checkForUpdate (5 мин) — GitHub 60 req/hour для unauth
+    @Volatile private var lastCheckAt: Long = 0L
+    @Volatile private var lastRelease: Release? = null
+    private val CHECK_TTL_MS = 5 * 60 * 1000L
     // B113: долгоживущий scope с SupervisorJob — без утечки на каждый вызов
     private val autoUpdateScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     private val autoUpdateMutex = java.util.concurrent.atomic.AtomicBoolean(false)
+    // B119: mutex для downloadAndInstall — не даёт 2 параллельным download'ам
+    private val downloadMutex = java.util.concurrent.atomic.AtomicBoolean(false)
 
     // B10d: shared state для OTA-загрузки (выживает сворачивание Activity)
     @Volatile var isDownloading: Boolean = false
@@ -61,6 +67,63 @@ object UpdateChecker {
         if (!finishListeners.contains(l)) finishListeners.add(l)
     }
     fun removeFinishListener(l: (Boolean) -> Unit) { finishListeners.remove(l) }
+
+    /** B119: детальный результат — отличаем «нет обновления» от «ошибка сети». */
+    sealed class CheckResult {
+        data class Available(val release: Release) : CheckResult()
+        object UpToDate : CheckResult()
+        data class Error(val message: String) : CheckResult()
+    }
+
+    suspend fun checkForUpdateDetailed(context: Context): CheckResult = withContext(Dispatchers.IO) {
+        // B119: TTL-кеш — не спамим GitHub (60 req/hour unauth)
+        val now = System.currentTimeMillis()
+        if (now - lastCheckAt < CHECK_TTL_MS) {
+            val cached = lastRelease
+            return@withContext if (cached != null) CheckResult.Available(cached)
+                else CheckResult.UpToDate
+        }
+        try {
+            val client = OkHttpClient()
+            val req = Request.Builder()
+                .url(API)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "Atom-Android")
+                .build()
+            val resp = client.newCall(req).execute()
+            if (!resp.isSuccessful) {
+                InAppLogger.d("UpdateChecker", "B119: http ${resp.code}")
+                return@withContext CheckResult.Error("HTTP ${resp.code}")
+            }
+            val body = resp.body?.string()
+            if (body == null) {
+                return@withContext CheckResult.Error("empty body")
+            }
+            val json = JSONObject(body)
+            val tag = json.getString("tag_name")
+            val buildNum = tag.removePrefix("build-").toIntOrNull()
+                ?: return@withContext CheckResult.Error("bad tag: $tag")
+            val current = currentVersionCode(context)
+            if (buildNum <= current) {
+                lastCheckAt = now
+                lastRelease = null
+                return@withContext CheckResult.UpToDate
+            }
+            val assets = json.getJSONArray("assets")
+            if (assets.length() == 0) return@withContext CheckResult.Error("no assets")
+            val asset = assets.getJSONObject(0)
+            val rel = Release(buildNum, tag,
+                asset.getString("browser_download_url"),
+                asset.getString("name"))
+            lastCheckAt = now
+            lastRelease = rel
+            CheckResult.Available(rel)
+        } catch (e: Exception) {
+            InAppLogger.d("UpdateChecker", "B119: check error: ${e.message}")
+            // НЕ обновляем lastCheckAt при error — следующий вызов попробует снова
+            CheckResult.Error(e.message ?: "network error")
+        }
+    }
 
     suspend fun checkForUpdate(context: Context): Release? = withContext(Dispatchers.IO) {
         if (!checkMutex.compareAndSet(false, true)) {
@@ -145,6 +208,13 @@ object UpdateChecker {
         onProgress: ((Long, Long) -> Unit)? = null,
         onFinish: ((Boolean) -> Unit)? = null
     ) {
+        // B119: mutex — 2 параллельных download'а (manual + TestApi) не должны пересекаться
+        if (!downloadMutex.compareAndSet(false, true)) {
+            InAppLogger.d("UpdateChecker", "B119: download already in progress — skip")
+            try { onFinish?.invoke(false) } catch (_: Exception) {}
+            return
+        }
+        try {
         InAppLogger.d("UpdateChecker", "download start: ${release.apkUrl}")
         isDownloading = true
         currentRelease = release
@@ -256,6 +326,11 @@ object UpdateChecker {
                 currentRelease = null
             }
         }.start()
+        } finally {
+            // B119: release после того как Thread запущен (или упал)
+            // Фактический download идёт в Thread, поэтому mutex держим ТОЛЬКО для spawn
+            downloadMutex.set(false)
+        }
     }
 
     private fun downloadWithRanges(
@@ -320,8 +395,8 @@ object UpdateChecker {
                                 raf.write(buf, 0, read)
                                 val total = downloaded.addAndGet(read.toLong())
                                 val now = System.currentTimeMillis()
-                                if (now - lastNotif.get() > 400) {
-                                    lastNotif.set(now)
+                                val prev = lastNotif.get()
+                                if (now - prev > 400 && lastNotif.compareAndSet(prev, now)) {
                                     onProgress(total, totalSize)
                                 }
                             }
@@ -586,6 +661,11 @@ object UpdateChecker {
         } ?: return "ALREADY_LATEST build=" + currentVersionCode(app)
         if (Build.VERSION.SDK_INT >= 26 && !canInstall(app)) {
             return "MISSING_PERMISSION REQUEST_INSTALL_PACKAGES"
+        }
+        // B119: guard — manual downloadAndInstall может уже идти
+        if (isDownloading) {
+            InAppLogger.d("UpdateChecker", "B119: auto-update skipped — manual in progress")
+            return "DOWNLOADING " + (currentRelease?.tag ?: "?")
         }
         isDownloading = true
         currentRelease = release

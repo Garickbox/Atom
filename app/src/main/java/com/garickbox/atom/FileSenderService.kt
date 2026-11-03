@@ -647,12 +647,12 @@ class FileSenderService : Service() {
             lastFailReason = "declined:" + reason
             // B115: полное покрытие reason-кодов (technical → human)
             val humanReason = when (reason) {
-                "busy" -> "получатель занят — принимает другой файл"
-                "no_space" -> "на устройстве получателя нет места"
-                "tid_conflict" -> "конфликт сессии — попробуйте ещё раз"
-                "bad_size" -> "некорректный размер файла"
-                "declined" -> "получатель отклонил приём"
-                else -> "ошибка передачи"
+                "busy" -> "Получатель занят — принимает другой файл"
+                "no_space" -> "На устройстве получателя нет места"
+                "tid_conflict" -> "Конфликт сессии — попробуйте ещё раз"
+                "bad_size" -> "Некорректный размер файла"
+                "declined" -> "Получатель отклонил приём"
+                else -> "Ошибка передачи"
             }
             AtomController.transferState.value = TransferState.Failed(
                 transferId, peerName, name, humanReason, peerIp, contentHash

@@ -221,25 +221,34 @@ class MainActivity : AppCompatActivity() {
                 .setCancelable(true)
                 .show()
 
-            val release = UpdateChecker.checkForUpdate(this@MainActivity)
-            if (release == null) {
-                dialog.dismiss()
-                InAppLogger.d("MainActivity", "no update")
-                Toast.makeText(this@MainActivity,
-                    "✅ Актуальная версия build-${BuildConfig.VERSION_CODE}",
-                    Toast.LENGTH_SHORT).show()
-                return@launch
+            // B119: используем Detailed — отличаем «нет обновления» от «ошибка сети»
+            when (val result = UpdateChecker.checkForUpdateDetailed(this@MainActivity)) {
+                is UpdateChecker.CheckResult.UpToDate -> {
+                    dialog.dismiss()
+                    InAppLogger.d("MainActivity", "no update (up-to-date)")
+                    Toast.makeText(this@MainActivity,
+                        "✅ Актуальная версия build-${BuildConfig.VERSION_CODE}",
+                        Toast.LENGTH_SHORT).show()
+                }
+                is UpdateChecker.CheckResult.Error -> {
+                    dialog.dismiss()
+                    InAppLogger.d("MainActivity", "check error: ${result.message}")
+                    Toast.makeText(this@MainActivity,
+                        "⚠️ Не удалось проверить: ${result.message}",
+                        Toast.LENGTH_LONG).show()
+                }
+                is UpdateChecker.CheckResult.Available -> {
+                    val release = result.release
+                    InAppLogger.d("MainActivity", "update found: ${release.tag}")
+                    dialog.dismiss()
+                    showDownloadDialog(release)
+                    attachDownloadListeners()
+                    UpdateChecker.downloadAndInstall(
+                        activity = this@MainActivity,
+                        release = release
+                    )
+                }
             }
-
-            InAppLogger.d("MainActivity", "update found: ${release.tag}")
-
-            dialog.dismiss()
-            showDownloadDialog(release)
-            attachDownloadListeners()
-            UpdateChecker.downloadAndInstall(
-                activity = this@MainActivity,
-                release = release
-            )
         }
     }
 
