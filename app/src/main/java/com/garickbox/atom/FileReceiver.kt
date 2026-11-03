@@ -83,7 +83,13 @@ object FileReceiver {
                     sendDecline(ctx, offer, "busy")
                     return
                 }
-                _isBusy.set(true)  // B116: восстанавливаем busy после паузы
+                // B117: CAS — не отнимаем busy у параллельного fresh offer
+                if (!_isBusy.compareAndSet(false, true)) {
+                    InAppLogger.d("FileReceiver",
+                        "B117: resume busy CAS failed — parallel offer won")
+                    sendDecline(ctx, offer, "busy")
+                    return
+                }
                 // B10a: partFile.length() = totalSize всегда (raf.setLength() создаёт файл сразу).
                 // Используем received.get() — реальное число полученных байт.
                 val actualReceived = existing.received.get()
@@ -219,6 +225,7 @@ object FileReceiver {
         offer: MeshNode.FileOffer
     ) {
         var registered = false
+        var staleTcp = false  // B117: stale TCP сброс busy запрещён
         var tidForLog: String = "?"
         try {
             socket.receiveBufferSize = 4 * 1024 * 1024
@@ -236,6 +243,7 @@ object FileReceiver {
             if (tid != offer.transferId) {
                 InAppLogger.err("FileReceiver",
                     "B116: stale TCP tid=${tid.take(8)} != offer ${offer.transferId.take(8)}")
+                staleTcp = true  // B117: flag — не сбрасывать busy чужого transfer в catch
                 throw IllegalArgumentException("B116: stale TCP (tid mismatch)")
             }
 
@@ -402,7 +410,13 @@ object FileReceiver {
                 "handleIncomingSocket error ($phase): $errClass: ${e.message}")
             try { socket.close() } catch (_: Exception) {}
             if (!registered) {
-                _isBusy.set(false)
+                // B117: при stale TCP busy принадлежит новой сессии — не сбрасываем
+                if (!staleTcp) {
+                    _isBusy.set(false)
+                } else {
+                    InAppLogger.d("FileReceiver",
+                        "B117: stale TCP — keep busy (owned by new transfer)")
+                }
             } else {
                 val cur = activeSessions[tidForLog]
                 // B114: _isBusy сбрасываем ТОЛЬКО если сессия ещё своя (gen==1),
@@ -710,6 +724,16 @@ fun cancelActiveReceive(ctx: Context) {
         if (session != null) {
             session.paused.set(true)
             session.lastProgressAt = System.currentTimeMillis()
+            // B117: на receive-side переводим state Running → Paused
+            val cur = AtomController.transferState.value
+            if (cur is TransferState.Running && cur.transferId == transferId) {
+                AtomController.transferState.value = TransferState.Paused(
+                    cur.transferId, cur.peerName, cur.fileName,
+                    cur.bytesSent, cur.bytesTotal, cur.fileIndex, cur.fileCount
+                )
+                InAppLogger.d("FileReceiver",
+                    "B117: state Running→Paused for receiver (tid=${transferId.take(8)})")
+            }
             InAppLogger.d("FileReceiver", "session paused: ${transferId.take(8)}")
         } else {
             InAppLogger.d("FileReceiver", "onPause: no session for ${transferId.take(8)}")
