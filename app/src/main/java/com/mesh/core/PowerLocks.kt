@@ -15,7 +15,11 @@ object PowerLocks {
         return try {
             val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE)
                 as? WifiManager ?: return null
-            val lock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, tag)
+            // B100g: LOW_LATENCY (API 29+) — отключает Wi-Fi power save
+            val mode = if (android.os.Build.VERSION.SDK_INT >= 29)
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            else WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            val lock = wm.createWifiLock(mode, tag)
             lock.setReferenceCounted(false)
             lock.acquire()
             InAppLogger.d("PowerLocks", "wifi lock acquired: $tag")

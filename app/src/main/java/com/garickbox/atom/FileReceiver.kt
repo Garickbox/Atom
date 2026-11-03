@@ -346,7 +346,7 @@ object FileReceiver {
                             }
                         }
                     }
-                    try { socket.close() } catch (_: Exception) {}
+                    gracefulClose(socket)
                 }
             }
         } catch (e: Exception) {
@@ -354,7 +354,7 @@ object FileReceiver {
             val phase = if (tidForLog == "?") "before header" else "after header tid=${tidForLog.take(8)}"
             InAppLogger.d("FileReceiver",
                 "handleIncomingSocket error ($phase): $errClass: ${e.message}")
-            try { socket.close() } catch (_: Exception) {}
+            gracefulClose(socket)
             if (!registered) {
                 _isBusy.set(false)
             } else {
@@ -370,6 +370,22 @@ object FileReceiver {
                 _isBusy.set(false)
             }
         }
+    }
+
+    /** B100g: graceful close — drain unread data, иначе RST → ConnectionReset на sender */
+    private fun gracefulClose(socket: Socket, drainMs: Long = 500L) {
+        try { socket.shutdownOutput() } catch (_: Exception) {}
+        try {
+            socket.soTimeout = drainMs.toInt()
+            val buf = ByteArray(4096)
+            var total = 0L
+            while (total < 4L * 1024 * 1024) {
+                val n = socket.getInputStream().read(buf)
+                if (n < 0) break
+                total += n
+            }
+        } catch (_: Exception) {}
+        gracefulClose(socket)
     }
 
     private fun readN(dis: DataInputStream, n: Int): ByteArray {
