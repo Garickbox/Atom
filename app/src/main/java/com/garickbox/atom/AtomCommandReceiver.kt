@@ -45,6 +45,19 @@ class AtomCommandReceiver : BroadcastReceiver() {
             ACTION_SEND -> {
                 val mac = intent.getStringExtra("peer_mac") ?: ""
                 val name = intent.getStringExtra("peer_name") ?: "?"
+                if (mac.isBlank()) {
+                    try {
+                        val i = Intent(ctx, MainActivity::class.java).apply {
+                            action = MainActivity.ACTION_SHORTCUT_FIND
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(i)
+                        InAppLogger.d("AtomCmd", "SEND: empty mac → open picker")
+                    } catch (e: Exception) {
+                        InAppLogger.err("AtomCmd", "SEND empty: ${e.message}")
+                    }
+                    return
+                }
                 try {
                     val i = Intent(ctx, MainActivity::class.java).apply {
                         this.action = MainActivity.ACTION_SHORTCUT_SEND_PEER

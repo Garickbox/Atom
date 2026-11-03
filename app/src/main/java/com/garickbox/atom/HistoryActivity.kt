@@ -191,7 +191,9 @@ class HistoryActivity : AppCompatActivity() {
         if (rec.savedPath.isNotBlank()) {
             // Попытка открыть файл (для сохранённых из Download/Atom)
             try {
-                val uri = Uri.fromFile(java.io.File(rec.savedPath))
+                val file = java.io.File(rec.savedPath)
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file)
                 val mime = android.webkit.MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(rec.savedPath.substringAfterLast('.', "").lowercase())
                     ?: "*/*"

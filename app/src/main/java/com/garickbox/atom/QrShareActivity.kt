@@ -231,7 +231,8 @@ class QrShareActivity : AppCompatActivity() {
     private fun showQr(ssid: String, pass: String, ip: String, mode: String) {
         InAppLogger.d("QrServer", "READY mode=$mode ssid=$ssid ip=$ip")
         statusText.text = if (usingHotspot) "✅ Hotspot готов" else "✅ P2P готов"
-        infoText.text = "SSID: $ssid\nПароль: $pass\nIP: $ip\nРежим: $mode"
+        val displayPass = if (TvHelper.isTv(this)) pass else "••••••••"
+        infoText.text = "SSID: $ssid\nПароль: $displayPass\nIP: $ip\nРежим: $mode"
 
         val qrText = "WIFI:T:WPA;S:$ssid;P:$pass;IP:$ip;;"
         // B102b: динамический размер по qrImage.width (phone ~400dp / TV ~1000dp)

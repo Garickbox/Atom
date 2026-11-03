@@ -101,9 +101,15 @@ class WidgetReceiveService : Service() {
     private fun scheduleAutoStop() {
         // B74 code-review#7: gen-counter — старый поток не должен убивать новую сессию
         val myGen = autoStopGen
+        val startedAt = System.currentTimeMillis()
         Thread {
             try {
                 while (true) {
+                    // B108: hard limit 2h — предотвращает вечный WakeLock при зависшем isBusy
+                    if (System.currentTimeMillis() - startedAt > 2 * 60 * 60 * 1000L) {
+                        InAppLogger.d("WidgetReceive", "B108: hard limit 2h → stopSelf")
+                        break
+                    }
                     if (myGen != autoStopGen) return@Thread
                     val remain = activeUntil - System.currentTimeMillis()
                     if (remain > 0) Thread.sleep(remain)

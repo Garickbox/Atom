@@ -855,7 +855,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SelfTestActivity::class.java))
         }
         b.tvBtnSettings.setOnClickListener {
-            startActivity(Intent(this, NameSetupActivity::class.java))
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
         b.tvBtnQr.setOnClickListener {
             startActivity(Intent(this, QrShareActivity::class.java))

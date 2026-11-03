@@ -137,7 +137,18 @@ class SettingsActivity : AppCompatActivity() {
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Известные peers (" + peers.size + ")")
-            .setItems(labels, null)
+            .setItems(labels) { _, which ->
+                val peer = peers[which]
+                AlertDialog.Builder(this)
+                    .setTitle("Удалить ${peer.name}?")
+                    .setMessage(peer.mac)
+                    .setPositiveButton("Удалить") { _, _ ->
+                        AtomController.removeKnownP2pPeer(peer.mac)
+                        showPeersDialog()
+                    }
+                    .setNegativeButton("Отмена", null)
+                    .show()
+            }
             .setPositiveButton("Закрыть", null)
             .show()
     }

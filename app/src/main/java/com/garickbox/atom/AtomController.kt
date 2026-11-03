@@ -218,6 +218,23 @@ object AtomController {
         }
     }
 
+    /** B108: удаление peer из known (Settings) */
+    fun removeKnownP2pPeer(mac: String) {
+        synchronized(knownP2pLock) {
+            val current = getKnownP2pPeers().toMutableList()
+            current.removeAll { it.mac == mac }
+            val arr = org.json.JSONArray()
+            current.forEach { p ->
+                arr.put(org.json.JSONObject().apply {
+                    put("mac", p.mac); put("name", p.name); put("ts", p.lastConnectedMs)
+                })
+            }
+            prefs.edit().putString("known_p2p_peers", arr.toString()).apply()
+            InAppLogger.d("AtomController", "B108: removed peer $mac")
+            try { onKnownPeersUpdated?.invoke(current.take(3)) } catch (_: Exception) {}
+        }
+    }
+
     fun hasName(): Boolean = myName.isNotBlank()
 
 

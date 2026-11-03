@@ -210,10 +210,14 @@ class ShareTargetActivity : AppCompatActivity() {
             }
         }
         b.scanRow.setOnClickListener {
-            Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
+            parent.dismiss()
+            startActivity(Intent(this, QrScanActivity::class.java))
+            finish()
         }
         b.showQrRow.setOnClickListener {
-            Toast.makeText(this, "QR будет в следующем патче", Toast.LENGTH_SHORT).show()
+            parent.dismiss()
+            startActivity(Intent(this, QrShareActivity::class.java))
+            finish()
         }
         b.backBtn.setOnClickListener { showStep1() }
     }
