@@ -61,28 +61,40 @@ class SettingsActivity : AppCompatActivity() {
         b.myIdValue.text = AtomController.myId.take(8) + "…"
 
         b.forceUpdateRow.setOnClickListener {
+            // B120: forceUpdate = переустановка из скачанного APK, БЕЗ fallback на check
             UpdateChecker.setForceReinstall(true)
-            val ready = UpdateChecker.findDownloadedApk(this)
-            if (ready != null) {
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Переустановить")
-                    .setMessage("Найден " + ready.name + ". Установить заново?")
-                    .setPositiveButton("Установить") { _, _ ->
-                        try {
-                            UpdateChecker.installApkFromUriPublic(this, ready.uri)
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(this,
-                                "Ошибка: " + e.message, android.widget.Toast.LENGTH_LONG).show()
+            try {
+                val ready = UpdateChecker.findDownloadedApk(this)
+                if (ready != null) {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Переустановить")
+                        .setMessage("Найден " + ready.name + ". Установить заново?")
+                        .setPositiveButton("Установить") { _, _ ->
+                            try {
+                                UpdateChecker.installApkFromUriPublic(this, ready.uri)
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(this,
+                                    "Ошибка: " + e.message, android.widget.Toast.LENGTH_LONG).show()
+                            }
                         }
-                    }
-                    .setNegativeButton("Отмена", null)
-                    .show()
-            } else {
-                // Нет скачанного APK → обычный /update
-                val r = UpdateChecker.startAutoUpdate(this)
-                android.widget.Toast.makeText(this, "OTA: " + r, android.widget.Toast.LENGTH_LONG).show()
+                        .setNegativeButton("Отмена", null)
+                        .show()
+                } else {
+                    android.widget.Toast.makeText(this,
+                        "Нет скачанного APK — нажми 🔄 в тулбаре",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                UpdateChecker.setForceReinstall(false)
             }
-            UpdateChecker.setForceReinstall(false)
+        }
+
+        // B120: ДИАГНОСТИКА
+        b.selfTestRow.setOnClickListener {
+            startActivity(Intent(this, SelfTestActivity::class.java))
+        }
+        b.logViewerRow.setOnClickListener {
+            startActivity(Intent(this, LogViewerActivity::class.java))
         }
 
         b.clearHistoryRow.setOnClickListener {

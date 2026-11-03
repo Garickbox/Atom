@@ -112,7 +112,7 @@
                 android:clickable="true" android:focusable="true">
                 <TextView
                     android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="⬆️ Проверить обновления" android:textSize="15sp" />
+                    android:text="⬆️ Переустановить APK" android:textSize="15sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -139,6 +139,42 @@
                 <TextView
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="📋 Очистить логи" android:textSize="15sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp" android:paddingTop="24dp"
+                android:paddingEnd="16dp" android:paddingBottom="8dp"
+                android:text="ДИАГНОСТИКА"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:id="@+id/selfTestRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="🔧 Самопроверка" android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/logViewerRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <TextView
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="📋 Логи + Самопроверка" android:textSize="15sp" />
             </LinearLayout>
 
             <TextView

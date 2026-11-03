@@ -93,7 +93,8 @@ object InAppLogger {
 
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
-        verboseEnabled = prefs?.getBoolean("debug_verbose", false) ?: false
+        // B120: verbose always ON (не из prefs) — диагностика по умолчанию
+        verboseEnabled = true
         val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
         base.mkdirs()
         dir = base

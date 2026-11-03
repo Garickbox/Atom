@@ -34,7 +34,44 @@ class LogViewerActivity : AppCompatActivity() {
         }
         b.btnSaveToDownloads.setOnClickListener { saveLogToDownloads() }
         b.btnClear.setOnClickListener { clearLog() }
-        loadLog()
+        // B120: авто-самопроверка при открытии логов
+        loadSelfTestAndLog()
+    }
+
+    private fun loadSelfTestAndLog() {
+        b.logText.text = "Запуск самопроверки…"
+        lifecycleScope.launch {
+            try {
+                val results = SelfTestRunner.runAll(this@LogViewerActivity)
+                val ok = results.count { it.passed }
+                val sb = StringBuilder()
+                sb.appendLine("═══ САМОПРОВЕРКА: $ok/${results.size} ═══")
+                results.forEach { r ->
+                    sb.append(if (r.passed) "✅" else "❌")
+                    sb.append(" ${r.name}: ${r.detail}
+")
+                }
+                sb.appendLine()
+                sb.appendLine("═══ LOG ═══")
+                val file = InAppLogger.getLogFile()
+                if (file == null) {
+                    sb.appendLine("(лог пуст — verbose всегда ON, но активности не было)")
+                } else {
+                    try {
+                        sb.append(file.readText())
+                    } catch (e: Exception) {
+                        sb.appendLine("Ошибка чтения: ${e.message}")
+                    }
+                }
+                b.logText.text = sb.toString()
+                b.scrollView.post { b.scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            } catch (e: Exception) {
+                b.logText.text = "Ошибка самопроверки: ${e.message}\n\n═══ LOG ═══\n${
+                    try { InAppLogger.getLogFile()?.readText() ?: "(пусто)" }
+                    catch (_: Exception) { "(ошибка)" }
+                }"
+            }
+        }
     }
 
     private fun loadLog() {
@@ -98,11 +135,14 @@ class LogViewerActivity : AppCompatActivity() {
     }
 
     private fun clearLog() {
-        val file = InAppLogger.getLogFile() ?: return
+        val file = InAppLogger.getLogFile() ?: run {
+            Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show()
+            return
+        }
         try {
             file.delete()
             Toast.makeText(this, "Лог очищен", Toast.LENGTH_SHORT).show()
-            loadLog()
+            loadSelfTestAndLog()
         } catch (e: Exception) {
             Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
         }

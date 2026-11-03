@@ -509,48 +509,6 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_check_update -> { checkUpdate(); true }
-            R.id.action_self_test -> {
-                startActivity(Intent(this, SelfTestActivity::class.java)); true
-            }
-            R.id.action_view_log -> {
-                startActivity(Intent(this, LogViewerActivity::class.java)); true
-            }
-            R.id.action_clear_history -> {
-                TransferHistory.clear(this)
-                renderHistory()
-                android.widget.Toast.makeText(this, "История очищена", android.widget.Toast.LENGTH_SHORT).show()
-                true
-            }
-            R.id.action_toggle_verbose -> {
-                val newVal = !com.mesh.core.InAppLogger.isVerbose()
-                com.mesh.core.InAppLogger.setVerbose(newVal)
-                Toast.makeText(this,
-                    if (newVal) "🐛 Verbose log: ON" else "Verbose log: OFF",
-                    Toast.LENGTH_SHORT).show()
-                true
-            }
-            R.id.action_share_log -> {
-                val f = com.mesh.core.CompactLog.getLogFile()
-                    ?: com.mesh.core.InAppLogger.getErrFile()
-                    ?: com.mesh.core.InAppLogger.getLogFile()
-                if (f == null) {
-                    Toast.makeText(this, "Нет логов", Toast.LENGTH_SHORT).show()
-                } else {
-                    try {
-                        val uri = androidx.core.content.FileProvider.getUriForFile(
-                            this, "$packageName.fileprovider", f)
-                        val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivity(android.content.Intent.createChooser(i, "Поделиться"))
-                    } catch (e: Exception) {
-                        Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                }
-                true
-            }
             R.id.action_history -> {
                 startActivity(Intent(this, HistoryActivity::class.java)); true
             }
