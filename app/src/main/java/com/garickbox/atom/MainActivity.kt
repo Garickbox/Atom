@@ -640,6 +640,8 @@ class MainActivity : AppCompatActivity() {
 
         runOnboarding()
 
+        if (isTv()) updateTvReceiveButton()
+
         // История скрыта — минимализм
 
         // Подписка на текущую передачу
@@ -842,8 +844,8 @@ class MainActivity : AppCompatActivity() {
         b.tvTitle.text = "Готов к приёму"
         val name = AtomController.myName.ifBlank { "это устройство" }
         b.tvHint.text = "Имя: $name\n\n" +
-            "Отправьте файлы с телефона — Атом найдёт это устройство " +
-            "в той же Wi-Fi сети или через Wi-Fi Direct."
+            "Принимаю файлы по Wi-Fi Direct или через QR. " +
+            "Нажми «Показать QR» на телефоне, чтобы присоединиться."
 
         b.tvBtnUpdate.setOnClickListener { checkUpdate() }
         b.tvBtnLog.setOnClickListener {
@@ -855,6 +857,29 @@ class MainActivity : AppCompatActivity() {
         b.tvBtnSettings.setOnClickListener {
             startActivity(Intent(this, NameSetupActivity::class.java))
         }
+        b.tvBtnQr.setOnClickListener {
+            startActivity(Intent(this, QrShareActivity::class.java))
+        }
+        b.tvBtnReceive.setOnClickListener { toggleTvReceive() }
+        updateTvReceiveButton()
+    }
+
+    private fun toggleTvReceive() {
+        try {
+            WidgetReceiveService.toggle(this)
+            b.tvBtnReceive.postDelayed({ updateTvReceiveButton() }, 500L)
+            InAppLogger.d("MainActivity", "TV toggle receive")
+        } catch (e: Exception) {
+            InAppLogger.err("MainActivity", "TV toggle receive: ${e.message}")
+        }
+    }
+
+    private fun updateTvReceiveButton() {
+        try {
+            val active = WidgetReceiveService.isActive
+            b.tvBtnReceive.text = if (active) "📥  Приём: ВКЛ 10 мин" else "📥  Приём 10 мин"
+            b.tvBtnReceive.alpha = if (active) 1.0f else 0.85f
+        } catch (_: Exception) {}
     }
 
     private fun isTv(): Boolean {

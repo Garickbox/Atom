@@ -123,6 +123,25 @@
             android:textColor="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/tvBtnQr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginBottom="12dp"
+            android:minWidth="240dp"
+            android:focusedByDefault="true"
+            android:text="📱  Показать QR (принять)" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tvBtnReceive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginBottom="12dp"
+            android:minWidth="240dp"
+            android:text="📥  Приём 10 мин" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/tvBtnUpdate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
