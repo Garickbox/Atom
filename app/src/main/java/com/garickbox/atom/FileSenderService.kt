@@ -843,14 +843,15 @@ class FileSenderService : Service() {
         }
 
         val elapsed = System.currentTimeMillis() - startTime
-        val totalSent = progress.get()
-        val avgMbps = if (elapsed > 0) totalSent / 1024.0 / 1024.0 / (elapsed / 1000.0) else 0.0
+        val sentThisCall = progress.get()
+        val totalSent = resumeOffset + sentThisCall
+        val avgMbps = if (elapsed > 0) sentThisCall / 1024.0 / 1024.0 / (elapsed / 1000.0) else 0.0
         stTransMs = elapsed
         stSpeedMbps = avgMbps
         InAppLogger.d("FileSenderService",
             "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(avgMbps)} MB/s avg (${threadCount} thr)")
 
-        if (failed.get() || totalSent < size) {
+        if (failed.get() || sentThisCall < (size - resumeOffset)) {
             // B11.1: при отмене корутины — CancellationException, не Exception.
             // Иначе B8-retry в sendOneFile пытается восстановить отменённую передачу
             // и превращает Pause в Failed.
