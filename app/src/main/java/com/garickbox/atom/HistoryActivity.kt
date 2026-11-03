@@ -189,14 +189,28 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun onItemTap(rec: TransferHistory.Record) {
         if (rec.savedPath.isNotBlank()) {
-            // Попытка открыть файл (для сохранённых из Download/Atom)
             try {
-                val file = java.io.File(rec.savedPath)
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    this, "$packageName.fileprovider", file)
-                val mime = android.webkit.MimeTypeMap.getSingleton()
-                    .getMimeTypeFromExtension(rec.savedPath.substringAfterLast('.', "").lowercase())
-                    ?: "*/*"
+                // B116: 3 схемы — content:// (API 29+), абсолютный (API 28), относительный (legacy)
+                val uri: android.net.Uri = when {
+                    rec.savedPath.startsWith("content://") -> android.net.Uri.parse(rec.savedPath)
+                    rec.savedPath.startsWith("/") -> {
+                        val file = java.io.File(rec.savedPath)
+                        androidx.core.content.FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", file)
+                    }
+                    else -> {
+                        val abs = java.io.File(android.os.Environment.getExternalStorageDirectory(), rec.savedPath)
+                        androidx.core.content.FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", abs)
+                    }
+                }
+                val mime = if (uri.scheme == "content") {
+                    contentResolver.getType(uri) ?: "*/*"
+                } else {
+                    android.webkit.MimeTypeMap.getSingleton()
+                        .getMimeTypeFromExtension(rec.savedPath.substringAfterLast('.', "").lowercase())
+                        ?: "*/*"
+                }
                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, mime)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

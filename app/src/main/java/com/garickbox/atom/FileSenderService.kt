@@ -718,6 +718,9 @@ class FileSenderService : Service() {
                     put("size", size)
                     put("peer_id", AtomController.myId)
                     put("peer_name", AtomController.myName)
+                    // B116: retry должен сохранять resume_offset + relative_path
+                    put("resume_offset", acceptedOffset)
+                    put("relative_path", relativePath ?: "")
                 }
                 var retryAccepted = false
                 for (offerAttempt in 1..10) {

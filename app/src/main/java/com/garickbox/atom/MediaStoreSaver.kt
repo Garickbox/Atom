@@ -132,17 +132,23 @@ object MediaStoreSaver {
         return if (s.length > 200) s.take(200) else s
     }
 
-    /** B73: санитизация директории — один сегмент, без .. и /. */
+    /** B116: санитизация директории по сегментам (сохраняет структуру папок). */
     private fun sanitizeDir(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
-        var s = raw.trim('/').trim()
+        var s = raw.replace("..", "").trim('/')
         if (s.isBlank()) return null
-        // отсечь .. и / — берём ТОЛЬКО первый сегмент
-        s = s.replace("..", "").replace("//", "/").trim('/')
-        val firstSegment = s.substringBefore('/')
-        if (firstSegment.isBlank() || firstSegment == "." || firstSegment == "..") return null
-        // максимум 100 символов
-        return if (firstSegment.length > 100) firstSegment.take(100) else firstSegment
+        // B116: split на сегменты, санитизируем каждый, max 5 уровней, каждый ≤ 100 симв
+        val parts = s.split('/')
+            .map { seg ->
+                seg.replace("\\", "_")
+                    .filter { it.code >= 0x20 }
+                    .trim()
+            }
+            .filter { it.isNotBlank() && it != "." && it != ".." }
+            .map { if (it.length > 100) it.take(100) else it }
+            .take(5)  // max depth
+        if (parts.isEmpty()) return null
+        return parts.joinToString("/")
     }
 
     @Suppress("DEPRECATION")

@@ -72,6 +72,18 @@ object FileReceiver {
                 return
             }
             if (existing != null) {
+                // B116: resume восстанавливает _isBusy, но только если не занят ДРУГОЙ сессией
+                val otherActive = activeSessions.values.count { s ->
+                    s.tid != existing.tid && !s.failed.get() && !s.paused.get() &&
+                        s.finished.get() < s.threadCount
+                }
+                if (otherActive > 0) {
+                    InAppLogger.d("FileReceiver",
+                        "B116: resume declined — other active session exists ($otherActive)")
+                    sendDecline(ctx, offer, "busy")
+                    return
+                }
+                _isBusy.set(true)  // B116: восстанавливаем busy после паузы
                 // B10a: partFile.length() = totalSize всегда (raf.setLength() создаёт файл сразу).
                 // Используем received.get() — реальное число полученных байт.
                 val actualReceived = existing.received.get()
@@ -220,6 +232,12 @@ object FileReceiver {
             }
             val tid = String(readN(dis, tidLen), Charsets.UTF_8)
             tidForLog = tid
+            // B116: stale TCP — если header.tid != offer.transferId, это retry от старой сессии
+            if (tid != offer.transferId) {
+                InAppLogger.err("FileReceiver",
+                    "B116: stale TCP tid=${tid.take(8)} != offer ${offer.transferId.take(8)}")
+                throw IllegalArgumentException("B116: stale TCP (tid mismatch)")
+            }
 
             val hashLen = dis.readInt()
             if (hashLen !in 1..128) {
@@ -315,7 +333,12 @@ object FileReceiver {
                         var written = 0
                         while (written < read) {
                             val w = session.channel.write(bb, pos + written)
-                            if (w <= 0) break
+                            // B116: write=0 — не break (тихая потеря), throw для явной ошибки
+                            if (w <= 0) {
+                                InAppLogger.err("FileReceiver",
+                                    "B116: FileChannel.write=$w at pos=${pos + written}, read=$read")
+                                throw java.io.IOException("FileChannel.write=$w (would lose ${read - written}B)")
+                            }
                             written += w
                         }
                         pos += written
@@ -486,9 +509,16 @@ object FileReceiver {
                 // busy уже освобождён в handleIncomingSocket
                 // B80#59: если идёт newer transfer — не перезаписываем Failed
                 val curF = AtomController.transferState.value
-                if (curF is TransferState.Running && curF.transferId != session.tid) {
+                // B116: не перезаписываем Idle/Paused/Success — юзер уже сбросил (cancel)
+                val skipFailed = when (curF) {
+                    is TransferState.Running -> curF.transferId != session.tid
+                    is TransferState.Idle, is TransferState.Paused, is TransferState.Success,
+                    is TransferState.UpdatePending -> true
+                    else -> false
+                }
+                if (skipFailed) {
                     InAppLogger.d("FileReceiver",
-                        "B80#59: skip Failed, newer Running " + curF.transferId.take(8))
+                        "B116: skip Failed, state=${curF.javaClass.simpleName} (user reset)")
                 } else {
                     AtomController.transferState.value = TransferState.Failed(
                         session.tid, session.peerName, session.name,
@@ -566,6 +596,13 @@ object FileReceiver {
             // B101h: на API 28 saveLegacy возвращает uri=null, но displayPath заполнен
             if (result.uri != null || result.displayPath.isNotBlank()) {
                 InAppLogger.d("FileReceiver", "B101h: saved uri=${result.uri} path=${result.displayPath}")
+                // B116: savedPath = content URI (API 29+) или absolute path (API 28)
+                // иначе HistoryActivity.File(relativePath) не существует
+                val savedPathValue: String = when {
+                    result.uri != null -> result.uri.toString()
+                    result.displayPath.startsWith("/") -> result.displayPath
+                    else -> "/storage/emulated/0/${result.displayPath}"
+                }
                 TransferHistory.add(ctx, TransferHistory.Record(
                     id = session.tid,
                     peerName = session.peerName,
@@ -574,7 +611,7 @@ object FileReceiver {
                     durationMs = 0L,
                     status = if (hashOk) "success" else "corrupted",
                     timestamp = System.currentTimeMillis(),
-                    savedPath = result.displayPath
+                    savedPath = savedPathValue
                 ))
                 if (updateVc != null && result.uri != null) {
                     // B80#59: не перезаписывать UpdatePending если идёт newer Running
