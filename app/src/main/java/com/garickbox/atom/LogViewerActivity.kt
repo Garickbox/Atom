@@ -48,8 +48,7 @@ class LogViewerActivity : AppCompatActivity() {
                 sb.appendLine("═══ САМОПРОВЕРКА: $ok/${results.size} ═══")
                 results.forEach { r ->
                     sb.append(if (r.passed) "✅" else "❌")
-                    sb.append(" ${r.name}: ${r.detail}
-")
+                    sb.append(" ${r.name}: ${r.detail}\n")
                 }
                 sb.appendLine()
                 sb.appendLine("═══ LOG ═══")
