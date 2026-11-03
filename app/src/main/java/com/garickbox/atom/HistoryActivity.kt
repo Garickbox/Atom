@@ -44,9 +44,55 @@ class HistoryActivity : AppCompatActivity() {
         loadHistory()
     }
 
+    private var searchQuery: String = ""
+
     override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
         menuInflater.inflate(R.menu.history, menu)
+        // B107: SearchView в toolbar
+        val searchItem = menu.findItem(R.id.action_search)
+        val searchView = searchItem?.actionView as? androidx.appcompat.widget.SearchView
+        searchView?.queryHint = "Файл / peer…"
+        searchView?.setOnQueryTextListener(object : androidx.appcompat.widget.SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(q: String?): Boolean {
+                searchQuery = q ?: ""; loadHistory(); return true
+            }
+            override fun onQueryTextChange(q: String?): Boolean {
+                searchQuery = q ?: ""; loadHistory(); return true
+            }
+        })
         return true
+    }
+
+    private val importPicker = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            try {
+                val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                }
+                val n = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    TransferHistory.importCsv(this@HistoryActivity, text)
+                }
+                Toast.makeText(this@HistoryActivity,
+                    if (n > 0) "Импортировано: $n" else "Нет новых записей",
+                    Toast.LENGTH_SHORT).show()
+                loadHistory()
+                InAppLogger.d("History", "B107: importCsv n=$n")
+            } catch (e: Exception) {
+                Toast.makeText(this@HistoryActivity, "Ошибка: ${e.message}",
+                    Toast.LENGTH_LONG).show()
+                InAppLogger.err("History", "B107 import: ${e.message}")
+            }
+        }
+    }
+
+    private fun openImportPicker() {
+        try { importPicker.launch(arrayOf("text/csv","text/comma-separated-values","text/plain","*/*")) }
+        catch (e: Exception) {
+            Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
@@ -55,6 +101,7 @@ class HistoryActivity : AppCompatActivity() {
             R.id.action_filter_success -> { currentFilter = "success"; loadHistory(); true }
             R.id.action_filter_failed -> { currentFilter = "failed"; loadHistory(); true }
             R.id.action_export_csv -> { exportToCsv(); true }
+            R.id.action_import_csv -> { openImportPicker(); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -112,10 +159,19 @@ class HistoryActivity : AppCompatActivity() {
             InAppLogger.d("History", "B94: records=" + allRaw.size + " > 50")
         }
         val all = allRaw
-        val records = when (currentFilter) {
+        var records = when (currentFilter) {
             "success" -> all.filter { it.status == "success" }
             "failed" -> all.filter { it.status == "failed" || it.status == "skipped" }
             else -> all
+        }
+        // B107: SearchView query filter
+        if (searchQuery.isNotBlank()) {
+            val q = searchQuery.lowercase()
+            records = records.filter {
+                it.fileName.lowercase().contains(q) ||
+                it.peerName.lowercase().contains(q) ||
+                it.status.lowercase().contains(q)
+            }
         }
         InAppLogger.d("History", "B91 filter=" + currentFilter + " records=" + records.size + "/" + all.size)
         if (records.isEmpty()) {
