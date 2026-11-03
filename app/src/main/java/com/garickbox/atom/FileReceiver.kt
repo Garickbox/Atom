@@ -264,8 +264,6 @@ object FileReceiver {
                 }
                 val wf = writeFile!!
                 val wr = writeRaf!!
-                InAppLogger.d("FileReceiver",
-                    "B101j11: tid=${tid.take(8)} name=$name target=${directTarget?.absolutePath ?: "(staging)"}")
                 ReceiveSession(
                     tid = tid, hash = senderHash, name = name,
                     totalSize = totalSize, threadCount = threadCount,
@@ -446,14 +444,7 @@ object FileReceiver {
             try { session.raf.close() } catch (_: Exception) {}
 
             if (session.failed.get()) {
-                // B101j11: явно удалить targetFile (API 28 direct write) — иначе sparse
-                if (session.targetFile != null) {
-                    val ok = session.targetFile.delete()
-                    InAppLogger.d("FileReceiver",
-                        "B101j11: failed→delete target=${session.targetFile.absolutePath} ok=$ok")
-                } else {
-                    session.partFile.delete()
-                }
+                session.partFile.delete()
                 activeSessions.remove(session.tid)
                 // busy уже освобождён в handleIncomingSocket
                 // B80#59: если идёт newer transfer — не перезаписываем Failed
@@ -473,14 +464,7 @@ object FileReceiver {
             if (session.partFile.length() != session.totalSize) {
                 InAppLogger.d("FileReceiver",
                     "size mismatch: ${session.partFile.length()}/${session.totalSize}")
-                // B101j11: size mismatch → target тоже удалить (sparse cleanup)
-                if (session.targetFile != null) {
-                    val ok = session.targetFile.delete()
-                    InAppLogger.d("FileReceiver",
-                        "B101j11: size-mismatch→delete target ok=$ok")
-                } else {
-                    session.partFile.delete()
-                }
+                session.partFile.delete()
                 activeSessions.remove(session.tid)
                 // busy уже освобождён в handleIncomingSocket
                 // stop → finalizeEnd()
