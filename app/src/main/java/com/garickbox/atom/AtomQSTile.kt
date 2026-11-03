@@ -175,7 +175,8 @@ class AtomQSTile : TileService() {
                         ((ts.bytesSent * 100) / ts.bytesTotal).toInt() else 0
                     tile.label = "Атом · пауза"
                     tile.subtitle = "⏸ $pct% · тап продолжить"
-                    resIcon = if (ts.isReceiver) R.drawable.ic_qs_recv else R.drawable.ic_qs_send
+                    // B118fix2: TransferState.Paused не содержит isReceiver — нейтральная иконка
+                    resIcon = R.drawable.ic_qs_tile
                 }
                 is TransferState.Success -> {
                     // B118: Success НЕ идёт в else — иначе «Приём · приложение открыто» после отправки
