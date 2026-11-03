@@ -75,6 +75,20 @@ class AtomQSTile : TileService() {
             handler.postDelayed({ updateTile() }, 500L)
             return
         }
+        // B118: Success / UpdatePending / Failed → открыть Атом
+        if (ts is TransferState.Success || ts is TransferState.UpdatePending ||
+            ts is TransferState.Failed) {
+            InAppLogger.d("AtomQSTile", "click → open app (terminal state)")
+            try {
+                val pi = android.app.PendingIntent.getActivity(this, 9002,
+                    Intent(this, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    },
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+                startActivityAndCollapse(pi)
+            } catch (_: Exception) {}
+            return
+        }
         val now = System.currentTimeMillis()
         val isDoubleTap = (now - lastTapAt) < DOUBLE_TAP_MS
         lastTapAt = now
@@ -131,30 +145,61 @@ class AtomQSTile : TileService() {
         }
     }
 
+    private fun fmtBytes(b: Long): String {
+        if (b < 1024) return "$b Б"
+        if (b < 1024 * 1024) return "%.1f КБ".format(b / 1024.0)
+        if (b < 1024 * 1024 * 1024) return "%.1f МБ".format(b / 1024.0 / 1024.0)
+        return "%.1f ГБ".format(b / 1024.0 / 1024.0 / 1024.0)
+    }
+
     private fun updateTile() {
         try {
             val tile = qsTile ?: return
             // B17: приоритет transferState над WidgetReceive
             val ts = AtomController.transferState.value
+            // B118: icon = var, ставится в каждой ветке
+            var resIcon = R.drawable.ic_qs_tile
             when (ts) {
                 is TransferState.Running -> {
                     tile.state = Tile.STATE_ACTIVE
-                    tile.label = "Атом"
                     val pct = if (ts.bytesTotal > 0)
                         ((ts.bytesSent * 100) / ts.bytesTotal).toInt() else 0
-                    // B115: 📥 если приём, 📤 если отправка
+                    tile.label = "Атом · $pct%"
                     val icon = if (ts.isReceiver) "📥" else "📤"
                     tile.subtitle = "$icon " + ts.peerName.take(10) + " · " + pct + "%"
+                    resIcon = if (ts.isReceiver) R.drawable.ic_qs_recv else R.drawable.ic_qs_send
                 }
                 is TransferState.Paused -> {
                     tile.state = Tile.STATE_INACTIVE
-                    tile.label = "Атом"
                     val pct = if (ts.bytesTotal > 0)
                         ((ts.bytesSent * 100) / ts.bytesTotal).toInt() else 0
-                    tile.subtitle = "⏸ " + pct + "% · тап продолжить"
+                    tile.label = "Атом · пауза"
+                    tile.subtitle = "⏸ $pct% · тап продолжить"
+                    resIcon = if (ts.isReceiver) R.drawable.ic_qs_recv else R.drawable.ic_qs_send
+                }
+                is TransferState.Success -> {
+                    // B118: Success НЕ идёт в else — иначе «Приём · приложение открыто» после отправки
+                    tile.state = Tile.STATE_INACTIVE
+                    tile.label = "Атом · готово"
+                    tile.subtitle = "✅ ${
+                        if (ts.fileCount > 0) "${ts.fileCount} файл · ${fmtBytes(ts.bytesTotal)}"
+                        else "Отправлено"
+                    }"
+                    resIcon = R.drawable.ic_qs_success
+                }
+                is TransferState.Failed -> {
+                    tile.state = Tile.STATE_INACTIVE
+                    tile.label = "Атом · ошибка"
+                    tile.subtitle = "⚠️ ${ts.reason.take(20)}"
+                    resIcon = R.drawable.ic_qs_failed
+                }
+                is TransferState.UpdatePending -> {
+                    tile.state = Tile.STATE_ACTIVE
+                    tile.label = "Атом · обновление"
+                    tile.subtitle = "⬆️ build-${ts.versionCode} · тап установить"
+                    resIcon = R.drawable.ic_qs_success
                 }
                 else -> {
-                    // B20.4: синяя = FGS активен ИЛИ Атом открыт
                     val fgs = WidgetReceiveService.isActive
                     val fg = AtomController.appForeground
                     val active = fgs || fg
@@ -170,9 +215,10 @@ class AtomQSTile : TileService() {
                         fg -> tile.subtitle = "Приём · приложение открыто"
                         else -> tile.subtitle = "Тап: приём · 2×тап: отправить"
                     }
+                    resIcon = R.drawable.ic_qs_tile
                 }
             }
-            tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_tile)
+            tile.icon = Icon.createWithResource(this, resIcon)
             tile.updateTile()
         } catch (e: Exception) {
             InAppLogger.d("AtomQSTile", "updateTile error: " + e.message)

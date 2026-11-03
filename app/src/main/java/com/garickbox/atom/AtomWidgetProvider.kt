@@ -79,14 +79,36 @@ class AtomWidgetProvider : AppWidgetProvider() {
                     rv.setOnClickPendingIntent(R.id.btn_secondary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
                 }
                 is TransferState.Failed -> {
-                    // B17: Failed state — показать ошибку и кнопку Закрыть
                     rv.setTextViewText(R.id.title, XMARK + " Ошибка")
                     rv.setTextViewText(R.id.subtitle, state.reason.take(35))
                     rv.setViewVisibility(R.id.progress, View.GONE)
-                    rv.setTextViewText(R.id.btn_primary, XMARK + " Закрыть")
-                    rv.setOnClickPendingIntent(R.id.btn_primary,
+                    // B118: Retry (открывает Атом с picker) + Закрыть
+                    rv.setTextViewText(R.id.btn_primary, "🔄 Повторить")
+                    rv.setOnClickPendingIntent(R.id.btn_primary, piWidgetSend(ctx))
+                    rv.setTextViewText(R.id.btn_secondary, XMARK + " Закрыть")
+                    rv.setOnClickPendingIntent(R.id.btn_secondary,
                         piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
-                    rv.setTextViewText(R.id.btn_secondary, "Открыть")
+                }
+                is TransferState.Success -> {
+                    // B118: Success показывается 5 сек (timer в runTransfer), потом Idle
+                    rv.setTextViewText(R.id.title, "✅ Готово")
+                    val files = if (state.fileCount > 0) "${state.fileCount} файл" else "Передача"
+                    val bytes = fmtBytes(state.bytesTotal)
+                    rv.setTextViewText(R.id.subtitle, "$files · $bytes · ${state.peerName.take(12)}")
+                    rv.setViewVisibility(R.id.progress, View.GONE)
+                    rv.setTextViewText(R.id.btn_primary, EMOJI_RECV + " Принимать")
+                    rv.setOnClickPendingIntent(R.id.btn_primary, piServiceToggle(ctx))
+                    rv.setTextViewText(R.id.btn_secondary, EMOJI_SEND + " Отправить")
+                    rv.setOnClickPendingIntent(R.id.btn_secondary, piWidgetSend(ctx))
+                }
+                is TransferState.UpdatePending -> {
+                    rv.setTextViewText(R.id.title, "⬆️ Обновление Атома")
+                    rv.setTextViewText(R.id.subtitle,
+                        "build-${state.versionCode} · тап установить")
+                    rv.setViewVisibility(R.id.progress, View.GONE)
+                    rv.setTextViewText(R.id.btn_primary, "⬆️ Установить")
+                    rv.setOnClickPendingIntent(R.id.btn_primary, piUpdateInstall(ctx, state.apkUri))
+                    rv.setTextViewText(R.id.btn_secondary, XMARK + " Позже")
                     rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
                 }
                 else -> {
@@ -97,7 +119,13 @@ class AtomWidgetProvider : AppWidgetProvider() {
                     val sub = if (recvOn) {
                         val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
                         "Осталось " + (remain / 60) + ":" + "%02d".format(remain % 60)
-                    } else "Тап: приём · 2×тап: отправить"
+                    } else {
+                        // B118: peer name + history count в Idle
+                        val lastPeer = AtomController.lastPeer
+                        if (lastPeer != null && lastPeer.name.isNotBlank()) {
+                            "📱 ${lastPeer.name.take(14)}"
+                        } else "Тап: приём · 2×тап: отправить"
+                    }
                     rv.setTextViewText(R.id.subtitle, sub)
                     rv.setViewVisibility(R.id.progress, View.GONE)
                     rv.setTextViewText(R.id.btn_primary, if (recvOn) EMOJI_RECV + " Активно" else EMOJI_RECV + " Принимать")
@@ -134,6 +162,17 @@ class AtomWidgetProvider : AppWidgetProvider() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             return PendingIntent.getActivity(ctx, 8005, i,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        private fun piUpdateInstall(ctx: Context, apkUri: String): PendingIntent {
+            // B118: tap «Установить» → MainActivity с ACTION_WIDGET_INSTALL
+            val i = Intent(ctx, MainActivity::class.java).apply {
+                action = "com.garickbox.atom.WIDGET_INSTALL"
+                putExtra("apk_uri", apkUri)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            return PendingIntent.getActivity(ctx, 8007, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 

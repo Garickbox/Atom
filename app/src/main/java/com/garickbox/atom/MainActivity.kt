@@ -127,6 +127,17 @@ class MainActivity : AppCompatActivity() {
         } else {
             when (intent?.action) {
                 AtomWidgetProvider.ACTION_WIDGET_SEND -> pendingWidgetSend = true
+                "com.garickbox.atom.WIDGET_INSTALL" -> {
+                    // B118: tap «Установить» на виджете UpdatePending
+                    val apkUri = intent?.getStringExtra("apk_uri") ?: ""
+                    if (apkUri.isNotBlank()) {
+                        try {
+                            UpdateChecker.installApkFromUriPublic(this, android.net.Uri.parse(apkUri))
+                        } catch (e: Exception) {
+                            InAppLogger.err("MainActivity", "B118 widget install: ${e.message}")
+                        }
+                    }
+                }
                 ACTION_SHORTCUT_FIND -> pendingShortcutFind = true
                 ACTION_SHORTCUT_SEND_PEER -> {
                     pendingPeerForShareTarget = Peer(
@@ -435,6 +446,17 @@ class MainActivity : AppCompatActivity() {
         }
         when (intent?.action) {
             AtomWidgetProvider.ACTION_WIDGET_SEND -> processWidgetSend()
+            "com.garickbox.atom.WIDGET_INSTALL" -> {
+                // B118: onNewIntent — Activity уже была открыта
+                val apkUri = intent?.getStringExtra("apk_uri") ?: ""
+                if (apkUri.isNotBlank()) {
+                    try {
+                        UpdateChecker.installApkFromUriPublic(this, android.net.Uri.parse(apkUri))
+                    } catch (e: Exception) {
+                        InAppLogger.err("MainActivity", "B118 widget install: ${e.message}")
+                    }
+                }
+            }
             ACTION_SHORTCUT_FIND -> showSendPicker()
             ACTION_SHORTCUT_SEND_PEER -> {
                 pendingPeerForShareTarget = Peer(
