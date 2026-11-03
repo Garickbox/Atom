@@ -2,12 +2,6 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/action_search"
-        android:title="Поиск"
-        android:icon="@android:drawable/ic_menu_search"
-        app:showAsAction="ifRoom|collapseActionView"
-        app:actionViewClass="androidx.appcompat.widget.SearchView" />
-    <item
         android:id="@+id/action_filter_all"
         android:title="📋 Все"
         app:showAsAction="never" />
@@ -22,9 +16,5 @@
     <item
         android:id="@+id/action_export_csv"
         android:title="📤 Экспорт CSV"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/action_import_csv"
-        android:title="📥 Импорт CSV"
         app:showAsAction="never" />
 </menu>
