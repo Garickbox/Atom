@@ -168,7 +168,10 @@ class FileSenderService : Service() {
                 val peerId = intent.getStringExtra(EXTRA_PEER_ID) ?: ""
                 val peerName = intent.getStringExtra(EXTRA_PEER_NAME) ?: "?"
                 val uris = intent.getStringArrayListExtra(EXTRA_URIS)?.map { Uri.parse(it) } ?: emptyList()
-                if (uris.isEmpty()) { stopSelf(); return START_NOT_STICKY }
+                if (uris.isEmpty()) {
+                    try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
+                    stopSelf(); return START_NOT_STICKY
+                }
                 // B86: startForeground сейчас (было в onCreate)
                 // B101o: startForeground уже в onCreate (FGS-контракт),
                 // здесь обновляем на реальный Running notif
@@ -950,6 +953,8 @@ private fun displayName(uri: Uri): String? {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        // B106: cancel notif ДО unbind — Success/Failed не должны висеть после stopSelf
+        try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
         // B94: unbind только если нет активной передачи (axiom#98 — иначе
         // сломает следующий QR-сеанс или параллельную передачу)
         try {
