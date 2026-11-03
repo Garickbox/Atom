@@ -39,7 +39,10 @@ object TransferHistory {
         synchronized(lock) {
             val current = list(ctx).toMutableList()
             current.add(0, rec)
-            save(ctx, current.take(MAX_ITEMS))
+            val top = current.take(MAX_ITEMS)
+            save(ctx, top)
+            com.mesh.core.InAppLogger.d("TransferHistory",
+                "B101i: added '${rec.fileName}' status=${rec.status} total=${top.size}")
         }
     }
 
@@ -58,7 +61,12 @@ object TransferHistory {
                 put("ts", r.timestamp); put("saved", r.savedPath)
             })
         }
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY, arr.toString()).apply()
+        // B101i: commit() вместо apply() — гарантия disk-write до OTA process-kill
+        val ok = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY, arr.toString()).commit()
+        if (!ok) {
+            com.mesh.core.InAppLogger.err("TransferHistory",
+                "B101i: commit FAILED (${records.size} records)")
+        }
     }
 }
