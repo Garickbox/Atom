@@ -188,6 +188,41 @@ object MediaStoreSaver {
     }
 
     /** Категория внутри Download/Atom по MIME */
+    /**
+     * B101j-v1: API 28 — прямой target для записи во время передачи.
+     * null на API 29+ (там MediaStore IS_PENDING) или при ошибке.
+     */
+    fun resolveTargetFile(ctx: Context, fileName: String, overrideRelativeDir: String? = null): File? {
+        if (android.os.Build.VERSION.SDK_INT >= 29) return null
+        return try {
+            val safeName = sanitizeName(fileName)
+            val safeDir = sanitizeDir(overrideRelativeDir)
+            val type = guessMime(safeName)
+            val category = if (safeDir.isNullOrBlank()) categoryFor(type) else safeDir
+            @Suppress("DEPRECATION")
+            val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dir = File(downloads, "Atom/$category")
+            if (!dir.exists() && !dir.mkdirs()) {
+                InAppLogger.d("MediaStoreSaver", "B101j: mkdirs failed ${dir.absolutePath}")
+                return null
+            }
+            var target = File(dir, safeName)
+            var n = 1
+            while (target.exists() && n < 1000) {
+                val dot = safeName.lastIndexOf('.')
+                val base = if (dot > 0) safeName.substring(0, dot) else safeName
+                val ext = if (dot > 0) safeName.substring(dot) else ""
+                target = File(dir, "$base ($n)$ext")
+                n++
+            }
+            InAppLogger.d("MediaStoreSaver", "B101j target: ${target.absolutePath}")
+            target
+        } catch (e: Exception) {
+            InAppLogger.d("MediaStoreSaver", "B101j resolveTarget error: ${e.message}")
+            null
+        }
+    }
+
     private fun categoryFor(mime: String): String = when {
         mime.startsWith("image/") -> "Pictures"
         mime.startsWith("video/") -> "Movies"

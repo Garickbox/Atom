@@ -38,6 +38,7 @@ object FileReceiver {
         val threadCount: Int,
         val peerName: String,
         val partFile: File,
+        val targetFile: File? = null,   // B101j: API 28 — прямое место (null = staging)
         val raf: RandomAccessFile,
         val channel: FileChannel,
         val received: AtomicLong = AtomicLong(0),
@@ -232,22 +233,43 @@ object FileReceiver {
                 "TCP header: tid=${tid.take(8)} thr=$threadIdx/$threadCount range=$offset..$end size=$totalSize")
 
             val session = activeSessions.getOrPut(tid) {
-                val partDir = File(ctx.getExternalFilesDir(null), "received").apply { mkdirs() }
-                val partFile = File(partDir, "$tid.part")
-                val raf = RandomAccessFile(partFile, "rw")
-                raf.setLength(totalSize)
-                InAppLogger.d("FileReceiver", "session created: ${partFile.absolutePath}")
+                // B101j-v1: API 28 — пишем сразу в target. API 29+ — staging.
+                var writeFile: File? = null
+                var writeRaf: RandomAccessFile? = null
+                var directTarget: File? = null
+                if (android.os.Build.VERSION.SDK_INT < 29) {
+                    val t = MediaStoreSaver.resolveTargetFile(ctx, name, offer.relativePath)
+                    if (t != null) {
+                        try {
+                            val r = RandomAccessFile(t, "rw")
+                            r.setLength(totalSize)
+                            writeRaf = r; writeFile = t; directTarget = t
+                            InAppLogger.d("FileReceiver",
+                                "B101j: direct write → ${t.absolutePath}")
+                        } catch (e: Exception) {
+                            InAppLogger.d("FileReceiver",
+                                "B101j: direct open failed: ${e.message} → staging")
+                            try { writeRaf?.close() } catch (_: Exception) {}
+                            writeRaf = null; writeFile = null; directTarget = null
+                        }
+                    }
+                }
+                if (writeFile == null || writeRaf == null) {
+                    val partDir = File(ctx.getExternalFilesDir(null), "received").apply { mkdirs() }
+                    val pf = File(partDir, "$tid.part")
+                    val r = RandomAccessFile(pf, "rw")
+                    r.setLength(totalSize)
+                    writeRaf = r; writeFile = pf; directTarget = null
+                    InAppLogger.d("FileReceiver", "session staging: ${pf.absolutePath}")
+                }
+                val wf = writeFile!!
+                val wr = writeRaf!!
                 ReceiveSession(
-                    tid = tid,
-                    hash = senderHash,
-                    name = name,
-                    totalSize = totalSize,
-                    threadCount = threadCount,
-                    peerName = offer.peerName,
-                    relativePath = offer.relativePath,
-                    partFile = partFile,
-                    raf = raf,
-                    channel = raf.channel
+                    tid = tid, hash = senderHash, name = name,
+                    totalSize = totalSize, threadCount = threadCount,
+                    peerName = offer.peerName, relativePath = offer.relativePath,
+                    targetFile = directTarget,
+                    partFile = wf, raf = wr, channel = wr.channel
                 )
             }
             session.sockets.add(socket)
@@ -465,9 +487,18 @@ object FileReceiver {
             // B15: если файл из папки — сохраняем с подпутём
             val dirPart = session.relativePath?.substringBeforeLast('/', "")
                 ?.ifBlank { null }
-            val result = MediaStoreSaver.save(
-                ctx, session.partFile, session.name, null, dirPart
-            )
+            // B101j-v1: API 28 — файл уже в target, save = 0 (только scanFile)
+            val result: MediaStoreSaver.SaveResult = if (session.targetFile != null) {
+                android.media.MediaScannerConnection.scanFile(
+                    ctx, arrayOf(session.targetFile.absolutePath), null, null
+                )
+                InAppLogger.d("FileReceiver",
+                    "B101j: direct write, scanFile (${session.targetFile.absolutePath})")
+                MediaStoreSaver.SaveResult(uri = null,
+                    displayPath = session.targetFile.absolutePath)
+            } else {
+                MediaStoreSaver.save(ctx, session.partFile, session.name, null, dirPart)
+            }
             val msMs = System.currentTimeMillis() - msStart
             try {
                 com.mesh.core.CompactLog.receiver(
@@ -481,7 +512,10 @@ object FileReceiver {
                     "name collision: requested='" + session.name + "' saved='" + savedName + "'")
             }
 
-            session.partFile.delete()
+            // B101j: удалять staging только если это НЕ target (API 29+)
+            if (session.targetFile == null) {
+                session.partFile.delete()
+            }
             activeSessions.remove(session.tid)
             // busy уже освобождён в handleIncomingSocket
 
