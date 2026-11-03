@@ -55,5 +55,5 @@ dependencies {
 
     // B94: JVM unit-тесты mesh protocol
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.json:json:20230227'
+    testImplementation 'org.json:json:20260814'
 }
