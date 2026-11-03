@@ -66,10 +66,11 @@ object AtomIdentity {
         b.addExtension(Extension.extendedKeyUsage, false,
             ExtendedKeyUsage(listOf(KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth)))
         val signer = JcaContentSignerBuilder("SHA256withECDSA").build(kp.private)
+        val holder: org.bouncycastle.cert.X509CertificateHolder = b.build(signer)
+        val der: ByteArray = holder.encoded
         return CertificateFactory.getInstance("X.509")
-            .generateCertificate(b.build(signer).encoded.inputStream()) as X509Certificate
+            .generateCertificate(java.io.ByteArrayInputStream(der)) as X509Certificate
     }
 
     fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
-    private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
 }
