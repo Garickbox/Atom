@@ -258,6 +258,12 @@ class FileSenderService : Service() {
             TransferNotification.ACTION_PAUSE -> {
                 val cur = AtomController.transferState.value
                 if (cur !is TransferState.Running) {
+                    // B100f.2: Paused = idempotent (2-й tap Pause не должен stopSelf)
+                    if (cur is TransferState.Paused) {
+                        InAppLogger.d("FileSenderService",
+                            "pause: already paused, ignore (tid=${cur.transferId.take(8)})")
+                        return START_STICKY
+                    }
                     // B72/B86: zombie FGS при Pause на Idle/Failed/Success
                     InAppLogger.d("FileSenderService", "pause: not running (state=$cur) → stopSelf")
                     try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
