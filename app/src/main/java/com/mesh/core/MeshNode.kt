@@ -175,6 +175,10 @@ class MeshNode(private val ctx: Context) {
             }
             PacketType.HERE -> {
                 val hp = HelloPayload.fromJson(packet.payload)
+                // B112: HERE тоже регистрирует peer — иначе client не узнаёт GO
+                if (hp.peerId.isNotBlank() && hp.peerId != myId) {
+                    onHello?.invoke(HelloInfo(hp.peerId, hp.name, fromIp))
+                }
                 val waiter = hereAwaiters[fromIp]
                 if (waiter != null) {
                     InAppLogger.d("MeshNode", "received HERE from ${hp.name} @ $fromIp")

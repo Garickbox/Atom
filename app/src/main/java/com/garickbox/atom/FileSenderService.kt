@@ -112,8 +112,8 @@ class FileSenderService : Service() {
     private var keepAliveJob: Job? = null
 
     override fun onCreate() {
-        try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         super.onCreate()
+        try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         // B101o: FGS-контракт — getForegroundService() (widget) требует
         // startForeground() в 5 сек, иначе RemoteServiceException FATAL.
         // B86 снял это — неверно для widget-flow. Возвращаем с реальным state
@@ -953,16 +953,15 @@ private fun displayName(uri: Uri): String? {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        // B106: cancel notif ДО unbind — Success/Failed не должны висеть после stopSelf
         try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
-        // B94: unbind только если нет активной передачи (axiom#98 — иначе
-        // сломает следующий QR-сеанс или параллельную передачу)
+        // B112: снимаем счётчик ДО проверки — иначе transferActive видит сам себя
+        try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         try {
             if (!AtomController.transferActive) {
                 QrScanActivity.unbind()
-                InAppLogger.d("FileSenderService", "B94: unbind (no active transfer)")
+                InAppLogger.d("FileSenderService", "B112: unbind (no active transfer)")
             } else {
-                InAppLogger.d("FileSenderService", "B94: skip unbind (transfer active)")
+                InAppLogger.d("FileSenderService", "B112: skip unbind (transfer active)")
             }
         } catch (_: Exception) {}
         // B75#22: nulling callbacks — следующий onCreate переустановит
@@ -971,7 +970,7 @@ private fun displayName(uri: Uri): String? {
             AtomController.meshNode?.onFileDecline = null
         } catch (_: Exception) {}
         TransferNotification.resetCache(NOTIF_ID)
-        try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+        // B112: setTransferActive уже сделан выше — здесь только release resources
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         scope.cancel()

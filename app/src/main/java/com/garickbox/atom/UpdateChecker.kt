@@ -47,9 +47,14 @@ object UpdateChecker {
     private val progressListeners = java.util.concurrent.CopyOnWriteArrayList<(Long, Long) -> Unit>()
     private val finishListeners = java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
 
-    fun addProgressListener(l: (Long, Long) -> Unit) { progressListeners.add(l) }
+    // B112: dedup — повторный add тех же listener'ов не плодит дубликаты
+    fun addProgressListener(l: (Long, Long) -> Unit) {
+        if (!progressListeners.contains(l)) progressListeners.add(l)
+    }
     fun removeProgressListener(l: (Long, Long) -> Unit) { progressListeners.remove(l) }
-    fun addFinishListener(l: (Boolean) -> Unit) { finishListeners.add(l) }
+    fun addFinishListener(l: (Boolean) -> Unit) {
+        if (!finishListeners.contains(l)) finishListeners.add(l)
+    }
     fun removeFinishListener(l: (Boolean) -> Unit) { finishListeners.remove(l) }
 
     suspend fun checkForUpdate(context: Context): Release? = withContext(Dispatchers.IO) {
@@ -547,10 +552,24 @@ object UpdateChecker {
         }
     }
 
-    /** B71 axiom#58: auto-OTA из TestApi. Download + system installer. */
+    /** B71 axiom#58: auto-OTA из TestApi. Download + system installer.
+     *  B112: если вызвано с main thread (broadcast/UI) — не блокируем, работаем в IO. */
     fun startAutoUpdate(ctx: Context): String {
         val app = ctx.applicationContext
         if (isDownloading) return "DOWNLOADING " + (currentRelease?.tag ?: "?")
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            InAppLogger.d("UpdateChecker", "B112: main thread → SCHEDULED (background)")
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try { startAutoUpdateBlocking(app) } catch (e: Exception) {
+                    InAppLogger.err("UpdateChecker", "B112 bg check: ${e.message}")
+                }
+            }
+            return "SCHEDULED"
+        }
+        return startAutoUpdateBlocking(app)
+    }
+
+    private fun startAutoUpdateBlocking(app: Context): String {
         val release = try {
             kotlinx.coroutines.runBlocking { checkForUpdate(app) }
         } catch (e: Exception) {

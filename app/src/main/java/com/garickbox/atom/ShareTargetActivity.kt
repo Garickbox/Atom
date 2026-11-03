@@ -215,7 +215,23 @@ class ShareTargetActivity : AppCompatActivity() {
         }
         b.scanRow.setOnClickListener {
             parent.dismiss()
-            startActivity(Intent(this, QrScanActivity::class.java))
+            // B112: передаём uris в QrScanActivity — иначе файлы теряются
+            val scanIntent = Intent(this, QrScanActivity::class.java).apply {
+                action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
+                type = "*/*"
+                if (uris.size == 1) {
+                    putExtra(Intent.EXTRA_STREAM, uris.first())
+                } else {
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                }
+                putStringArrayListExtra("atom_relative_paths",
+                    ArrayList(urisRelativePaths.map { it ?: "" }))
+                clipData = android.content.ClipData.newRawUri("", uris.first()).apply {
+                    for (i in 1 until uris.size) addItem(android.content.ClipData.Item(uris[i]))
+                }
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(scanIntent)
             finish()
         }
         b.showQrRow.setOnClickListener {

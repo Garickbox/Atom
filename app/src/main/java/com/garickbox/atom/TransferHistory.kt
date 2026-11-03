@@ -35,7 +35,7 @@ object TransferHistory {
         } catch (_: Exception) { emptyList() }
     }
 
-    /** B107: import CSV → merge (skip duplicate id, cap MAX_ITEMS) */
+    /** B112: import CSV — формат совпадает с export: timestamp,peer,file,bytes,status,duration_ms,saved_path */
     fun importCsv(ctx: Context, csvText: String): Int {
         val lines = csvText.split("\n").filter { it.isNotBlank() }
         if (lines.size < 2) return 0
@@ -45,12 +45,14 @@ object TransferHistory {
             if (f.size < 7) continue
             try {
                 incoming.add(Record(
-                    id = f[0], peerName = f[1], fileName = f[2],
+                    id = "import-" + System.nanoTime(),
+                    timestamp = parseTimestamp(f[0]),
+                    peerName = f[1],
+                    fileName = f[2],
                     bytes = f[3].toLongOrNull() ?: 0L,
                     status = f[4],
                     durationMs = f[5].toLongOrNull() ?: 0L,
-                    timestamp = parseTimestamp(f[6]),
-                    savedPath = ""
+                    savedPath = f[6]
                 ))
             } catch (_: Exception) {}
         }

@@ -98,8 +98,8 @@ class FileReceiverService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
-        try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         super.onCreate()
+        try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         instance = this
         // Немедленный startForeground — иначе ANR на Android 12+
         startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0, 0L))

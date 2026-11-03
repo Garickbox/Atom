@@ -48,7 +48,8 @@ object FileReceiver {
         val sockets: CopyOnWriteArrayList<Socket> = CopyOnWriteArrayList(),
         @Volatile var lastProgressAt: Long = System.currentTimeMillis(),
         @Volatile var watchdogStarted: Boolean = false,
-        val relativePath: String? = null   // B15
+        val relativePath: String? = null,  // B15
+        val generation: AtomicInteger = AtomicInteger(1)  // B112: resume race guard
     )
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
@@ -73,6 +74,8 @@ object FileReceiver {
                 val actualOffset = if (actualReceived > 0 && actualReceived <= offer.size) actualReceived else 0L
                 InAppLogger.d("FileReceiver",
                     "resume: tid=${offer.transferId.take(8)} offer=${offer.resumeOffset} received=$actualReceived → ACK $actualOffset")
+                // B112: increment generation BEFORE reset counters — старые threads увидят mismatch в finally
+                existing.generation.incrementAndGet()
                 existing.sockets.forEach { try { it.close() } catch (_: Exception) {} }
                 existing.sockets.clear()
                 existing.finished.set(0)
@@ -80,7 +83,7 @@ object FileReceiver {
                 existing.paused.set(false)
                 existing.lastProgressAt = System.currentTimeMillis()
                 InAppLogger.d("FileReceiver",
-                    "B110: resume tid=${offer.transferId.take(8)} reset sockets/finished/failed")
+                    "B112: resume tid=${offer.transferId.take(8)} gen=${existing.generation.get()}")
                 sendAccept(ctx, offer, actualOffset)
                 return
             } else {
@@ -205,21 +208,26 @@ object FileReceiver {
             socket.receiveBufferSize = 4 * 1024 * 1024
             val dis = DataInputStream(BufferedInputStream(socket.getInputStream(), 512 * 1024))
 
-            // Header
+            // Header — B112 axiom#46: validate len BEFORE readN (OOM protection)
             val tidLen = dis.readInt()
+            if (tidLen !in 1..256) {
+                InAppLogger.err("FileReceiver", "B112-sec: bad tid len=$tidLen")
+                throw IllegalArgumentException("B112-sec: bad tid len")
+            }
             val tid = String(readN(dis, tidLen), Charsets.UTF_8)
             tidForLog = tid
 
             val hashLen = dis.readInt()
+            if (hashLen !in 1..128) {
+                InAppLogger.err("FileReceiver", "B112-sec: bad hash len=$hashLen")
+                throw IllegalArgumentException("B112-sec: bad hash len")
+            }
             val senderHash = String(readN(dis, hashLen), Charsets.UTF_8)
 
             val nameLen = dis.readInt()
-            // B100a axiom#46: cap peer-controlled header lengths (OOM protection)
-            if (tidLen !in 1..256 || hashLen !in 1..128 || nameLen !in 1..512) {
-                InAppLogger.err("FileReceiver",
-                    "B100-sec: bad header len tid=$tidLen hash=$hashLen name=$nameLen")
-                // B101a: throw -> catch releases _isBusy
-                throw IllegalArgumentException("B100-sec: bad header len")
+            if (nameLen !in 1..512) {
+                InAppLogger.err("FileReceiver", "B112-sec: bad name len=$nameLen")
+                throw IllegalArgumentException("B112-sec: bad name len")
             }
             val name = String(readN(dis, nameLen), Charsets.UTF_8)
 
@@ -287,6 +295,7 @@ object FileReceiver {
 
             startWatchdogOnce(session, ctx)
 
+            val myGen = session.generation.get()  // B112: snapshot для finally
             scope.launch {
                 var pos = offset
                 try {
@@ -328,10 +337,12 @@ object FileReceiver {
                         "thread $threadIdx error: ${e.javaClass.simpleName}: ${e.message}")
                     session.failed.set(true)
                 } finally {
-                    // B20.5: increment + set(false) ДО close — close может блокировать 100ms+,
-                    // следующий offer приходит в это окно и ловит busy.
                     session.sockets.remove(socket)
-                    if (session.paused.get() && !session.failed.get()) {
+                    // B112: gen check — старый thread после resume не трогает counters новой сессии
+                    if (myGen != session.generation.get()) {
+                        InAppLogger.d("FileReceiver",
+                            "B112: thread $threadIdx old gen=$myGen cur=${session.generation.get()} — skip counters")
+                    } else if (session.paused.get() && !session.failed.get()) {
                         InAppLogger.d("FileReceiver",
                             "thread $threadIdx paused — keeping .part (tid=${session.tid.take(8)})")
                         _isBusy.set(false)

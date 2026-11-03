@@ -430,7 +430,8 @@ class MainActivity : AppCompatActivity() {
                     ip = "",
                     mac = intent.getStringExtra("atom_peer_mac") ?: ""
                 )
-                pickerShownForPeer = false
+                // B112: pickerShownForPeer=true ДО показа — иначе onResume покажет второй диалог
+                pickerShownForPeer = true
                 showSendPicker()
             }
         }
@@ -598,14 +599,18 @@ class MainActivity : AppCompatActivity() {
         UpdateChecker.checkPending(this)
         if (pendingWidgetSend) {
             pendingWidgetSend = false
+            // B112: очищаем intent.action — иначе при повороте повторно запустится
+            try { intent?.action = null } catch (_: Exception) {}
             processWidgetSend()
         }
         if (pendingShortcutFind) {
             pendingShortcutFind = false
+            try { intent?.action = null } catch (_: Exception) {}
             showSendPicker()
         }
         if (pendingPeerForShareTarget != null && !pickerShownForPeer) {
             pickerShownForPeer = true
+            try { intent?.action = null } catch (_: Exception) {}
             showSendPicker()
         }
         // B10d: восстановить OTA-диалог если загрузка идёт
