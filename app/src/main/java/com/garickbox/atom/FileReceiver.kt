@@ -441,7 +441,10 @@ object FileReceiver {
             InAppLogger.d("FileReceiver",
                 "finalize: ${session.received.get()}/${session.totalSize} received, failed=${session.failed.get()}")
 
-            try { session.channel.force(true) } catch (_: Exception) {}
+            try { session.channel.force(true) } catch (e: Exception) {
+                InAppLogger.err("FileReceiver", "B100c: fsync failed tid=${session.tid.take(8)}: ${e.message}")
+                session.failed.set(true)
+            }
             try { session.channel.close() } catch (_: Exception) {}
             try { session.raf.close() } catch (_: Exception) {}
 
@@ -572,12 +575,19 @@ object FileReceiver {
                             "B80#59: skip Success, newer Running " + curS.transferId.take(8) +
                             " (old " + session.tid.take(8) + " done)")
                     } else {
-                        // B79: badge counter — непрочитанная передача
-                        try { BadgeHelper.increment(ctx) } catch (_: Exception) {}
-                        AtomController.transferState.value = TransferState.Success(
-                            session.peerName, 1, session.totalSize, 0
-                        )
-                        InAppLogger.d("FileReceiver", "Success state set (always)")
+                        if (hashOk) {
+                            try { BadgeHelper.increment(ctx) } catch (_: Exception) {}
+                            AtomController.transferState.value = TransferState.Success(
+                                session.peerName, 1, session.totalSize, 0
+                            )
+                            InAppLogger.d("FileReceiver", "Success state set (hashOk=true)")
+                        } else {
+                            AtomController.transferState.value = TransferState.Failed(
+                                session.tid, session.peerName, session.name,
+                                "SHA-256 mismatch (corrupted)", "", ""
+                            )
+                            InAppLogger.err("FileReceiver", "B109: SHA-256 mismatch → Failed")
+                        }
                     }
                 }
             } else {

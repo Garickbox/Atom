@@ -324,7 +324,7 @@ object UpdateChecker {
         InAppLogger.d("UpdateChecker",
             "parallel done in ${"%.1f".format(elapsed)}s = ${"%.1f".format(speed)} MB/s")
 
-        if (!okRef.get() || outFile.length() != totalSize) {
+        if (!okRef.get() || downloaded.get() != totalSize) {
             outFile.delete()
             return downloadSingle(client, url, outFile, onProgress)
         }
@@ -359,6 +359,9 @@ object UpdateChecker {
                         onProgress(downloaded, total)
                     }
                 }
+            }
+            if (total > 0 && downloaded < total) {
+                throw IllegalStateException("truncated: $downloaded/$total")
             }
             onProgress(downloaded, total)
         }

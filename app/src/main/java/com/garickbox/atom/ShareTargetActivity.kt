@@ -68,6 +68,10 @@ class ShareTargetActivity : AppCompatActivity() {
                 }
             }
         } catch (_: Exception) {}
+        try {
+            AtomController.wifiDirect?.onPeersChanged = null
+            AtomController.wifiDirect?.onError = null
+        } catch (_: Exception) {}
         try { tvDialog?.dismiss() } catch (_: Exception) {}
         tvDialog = null
         super.onDestroy()
@@ -263,6 +267,7 @@ class ShareTargetActivity : AppCompatActivity() {
             if (!done) {
                 done = true
                 try { dialog.dismiss() } catch (_: Exception) {}
+                wd.disconnect() // B109: don't leave P2P group dangling
                 Toast.makeText(this@ShareTargetActivity,
                     "Не удалось — попробуй через поиск", Toast.LENGTH_LONG).show()
                 finish()
@@ -470,6 +475,7 @@ class ShareTargetActivity : AppCompatActivity() {
             if (!done) {
                 done = true
                 tvDialog?.dismiss()
+                wd.disconnect() // B109
                 Toast.makeText(this@ShareTargetActivity,
                     "Не удалось подключиться. Попробуй ещё раз.",
                     Toast.LENGTH_LONG).show()
@@ -607,6 +613,7 @@ class ShareTargetActivity : AppCompatActivity() {
             delay(20000)
             if (!done) {
                 done = true
+                wd.disconnect() // B109
                 Toast.makeText(this@ShareTargetActivity,
                     "Не удалось подключиться через Wi-Fi Direct. Попробуй ещё раз.",
                     Toast.LENGTH_LONG).show()
