@@ -114,9 +114,11 @@ class FileSenderService : Service() {
     override fun onCreate() {
         try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         super.onCreate()
-        // B86: НЕ startForeground немедленно — мигание "Подготовка" при каждом
-        // тапе Pause/Cancel. startForeground вызывается в onStartCommand
-        // per-action: START → buildRunning, PAUSE → buildPaused, CANCEL → нет.
+        // B101o: FGS-контракт — getForegroundService() (widget) требует
+        // startForeground() в 5 сек, иначе RemoteServiceException FATAL.
+        // B86 снял это — неверно для widget-flow. Возвращаем с реальным state
+        // (Running/Paused/Idle-placeholder), не мигает "Подготовка".
+        try { startForeground(NOTIF_ID, buildInitialFgsNotif()) } catch (_: Exception) {}
         wifiLock = PowerLocks.acquireWifi(this, "atom-send-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-send-wake")
 
@@ -140,6 +142,25 @@ class FileSenderService : Service() {
         InAppLogger.d("FileSenderService", "onCreate, locks acquired")
     }
 
+    /** B101o: notif из текущего state — FGS-контракт без "Подготовка" */
+    private fun buildInitialFgsNotif(): android.app.Notification {
+        return try {
+            val cur = AtomController.transferState.value
+            when (cur) {
+                is TransferState.Running -> TransferNotification.buildRunning(
+                    this, cur.transferId, cur.peerName, cur.fileName,
+                    cur.bytesSent, cur.bytesTotal, cur.bytesPerSecond,
+                    cur.fileIndex, cur.fileCount)
+                is TransferState.Paused -> TransferNotification.buildPaused(
+                    this, cur.transferId, cur.peerName, cur.fileName,
+                    cur.bytesSent, cur.bytesTotal, cur.fileIndex, cur.fileCount)
+                else -> TransferNotification.buildIdlePlaceholder(this)
+            }
+        } catch (_: Exception) {
+            TransferNotification.buildIdlePlaceholder(this)
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
@@ -149,9 +170,12 @@ class FileSenderService : Service() {
                 val uris = intent.getStringArrayListExtra(EXTRA_URIS)?.map { Uri.parse(it) } ?: emptyList()
                 if (uris.isEmpty()) { stopSelf(); return START_NOT_STICKY }
                 // B86: startForeground сейчас (было в onCreate)
-                startForeground(NOTIF_ID, TransferNotification.buildRunning(
-                    this, "prep", peerName, "Подготовка", 0, 0
-                ))
+                // B101o: startForeground уже в onCreate (FGS-контракт),
+                // здесь обновляем на реальный Running notif
+                try {
+                    TransferNotification.update(this, NOTIF_ID,
+                        TransferNotification.buildRunning(this, "prep", peerName, "Подготовка", 0, 0))
+                } catch (_: Exception) {}
                 val pathsRaw = intent.getStringArrayListExtra(EXTRA_RELATIVE_PATHS) ?: arrayListOf()
                 val paths = pathsRaw.map { if (it.isBlank()) null else it }
                 lastPeerIp = peerIp

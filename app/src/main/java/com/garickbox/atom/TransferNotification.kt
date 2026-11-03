@@ -73,6 +73,22 @@ object TransferNotification {
             .build()
     }
 
+    /**
+     * B101o: минимальный placeholder — FGS обязателен в onCreate до фактической
+     * передачи. Не мигает "Подготовка", показывает "Готов к работе".
+     */
+    fun buildIdlePlaceholder(ctx: Context): Notification {
+        return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle("⚛️ Atom")
+            .setContentText("Готов к работе")
+            .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .build()
+    }
+
     // B91: общий contentIntent — tap → MainActivity (для всех типов уведомлений)
     private fun openAppPi(ctx: Context, reqCode: Int): PendingIntent {
         val openIntent = Intent(ctx, MainActivity::class.java).apply {
