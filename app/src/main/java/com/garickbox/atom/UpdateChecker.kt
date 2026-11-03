@@ -211,6 +211,11 @@ object UpdateChecker {
                 try { saveApkToDownloads(activity, out, release.tag) } catch (_: Exception) {}
                 if (useNotification) hideNotification(activity)
                 activity.runOnUiThread {
+                    if (activity.isFinishing || activity.isDestroyed) {
+                        InAppLogger.d("UpdateChecker",
+                            "B110: skip UI после destroy, APK в ${out.absolutePath}")
+                        return@runOnUiThread
+                    }
                     finishListeners.forEach { l -> try { l(true) } catch (_: Exception) {} }
                     if (onFinish != null) {
                         onFinish.invoke(true)

@@ -105,7 +105,9 @@ class WifiDirectManager(private val ctx: Context) {
             }
             WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
                 InAppLogger.d("WifiDirect", "peers changed")
-                requestPeers()
+                try { requestPeers() } catch (e: Exception) {
+                    InAppLogger.d("WifiDirect", "B110: requestPeers после dead channel: ${e.javaClass.simpleName}")
+                }
             }
             WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                 InAppLogger.d("WifiDirect", "connection changed")

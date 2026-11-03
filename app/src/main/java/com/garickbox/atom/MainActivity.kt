@@ -151,6 +151,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var batteryPromptChecked = false
+    private var onboardingDialogOpen = false  // B110
 
     /** B77: одноразовый prompt если whitelist нет и ещё не спрашивали. */
     private fun maybePromptBatteryOnce() {
@@ -180,6 +181,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runOnboarding() {
+        if (onboardingDialogOpen) return  // B110
+        onboardingDialogOpen = true
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            onboardingDialogOpen = false
+        }, 2000L)
         OnboardingHelper.next(this) { missing ->
             InAppLogger.d("MainActivity", "onboarding: request ${missing.size} perms")
             try { permissionLauncher.launch(missing.toTypedArray()) } catch (_: Exception) {}

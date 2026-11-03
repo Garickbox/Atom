@@ -51,7 +51,9 @@ class QrShareActivity : AppCompatActivity() {
 
         // B71: кнопка ← В главное (axiom#62)
         val closeBtn = findViewById<android.view.View>(R.id.btnClose)
-        closeBtn?.setOnClickListener { finish() }
+        closeBtn?.setOnClickListener {
+            if (!isFinishing && !isDestroyed) finish()
+        }
         if (TvHelper.isTv(this)) closeBtn?.requestFocus()
 
         startP2pGroup()
