@@ -34,6 +34,18 @@ android {
         buildConfig true
     }
 
+    // P2: BouncyCastle (bcprov + bcpkix) дают одинаковые META-INF/versions/9/OSGI-INF/MANIFEST.MF
+    // AGP 8.5.2 strict → DuplicateRelativeFileException. Exclude один из дублей.
+    packagingOptions {
+        resources {
+            excludes += [
+                'META-INF/versions/9/OSGI-INF/MANIFEST.MF',
+                'META-INF/versions/9/module-info.class',
+                'META-INF/versions/11/module-info.class'
+            ]
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
