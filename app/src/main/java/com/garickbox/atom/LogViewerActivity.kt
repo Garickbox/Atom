@@ -66,10 +66,10 @@ class LogViewerActivity : AppCompatActivity() {
                 b.logText.text = sb.toString()
                 b.scrollView.post { b.scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             } catch (e: Exception) {
-                b.logText.text = "Ошибка самопроверки: ${e.message}\n\n═══ LOG ═══\n${
-                    try { InAppLogger.getLogFile()?.readText() ?: "(пусто)" }
-                    catch (_: Exception) { "(ошибка)" }
-                }"
+                val logText2 = try {
+                    InAppLogger.getLogFile()?.readText() ?: "(пусто)"
+                } catch (_: Exception) { "(ошибка)" }
+                b.logText.text = "Ошибка самопроверки: ${e.message}\n\n═══ LOG ═══\n$logText2"
             }
         }
     }
