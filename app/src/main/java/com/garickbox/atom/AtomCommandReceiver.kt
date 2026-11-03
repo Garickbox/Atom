@@ -48,7 +48,7 @@ class AtomCommandReceiver : BroadcastReceiver() {
                 if (mac.isBlank()) {
                     try {
                         val i = Intent(ctx, MainActivity::class.java).apply {
-                            action = MainActivity.ACTION_SHORTCUT_FIND
+                            this.action = MainActivity.ACTION_SHORTCUT_FIND
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                         ctx.startActivity(i)
