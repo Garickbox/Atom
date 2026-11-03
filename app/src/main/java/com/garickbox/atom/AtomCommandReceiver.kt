@@ -68,6 +68,35 @@ class AtomCommandReceiver : BroadcastReceiver() {
             ACTION_PING -> {
                 InAppLogger.d("AtomCmd", "PING received")
             }
+            ACTION_SEND_URI -> {
+                try {
+                    val uriStr = intent.getStringExtra("uri") ?: ""
+                    if (uriStr.isBlank()) {
+                        InAppLogger.err("AtomCmd", "SEND_URI: empty uri")
+                    } else {
+                        val last = AtomController.lastPeer
+                        if (last == null || last.ip.isBlank()) {
+                            InAppLogger.err("AtomCmd", "SEND_URI: no last peer")
+                        } else {
+                            FileSenderService.startTransfer(ctx, last,
+                                listOf(android.net.Uri.parse(uriStr)))
+                            InAppLogger.d("AtomCmd", "SEND_URI → ${last.name} $uriStr")
+                        }
+                    }
+                } catch (e: Exception) {
+                    InAppLogger.err("AtomCmd", "SEND_URI error: ${e.message}")
+                }
+            }
+            ACTION_SCHEDULE_RECEIVE -> {
+                try {
+                    val on = intent.getBooleanExtra("on", true)
+                    if (on && !WidgetReceiveService.isActive) WidgetReceiveService.toggle(ctx)
+                    else if (!on && WidgetReceiveService.isActive) WidgetReceiveService.toggle(ctx)
+                    InAppLogger.d("AtomCmd", "SCHEDULE_RECEIVE on=$on")
+                } catch (e: Exception) {
+                    InAppLogger.err("AtomCmd", "SCHEDULE_RECEIVE error: ${e.message}")
+                }
+            }
             ACTION_SET_VERBOSE -> {
                 try {
                     val on = intent.getBooleanExtra("on", true)
@@ -164,6 +193,8 @@ class AtomCommandReceiver : BroadcastReceiver() {
         const val ACTION_PEERS = "com.garickbox.atom.PEERS"
         const val ACTION_HISTORY = "com.garickbox.atom.HISTORY"
         const val ACTION_SET_VERBOSE = "com.garickbox.atom.SET_VERBOSE"
+        const val ACTION_SEND_URI = "com.garickbox.atom.SEND_URI"
+        const val ACTION_SCHEDULE_RECEIVE = "com.garickbox.atom.SCHEDULE_RECEIVE"
         const val ACTION_SET_VERBOSE_RESULT = "com.garickbox.atom.SET_VERBOSE_RESULT"
         const val ACTION_STATUS_RESULT = "com.garickbox.atom.STATUS_RESULT"
         const val ACTION_PEERS_RESULT = "com.garickbox.atom.PEERS_RESULT"

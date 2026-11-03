@@ -103,6 +103,8 @@
                 <action android:name="com.garickbox.atom.PEERS" />
                 <action android:name="com.garickbox.atom.HISTORY" />
                 <action android:name="com.garickbox.atom.SET_VERBOSE" />
+                <action android:name="com.garickbox.atom.SEND_URI" />
+                <action android:name="com.garickbox.atom.SCHEDULE_RECEIVE" />
             </intent-filter>
         </receiver>
 

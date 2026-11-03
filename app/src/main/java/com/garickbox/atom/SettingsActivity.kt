@@ -26,6 +26,15 @@ class SettingsActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         b.toolbar.setNavigationOnClickListener { finish() }
 
+        // B105: batteryValue.text — статус whitelist (пустая строка в XML)
+        try {
+            val wl = BatteryOptimizationHelper.isWhitelisted(this)
+            b.batteryValue.text = if (wl) "✅ Разрешено" else "⚠️ Ограничено"
+            b.batteryValue.setTextColor(if (wl)
+                android.graphics.Color.parseColor("#2E7D32")
+            else android.graphics.Color.parseColor("#F57C00"))
+        } catch (_: Exception) {}
+
         // B94: battery row — статус + кнопка "Разрешить" если не whitelisted
         b.batteryRow.setOnClickListener {
             if (!BatteryOptimizationHelper.isWhitelisted(this)) {

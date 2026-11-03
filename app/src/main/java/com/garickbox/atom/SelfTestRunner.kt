@@ -31,7 +31,9 @@ object SelfTestRunner {
             checkAirplane(ctx),
             checkLocationEnabled(ctx),
             checkBattery(ctx),
-            checkP2p(ctx)
+            checkP2p(ctx),
+            checkP2pStale(ctx),
+            checkHotspotCapability(ctx)
         )
     }
 
@@ -149,6 +151,40 @@ object SelfTestRunner {
         }
     }
 
+
+    private fun checkP2pStale(ctx: Context): TestResult {
+        return try {
+            val m = ctx.getSystemService(Context.WIFI_P2P_SERVICE)
+                as? android.net.wifi.p2p.WifiP2pManager
+            if (m == null) return TestResult("P2P группа", true, "не поддерживается")
+            val ch = m.initialize(ctx, android.os.Looper.getMainLooper()) {}
+            if (ch == null) return TestResult("P2P группа", true, "channel null (skip)")
+            var res: TestResult? = null
+            val latch = java.util.concurrent.CountDownLatch(1)
+            try {
+                m.requestGroupInfo(ch) { group ->
+                    res = if (group == null) TestResult("P2P группа", true, "чисто (нет групп)")
+                        else TestResult("P2P группа", false,
+                            "зависла: ${group.networkName} (может блокировать discover код 2)")
+                    latch.countDown()
+                }
+            } catch (_: Exception) { latch.countDown() }
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            res ?: TestResult("P2P группа", true, "timeout (skip)")
+        } catch (e: Exception) {
+            TestResult("P2P группа", false, "ошибка: ${e.message}")
+        }
+    }
+
+    private fun checkHotspotCapability(ctx: Context): TestResult {
+        return try {
+            val hasFeature = ctx.packageManager.hasSystemFeature("android.hardware.wifi")
+            if (hasFeature) TestResult("Hotspot", true, "wifi feature OK (axiom#70: не запускаем)")
+            else TestResult("Hotspot", false, "нет wifi feature")
+        } catch (e: Exception) {
+            TestResult("Hotspot", false, "ошибка: ${e.message}")
+        }
+    }
 
     private fun checkBattery(ctx: Context): TestResult {
         return if (BatteryOptimizationHelper.isWhitelisted(ctx)) {

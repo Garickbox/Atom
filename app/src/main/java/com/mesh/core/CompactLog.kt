@@ -22,8 +22,14 @@ object CompactLog {
 
     fun getLogFile(): File? {
         val d = dir ?: return null
-        val f = File(d, "atom-compact.log")
-        return if (f.exists() && f.length() > 0) f else null
+        // B105: fallback на .log.1/.log.2 если основной пуст
+        val current = File(d, "atom-compact.log")
+        if (current.exists() && current.length() > 0) return current
+        for (i in 1..MAX_FILES) {
+            val rot = File(d, "atom-compact.log.$i")
+            if (rot.exists() && rot.length() > 0) return rot
+        }
+        return null
     }
 
     private var lastSpeedMbps: Double = 0.0
