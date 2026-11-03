@@ -600,7 +600,7 @@ class MainActivity : AppCompatActivity() {
             android.widget.Toast.makeText(
                 this,
                 "Без этих разрешений Атом не сможет находить устройства.\n" +
-                "Выдайте их в настройках приложения.",
+                "Выдай их в настройках приложения.",
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
@@ -796,7 +796,14 @@ class MainActivity : AppCompatActivity() {
                 b.transferPanel.visibility = android.view.View.VISIBLE
                 b.transferTitle.text = "✅ Готово"
                 b.transferSpeed.text = ""
-                b.transferDetail.text = "${state.peerName} · ${state.fileCount} файл(ов) · ${formatBytes(state.bytesTotal)}"
+                // B115: плюрализация
+                val fw = when {
+                    state.fileCount % 100 in 11..19 -> "файлов"
+                    state.fileCount % 10 == 1 -> "файл"
+                    state.fileCount % 10 in 2..4 -> "файла"
+                    else -> "файлов"
+                }
+                b.transferDetail.text = "${state.peerName} · ${state.fileCount} $fw · ${formatBytes(state.bytesTotal)}"
                 b.transferProgress.progress = 100
                 lifecycleScope.launch {
                     kotlinx.coroutines.delay(4000)

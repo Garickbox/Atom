@@ -491,7 +491,8 @@ object FileReceiver {
                         "B80#59: skip Failed, newer Running " + curF.transferId.take(8))
                 } else {
                     AtomController.transferState.value = TransferState.Failed(
-                        session.tid, session.peerName, session.name, "Ошибка потока", "", ""
+                        session.tid, session.peerName, session.name,
+                        "Передача прервана — не все данные получены", "", ""
                     )
                 }
                 // stop → finalizeEnd()

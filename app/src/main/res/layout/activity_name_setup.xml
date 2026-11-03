@@ -46,7 +46,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="Это имя увидят те, кому вы передаёте файлы."
+        android:text="Это имя увидят те, кому ты передаёшь файлы."
         android:textSize="12sp" />
 
     <Button

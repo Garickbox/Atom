@@ -58,7 +58,7 @@
                 android:clickable="true" android:focusable="true">
                 <TextView
                     android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="Известные peers" android:textSize="15sp" />
+                    android:layout_weight="1" android:text="Известные устройства" android:textSize="15sp" />
                 <TextView
                     android:id="@+id/peersCount"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"

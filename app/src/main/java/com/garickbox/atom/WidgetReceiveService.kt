@@ -173,7 +173,7 @@ class WidgetReceiveService : Service() {
         return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_WIDGET)
             .setSmallIcon(R.drawable.ic_notification_receive)
             .setContentTitle(EMOJI_RECV + " Атом принимает")
-            .setContentText("Можно отправить файл · осталось")
+            .setContentText("Можно отправлять файлы — я жду")
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
             .setWhen(activeUntil)

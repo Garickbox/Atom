@@ -142,7 +142,9 @@ class AtomQSTile : TileService() {
                     tile.label = "Атом"
                     val pct = if (ts.bytesTotal > 0)
                         ((ts.bytesSent * 100) / ts.bytesTotal).toInt() else 0
-                    tile.subtitle = "📤 " + ts.peerName.take(10) + " · " + pct + "%"
+                    // B115: 📥 если приём, 📤 если отправка
+                    val icon = if (ts.isReceiver) "📥" else "📤"
+                    tile.subtitle = "$icon " + ts.peerName.take(10) + " · " + pct + "%"
                 }
                 is TransferState.Paused -> {
                     tile.state = Tile.STATE_INACTIVE

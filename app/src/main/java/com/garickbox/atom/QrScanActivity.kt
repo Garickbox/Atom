@@ -236,7 +236,7 @@ class QrScanActivity : AppCompatActivity() {
                 // B113: передаём relative paths (папки)
                 FileSenderService.startTransfer(this, peer, pendingUris, pendingRelativePaths)
             } else {
-                Toast.makeText(this, "Нет файлов", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "QR отсканирован, но файлы не выбраны — вернись и выбери файлы", Toast.LENGTH_LONG).show()
             }
             finish()
         }, 2500L)

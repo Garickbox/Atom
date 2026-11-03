@@ -53,7 +53,7 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, NameSetupActivity::class.java))
         }
 
-        b.peersCount.text = AtomController.getKnownP2pPeers().size.toString() + " peers"
+        b.peersCount.text = AtomController.getKnownP2pPeers().size.toString()
         b.peersRow.setOnClickListener { showPeersDialog() }
 
         b.buildValue.text = "build-" + BuildConfig.VERSION_CODE + " · " + BuildConfig.VERSION_NAME
@@ -136,7 +136,7 @@ class SettingsActivity : AppCompatActivity() {
             p.name + "\n" + p.mac + " · " + ago(p.lastConnectedMs)
         }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("Известные peers (" + peers.size + ")")
+            .setTitle("Известные устройства (" + peers.size + ")")
             .setItems(labels) { _, which ->
                 val peer = peers[which]
                 AlertDialog.Builder(this)

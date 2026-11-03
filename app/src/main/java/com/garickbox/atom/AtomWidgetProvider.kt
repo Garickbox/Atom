@@ -52,7 +52,10 @@ class AtomWidgetProvider : AppWidgetProvider() {
 
             when (state) {
                 is TransferState.Running -> {
-                    val title = EMOJI_SEND + " " + ARROW + " " + state.peerName +
+                    // B115: 📥/📤 по направлению, ← вместо → при приёме
+                    val icon = if (state.isReceiver) EMOJI_RECV else EMOJI_SEND
+                    val arrowStr = if (state.isReceiver) "←" else ARROW
+                    val title = icon + " " + arrowStr + " " + state.peerName +
                         if (state.fileCount > 0) " · файл " + state.fileIndex + "/" + state.fileCount else ""
                     rv.setTextViewText(R.id.title, title)
                     val pct = if (state.bytesTotal > 0) ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
@@ -94,7 +97,7 @@ class AtomWidgetProvider : AppWidgetProvider() {
                     val sub = if (recvOn) {
                         val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
                         "Осталось " + (remain / 60) + ":" + "%02d".format(remain % 60)
-                    } else "Нажми на действие"
+                    } else "Тап: приём · 2×тап: отправить"
                     rv.setTextViewText(R.id.subtitle, sub)
                     rv.setViewVisibility(R.id.progress, View.GONE)
                     rv.setTextViewText(R.id.btn_primary, if (recvOn) EMOJI_RECV + " Активно" else EMOJI_RECV + " Принимать")

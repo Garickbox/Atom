@@ -25,7 +25,7 @@ object PreflightChecker {
         if (PermissionsHelper.missing(ctx).isNotEmpty()) {
             val short = PermissionsHelper.missing(ctx).map { it.substringAfterLast(".") }
             list.add(Issue(Id.PERMISSIONS, "Разрешения",
-                "Не выданы: ${short.joinToString()}. Нажми «Запросить»"))
+                "Не выданы: ${short.joinToString()}. Нажми «Настроить»"))
         }
 
         if (isAirplaneMode(ctx)) {

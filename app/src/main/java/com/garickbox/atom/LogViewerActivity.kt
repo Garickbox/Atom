@@ -78,7 +78,7 @@ class LogViewerActivity : AppCompatActivity() {
         val ts = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
             .format(java.util.Date())
         val fileName = "atom-" + ts + ".log"
-        Toast.makeText(this, "Сохраняю...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Сохраняю лог в Download/Atom/…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.IO) {
             val result = MediaStoreSaver.save(
                 this@LogViewerActivity, file, fileName, "text/plain"

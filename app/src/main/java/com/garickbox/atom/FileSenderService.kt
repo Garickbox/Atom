@@ -499,11 +499,11 @@ class FileSenderService : Service() {
             val finalNotif = if (filesOk == 0 && uris.isNotEmpty()) {
                 AtomController.transferState.value = TransferState.Failed(
                     "no-file", peerName, "—",
-                    "Все файлы упали (0/" + uris.size + ")", "", ""
+                    "Не удалось отправить ни один файл", "", ""
                 )
                 TransferNotification.buildFailed(
                     this@FileSenderService, "no-file", peerName, "—",
-                    "Все файлы упали (0/${uris.size})")
+                    "Не удалось отправить ни один файл")
             } else {
                 AtomController.transferState.value = TransferState.Success(
                     peerName, filesOk, totalSent, duration
@@ -630,21 +630,29 @@ class FileSenderService : Service() {
         if (acceptResult == null) {
             lastFailReason = "timeout"
             InAppLogger.d("FileSenderService", "accept timeout")
+            // B115: busy-timeout ≠ не ответил
+            val reason = if (lastReason == "busy")
+                "Получатель занят (30 сек) — попробуйте позже"
+                else "Получатель не отвечает"
             AtomController.transferState.value = TransferState.Failed(
-                transferId, peerName, name, "Получатель не ответил", peerIp, contentHash
+                transferId, peerName, name, reason, peerIp, contentHash
             )
             TransferNotification.update(this, NOTIF_ID,
-                TransferNotification.buildFailed(this, transferId, peerName, name, "Нет ответа"))
+                TransferNotification.buildFailed(this, transferId, peerName, name, reason))
             return -1
         }
 
         if (acceptResult.isFailure) {
             val reason = (acceptResult.exceptionOrNull() as? DeclineException)?.reason ?: "declined"
             lastFailReason = "declined:" + reason
+            // B115: полное покрытие reason-кодов (technical → human)
             val humanReason = when (reason) {
-                "busy" -> "занят — принимает другой файл"
-                "no_space" -> "нет места на устройстве"
-                else -> reason
+                "busy" -> "получатель занят — принимает другой файл"
+                "no_space" -> "на устройстве получателя нет места"
+                "tid_conflict" -> "конфликт сессии — попробуйте ещё раз"
+                "bad_size" -> "некорректный размер файла"
+                "declined" -> "получатель отклонил приём"
+                else -> "ошибка передачи"
             }
             AtomController.transferState.value = TransferState.Failed(
                 transferId, peerName, name, humanReason, peerIp, contentHash

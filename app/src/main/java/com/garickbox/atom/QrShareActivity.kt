@@ -232,7 +232,7 @@ class QrShareActivity : AppCompatActivity() {
 
     private fun showQr(ssid: String, pass: String, ip: String, mode: String) {
         InAppLogger.d("QrServer", "READY mode=$mode ssid=$ssid ip=$ip")
-        statusText.text = if (usingHotspot) "✅ Hotspot готов" else "✅ P2P готов"
+        statusText.text = "✅ Готов принимать — сканируйте QR на втором устройстве"
         val displayPass = if (TvHelper.isTv(this)) pass else "••••••••"
         infoText.text = "SSID: $ssid\nПароль: $displayPass\nIP: $ip\nРежим: $mode"
 

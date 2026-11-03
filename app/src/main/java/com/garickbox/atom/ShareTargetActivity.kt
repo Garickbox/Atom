@@ -180,7 +180,14 @@ class ShareTargetActivity : AppCompatActivity() {
 
         val n = uris.size
         val sz = formatBytes(totalSize())
-        b.headerText.text = if (n == 1) "Отправить 1 файл ($sz)" else "Отправить $n файлов ($sz)"
+        // B115: русская плюрализация
+        val fw = when {
+            n % 100 in 11..19 -> "файлов"
+            n % 10 == 1 -> "файл"
+            n % 10 in 2..4 -> "файла"
+            else -> "файлов"
+        }
+        b.headerText.text = "Отправить $n $fw ($sz)"
 
         val last = AtomController.lastPeer
         if (last != null) {
