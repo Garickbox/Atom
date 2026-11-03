@@ -812,10 +812,17 @@ class FileSenderService : Service() {
                                         TransferNotification.buildRunning(
                                             this@FileSenderService, transferId, peerName,
                                             name, displayTotal, size, bps, fileIndex, fileCount))
-                                    AtomController.transferState.value = TransferState.Running(
-                                        transferId, peerName, name, displayTotal, size,
-                                        bytesPerSecond = bps, isReceiver = false,
-                                        fileIndex = fileIndex, fileCount = fileCount)
+                                    // B100f.1 axiom#66: не перезаписывать Paused из async thread
+                                    val curF1 = AtomController.transferState.value
+                                    if (curF1 !is TransferState.Paused || curF1.transferId != transferId) {
+                                        AtomController.transferState.value = TransferState.Running(
+                                            transferId, peerName, name, displayTotal, size,
+                                            bytesPerSecond = bps, isReceiver = false,
+                                            fileIndex = fileIndex, fileCount = fileCount)
+                                    } else {
+                                        InAppLogger.d("FileSenderService",
+                                            "B100f.1: skip Running→Paused override tid=${transferId.take(8)}")
+                                    }
                                 }
                             }
                             dos.flush()

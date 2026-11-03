@@ -36,13 +36,19 @@ object TransferHistory {
     }
 
     fun add(ctx: Context, rec: Record) {
-        synchronized(lock) {
-            val current = list(ctx).toMutableList()
-            current.add(0, rec)
-            val top = current.take(MAX_ITEMS)
-            save(ctx, top)
-            com.mesh.core.InAppLogger.d("TransferHistory",
-                "B101i: added '${rec.fileName}' status=${rec.status} total=${top.size}")
+        // B101i-v3: err() вместо d() — гарантированная запись (без whitelist)
+        try {
+            synchronized(lock) {
+                val current = list(ctx).toMutableList()
+                current.add(0, rec)
+                val top = current.take(MAX_ITEMS)
+                save(ctx, top)
+                com.mesh.core.InAppLogger.err("TransferHistory",
+                    "B101i-v3: added '${rec.fileName}' status=${rec.status} total=${top.size}")
+            }
+        } catch (e: Throwable) {
+            com.mesh.core.InAppLogger.err("TransferHistory",
+                "B101i-v3: EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
