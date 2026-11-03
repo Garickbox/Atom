@@ -29,13 +29,30 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B102b: TV — снять portrait lock + overscan 48/27dp
+        if (!TvHelper.isTv(this)) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
         setContentView(R.layout.activity_qr_share)
         qrImage = findViewById(R.id.qrImage)
         statusText = findViewById(R.id.statusText)
         infoText = findViewById(R.id.infoText)
 
+        if (TvHelper.isTv(this)) {
+            val d = resources.displayMetrics.density
+            val padH = (48 * d).toInt()
+            val padV = (27 * d).toInt()
+            findViewById<android.view.View>(R.id.qrRoot)?.setPadding(padH, padV, padH, padV)
+            statusText.textSize = 22f
+            infoText.visibility = android.view.View.GONE
+        }
+
         // B71: кнопка ← В главное (axiom#62)
-        findViewById<android.view.View>(R.id.btnClose)?.setOnClickListener { finish() }
+        val closeBtn = findViewById<android.view.View>(R.id.btnClose)
+        closeBtn?.setOnClickListener { finish() }
+        if (TvHelper.isTv(this)) closeBtn?.requestFocus()
 
         startP2pGroup()
     }
@@ -217,12 +234,18 @@ class QrShareActivity : AppCompatActivity() {
         infoText.text = "SSID: $ssid\nПароль: $pass\nIP: $ip\nРежим: $mode"
 
         val qrText = "WIFI:T:WPA;S:$ssid;P:$pass;IP:$ip;;"
-        try {
-            val bmp = BarcodeEncoder().encodeBitmap(qrText, BarcodeFormat.QR_CODE, 700, 700)
-            qrImage.setImageBitmap(bmp)
-        } catch (e: Exception) {
-            InAppLogger.d("QrServer", "QR gen error: ${e.message}")
-            statusText.text = "QR ошибка: ${e.message}"
+        // B102b: динамический размер по qrImage.width (phone ~400dp / TV ~1000dp)
+        qrImage.post {
+            try {
+                val sizePx = if (qrImage.width > 0)
+                    minOf(qrImage.width, qrImage.height).coerceAtLeast(300)
+                else 700
+                val bmp = BarcodeEncoder().encodeBitmap(qrText, BarcodeFormat.QR_CODE, sizePx, sizePx)
+                qrImage.setImageBitmap(bmp)
+            } catch (e: Exception) {
+                InAppLogger.d("QrServer", "QR gen error: ${e.message}")
+                statusText.text = "QR ошибка: ${e.message}"
+            }
         }
     }
 
