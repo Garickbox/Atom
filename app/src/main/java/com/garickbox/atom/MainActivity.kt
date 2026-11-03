@@ -151,8 +151,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var batteryPromptChecked = false
-    // B110: guard от повторного runOnboarding в onResume (диалог Battery)
-    private var onboardingDialogOpen = false
 
     /** B77: одноразовый prompt если whitelist нет и ещё не спрашивали. */
     private fun maybePromptBatteryOnce() {
@@ -182,17 +180,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runOnboarding() {
-        // B110: не показывать диалог повторно (step=1 dialog может висеть)
-        if (onboardingDialogOpen) return
-        onboardingDialogOpen = true
         OnboardingHelper.next(this) { missing ->
             InAppLogger.d("MainActivity", "onboarding: request ${missing.size} perms")
             try { permissionLauncher.launch(missing.toTypedArray()) } catch (_: Exception) {}
         }
-        // Release через 2 сек — если диалог не показался (isDone=true), флаг не залипает
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            onboardingDialogOpen = false
-        }, 2000L)
     }
 
     private fun checkUpdate() {
