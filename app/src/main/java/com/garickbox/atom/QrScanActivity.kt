@@ -100,6 +100,14 @@ class QrScanActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.addAll(it) }
         }
+        // B114: clipData fallback (Samsung OneUI, Photo Picker, SAF)
+        if (list.isEmpty()) {
+            intent.clipData?.let { clip ->
+                for (i in 0 until clip.itemCount) {
+                    clip.getItemAt(i)?.uri?.let { list.add(it) }
+                }
+            }
+        }
         return list
     }
 

@@ -495,21 +495,24 @@ class FileSenderService : Service() {
                 return@launch
             }
             val duration = System.currentTimeMillis() - startedAt
-            // B75#20: Success только если хоть 1 файл ушёл; иначе Failed
-            if (filesOk == 0 && uris.isNotEmpty()) {
+            // B75#20 + B114: Success notif ТОЛЬКО если filesOk > 0
+            val finalNotif = if (filesOk == 0 && uris.isNotEmpty()) {
                 AtomController.transferState.value = TransferState.Failed(
                     "no-file", peerName, "—",
                     "Все файлы упали (0/" + uris.size + ")", "", ""
                 )
+                TransferNotification.buildFailed(
+                    this@FileSenderService, "no-file", peerName, "—",
+                    "Все файлы упали (0/${uris.size})")
             } else {
                 AtomController.transferState.value = TransferState.Success(
                     peerName, filesOk, totalSent, duration
                 )
+                TransferNotification.buildSuccess(
+                    this@FileSenderService, peerName, filesOk, totalSent, duration
+                )
             }
-            val ok = TransferNotification.buildSuccess(
-                this@FileSenderService, peerName, filesOk, totalSent, duration
-            )
-            TransferNotification.update(this@FileSenderService, NOTIF_ID, ok)
+            TransferNotification.update(this@FileSenderService, NOTIF_ID, finalNotif)
             val avgMbps = if (duration > 0) totalSent / 1024.0 / 1024.0 / (duration / 1000.0) else 0.0
             com.mesh.core.CompactLog.sessionEnd(filesOk, uris.size - filesOk, duration, avgMbps)
             InAppLogger.d("FileSenderService",

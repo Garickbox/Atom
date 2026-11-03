@@ -101,8 +101,16 @@ class FileReceiverService : Service() {
         super.onCreate()
         try { AtomController.setTransferActive(true) } catch (_: Exception) {}
         instance = this
-        // Немедленный startForeground — иначе ANR на Android 12+
-        startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0, 0L))
+        // B114: startForeground try/catch — revocation POST_NOTIFICATIONS → SecurityException
+        try {
+            startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0, 0L))
+        } catch (e: Exception) {
+            InAppLogger.err("FileReceiverService", "B114: startForeground fail: ${e.message}")
+            try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+            instance = null
+            stopSelf()
+            return
+        }
         wifiLock = PowerLocks.acquireWifi(this, "atom-recv-wifi")
         wakeLock = PowerLocks.acquireWake(this, "atom-recv-wake")
         InAppLogger.d("FileReceiverService", "onCreate, locks acquired")

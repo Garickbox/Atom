@@ -34,7 +34,7 @@ class MeshNode(private val ctx: Context) {
         private const val PORT = 47822
     }
 
-    var isRunning: Boolean = false
+    @Volatile var isRunning: Boolean = false
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

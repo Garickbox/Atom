@@ -59,17 +59,21 @@ object TransferHistory {
         if (incoming.isEmpty()) return 0
         synchronized(lock) {
             val current = list(ctx).toMutableList()
-            val existing = current.map { it.id }.toHashSet()
+            // B114: dedup по composite key (ts|peer|file|bytes) — id уникален, но записи могут совпадать
+            fun keyOf(r: Record) = "${r.timestamp}|${r.peerName}|${r.fileName}|${r.bytes}"
+            val existingKeys = current.map { keyOf(it) }.toHashSet()
             var added = 0
             for (rec in incoming) {
-                if (rec.id in existing) continue
+                val k = keyOf(rec)
+                if (k in existingKeys) continue
+                existingKeys.add(k)
                 current.add(rec); added++
             }
             if (added > 0) {
                 current.sortByDescending { it.timestamp }
                 save(ctx, current.take(MAX_ITEMS))
                 com.mesh.core.InAppLogger.err("TransferHistory",
-                    "B107: importCsv added=$added total=${current.size}")
+                    "B114: importCsv added=$added total=${current.size}")
             }
             return added
         }

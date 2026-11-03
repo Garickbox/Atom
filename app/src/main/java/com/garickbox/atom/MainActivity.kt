@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             pendingWidgetSend = false
             pendingShortcutFind = false
-            pendingPeerForShareTarget = null
+            // B114: pendingPeer НЕ сбрасываем — preset должен выжить rotate
             pickerShownForPeer = savedInstanceState.getBoolean("picker_shown", false)
         } else {
             when (intent?.action) {
@@ -628,9 +628,8 @@ class MainActivity : AppCompatActivity() {
         }
         if (pendingPeerForShareTarget != null && !pickerShownForPeer) {
             pickerShownForPeer = true
-            // B113: очищаем pending — иначе ShareTargetActivity подхватит старый peer из след. сессии
-            val peer = pendingPeerForShareTarget
-            pendingPeerForShareTarget = null
+            // B114: НЕ очищаем pending — ShareTargetActivity его прочтёт после выбора файла.
+            // Null ставит сам ShareTargetActivity после connect.
             try { intent?.action = null } catch (_: Exception) {}
             showSendPicker()
         }

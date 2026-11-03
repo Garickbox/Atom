@@ -381,17 +381,18 @@ object FileReceiver {
             if (!registered) {
                 _isBusy.set(false)
             } else {
-                // B113: при ошибке после sockets.add — если сессия уже заменена resume'ом,
-                // не трогаем её (иначе убьём новую)
                 val cur = activeSessions[tidForLog]
+                // B114: _isBusy сбрасываем ТОЛЬКО если сессия ещё своя (gen==1),
+                // иначе снимем lock новой сессии после resume
                 if (cur != null && cur.generation.get() == 1) {
                     activeSessions.remove(tidForLog)
                     cur.failed.set(true)
                     try { cur.channel.close() } catch (_: Exception) {}
                     try { cur.raf.close() } catch (_: Exception) {}
                     cur.partFile.delete()
+                    _isBusy.set(false)
                 }
-                _isBusy.set(false)
+                // если gen != 1 — busy управляется новой сессией, не трогаем
             }
         }
     }

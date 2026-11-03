@@ -79,7 +79,16 @@ class WidgetReceiveService : Service() {
                 isActive = true
                 autoStopGen++  // B74: инвалидирует старые autoStop-потоки
                 activeUntil = System.currentTimeMillis() + DURATION_MS
-                startForeground(NOTIF_ID, buildNotif())
+                // B114: try/catch — SecurityException на revocation POST_NOTIFICATIONS
+                try {
+                    startForeground(NOTIF_ID, buildNotif())
+                } catch (e: Exception) {
+                    InAppLogger.err("WidgetReceive", "B114: startForeground fail: ${e.message}")
+                    isActive = false
+                    activeUntil = 0L
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
                 try { AtomController.wifiDirect?.startContinuousDiscover() } catch (_: Exception) {}
                 wifiLock = PowerLocks.acquireWifi(this, "atom-widget-recv-wifi")
                 wakeLock = PowerLocks.acquireWake(this, "atom-widget-recv-wake")
