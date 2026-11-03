@@ -223,6 +223,63 @@ object MediaStoreSaver {
         }
     }
 
+    /**
+     * B101j-v3: staging в том же FS, что target (renameTo atomic).
+     * TV API 28: /sdcard/Download/Atom/.staging/<tid>.part
+     * API 29+: MediaStore IS_PENDING (в FileReceiver через saveModern).
+     */
+    fun stagingFileFor(ctx: Context, tid: String): File? {
+        if (android.os.Build.VERSION.SDK_INT >= 29) return null  // MediaStore path
+        return try {
+            @Suppress("DEPRECATION")
+            val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val staging = File(downloads, "Atom/.staging").apply { mkdirs() }
+            val nomedia = File(staging, ".nomedia")
+            if (!nomedia.exists()) nomedia.createNewFile()
+            File(staging, "$tid.part")
+        } catch (e: Exception) {
+            InAppLogger.d("MediaStoreSaver", "stagingFileFor: ${e.message}"); null
+        }
+    }
+
+    /**
+     * B101j-v3: finalize staging → renameTo target (atomic, same FS).
+     * Collision — resolveFinalName ОДИН раз (не (1)(2) при retry).
+     */
+    fun finalizeStaging(ctx: Context, staging: File, fileName: String, relativePath: String?): SaveResult {
+        return try {
+            val safeName = sanitizeName(fileName)
+            val safeDir = sanitizeDir(relativePath)
+            val type = guessMime(safeName)
+            val category = if (safeDir.isNullOrBlank()) categoryFor(type) else safeDir
+            @Suppress("DEPRECATION")
+            val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val targetDir = File(downloads, "Atom/$category").apply { mkdirs() }
+
+            // atomic rename; resolveFinalName срабатывает РАЗ
+            var target = File(targetDir, safeName)
+            var i = 1
+            while (target.exists() && i < 1000) {
+                val dot = safeName.lastIndexOf('.')
+                val base = if (dot > 0) safeName.substring(0, dot) else safeName
+                val ext = if (dot > 0) safeName.substring(dot) else ""
+                target = File(targetDir, "$base ($i)$ext")
+                i++
+            }
+            if (!staging.renameTo(target)) {
+                // cross-FS fallback (маловероятно, но безопасно)
+                staging.copyTo(target, overwrite = false)
+                staging.delete()
+            }
+            android.media.MediaScannerConnection.scanFile(ctx, arrayOf(target.absolutePath), null, null)
+            InAppLogger.d("MediaStoreSaver", "B101j-v3 finalize: ${target.absolutePath}")
+            SaveResult(uri = null, displayPath = target.absolutePath)
+        } catch (e: Exception) {
+            InAppLogger.err("MediaStoreSaver", "B101j-v3 finalize: ${e.message}")
+            SaveResult(null, "")
+        }
+    }
+
     private fun categoryFor(mime: String): String = when {
         mime.startsWith("image/") -> "Pictures"
         mime.startsWith("video/") -> "Movies"

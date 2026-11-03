@@ -237,20 +237,21 @@ object FileReceiver {
                 var writeFile: File? = null
                 var writeRaf: RandomAccessFile? = null
                 var directTarget: File? = null
+                // B101j-v3: staging в том же FS (renameTo atomic)
                 if (android.os.Build.VERSION.SDK_INT < 29) {
-                    val t = MediaStoreSaver.resolveTargetFile(ctx, name, offer.relativePath)
+                    val t = MediaStoreSaver.stagingFileFor(ctx, tid)
                     if (t != null) {
                         try {
                             val r = RandomAccessFile(t, "rw")
                             r.setLength(totalSize)
-                            writeRaf = r; writeFile = t; directTarget = t
+                            writeRaf = r; writeFile = t; directTarget = null
                             InAppLogger.d("FileReceiver",
-                                "B101j: direct write → ${t.absolutePath}")
+                                "B101j-v3: staging → ${t.absolutePath}")
                         } catch (e: Exception) {
                             InAppLogger.d("FileReceiver",
-                                "B101j: direct open failed: ${e.message} → staging")
+                                "B101j-v3: staging open failed: ${e.message}")
                             try { writeRaf?.close() } catch (_: Exception) {}
-                            writeRaf = null; writeFile = null; directTarget = null
+                            writeRaf = null; writeFile = null
                         }
                     }
                 }
@@ -518,15 +519,9 @@ object FileReceiver {
             // B15: если файл из папки — сохраняем с подпутём
             val dirPart = session.relativePath?.substringBeforeLast('/', "")
                 ?.ifBlank { null }
-            // B101j-v1: API 28 — файл уже в target, save = 0 (только scanFile)
-            val result: MediaStoreSaver.SaveResult = if (session.targetFile != null) {
-                android.media.MediaScannerConnection.scanFile(
-                    ctx, arrayOf(session.targetFile.absolutePath), null, null
-                )
-                InAppLogger.d("FileReceiver",
-                    "B101j: direct write, scanFile (${session.targetFile.absolutePath})")
-                MediaStoreSaver.SaveResult(uri = null,
-                    displayPath = session.targetFile.absolutePath)
+            // B101j-v3: staging → finalizeStaging (renameTo) на API 28; MediaStore на 29+
+            val result: MediaStoreSaver.SaveResult = if (android.os.Build.VERSION.SDK_INT < 29) {
+                MediaStoreSaver.finalizeStaging(ctx, session.partFile, session.name, dirPart)
             } else {
                 MediaStoreSaver.save(ctx, session.partFile, session.name, null, dirPart)
             }
@@ -543,8 +538,9 @@ object FileReceiver {
                     "name collision: requested='" + session.name + "' saved='" + savedName + "'")
             }
 
-            // B101j: удалять staging только если это НЕ target (API 29+)
-            if (session.targetFile == null) {
+            // B101j-v3: staging уже переименован в target (renameTo) — удалять НЕ нужно.
+            // На API 29+ staging это session.partFile — его удаляем (MediaStore save уже сделал копию).
+            if (android.os.Build.VERSION.SDK_INT >= 29 && session.partFile.exists()) {
                 session.partFile.delete()
             }
             activeSessions.remove(session.tid)

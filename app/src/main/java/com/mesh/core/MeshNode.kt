@@ -301,6 +301,15 @@ class MeshNode(private val ctx: Context) {
         }
     }
 
+    /** B100f.3: закрыть все текущие TCP sockets (pause прерывает write) */
+    private val _activeSockets = java.util.concurrent.CopyOnWriteArrayList<Socket>()
+    fun registerSocket(s: Socket) { _activeSockets.add(s) }
+    fun unregisterSocket(s: Socket) { _activeSockets.remove(s) }
+    fun closeActiveSockets() {
+        _activeSockets.forEach { try { it.close() } catch (_: Exception) {} }
+        _activeSockets.clear()
+    }
+
     fun openTcpTo(ip: String, connectTimeoutMs: Int = 5000): Socket {
         val tcpStart = System.currentTimeMillis()
         InAppLogger.d("MeshNode", "tcp START → $ip (timeout=${connectTimeoutMs}ms)")

@@ -302,6 +302,11 @@ class FileSenderService : Service() {
                 currentJob?.cancel()
                 keepAliveJob?.cancel()
                 keepAliveJob = null
+                // B100f.3: close активные сокеты — прервать блокирующий write()
+                try {
+                    AtomController.meshNode?.closeActiveSockets()
+                    InAppLogger.d("FileSenderService", "B100f.3: sockets closed for pause")
+                } catch (_: Exception) {}
                 TransferNotification.update(this, NOTIF_ID,
                     TransferNotification.buildPaused(
                         this, cur.transferId, cur.peerName, cur.fileName,
@@ -797,6 +802,7 @@ class FileSenderService : Service() {
                         throw lastConnectErr ?: Exception("tcp connect failed")
                     }
                     sockets.add(socket)
+                    try { node.registerSocket(socket) } catch (_: Exception) {}
                     val dos = DataOutputStream(socket.getOutputStream())  // прямой socket — build-37
 
                     // Header: tid, hash, name, totalSize, offset, end, threadIdx, threadCount
@@ -868,6 +874,7 @@ class FileSenderService : Service() {
                     failed.set(true)
                     throw e
                 } finally {
+                    try { socket?.let { node.unregisterSocket(it) } } catch (_: Exception) {}
                     try { socket?.close() } catch (_: Exception) {}
                 }
             }
