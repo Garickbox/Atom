@@ -11,6 +11,10 @@ class AtomApp : Application() {
         com.mesh.core.CompactLog.init(this)
         NotificationHelper.createChannels(this)
         AtomController.init(this)
+        if (AtomController.myName.isBlank()) {
+            AtomController.saveMyName("Atom-" + AtomController.myId.take(4))
+            InAppLogger.d("AtomApp", "B137: fallback name Atom-XXXX")
+        }
         AtomController.onKnownPeersUpdated = { peers ->
             try { ShortcutPublisher.update(this, peers) } catch (_: Exception) {}
         }

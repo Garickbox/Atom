@@ -163,6 +163,8 @@ object TestApi {
             "widget" -> R.layout.widget_atom
             else -> return "unknown: " + layout
         }
+        // B140: MaterialCardView не инфлейтится в ContextThemeWrapper standalone.
+        // /views — диагностика, не критичный путь. Тест UI — через скриншот/визуальный протокол.
         return try {
             val themed = android.view.ContextThemeWrapper(ctx, R.style.Theme_Atom_Main)
             val root = android.view.LayoutInflater.from(themed).inflate(resId, null)

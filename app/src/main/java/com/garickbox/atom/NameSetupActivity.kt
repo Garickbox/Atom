@@ -48,6 +48,6 @@ class NameSetupActivity : AppCompatActivity() {
             val secureName = Settings.Secure.getString(contentResolver, "device_name")
             if (!secureName.isNullOrBlank()) return secureName
         } catch (_: Exception) {}
-        return android.os.Build.MODEL ?: "Атом"
+        return "Телефон"
     }
 }

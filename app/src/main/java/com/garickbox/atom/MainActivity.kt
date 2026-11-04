@@ -19,6 +19,7 @@ import com.garickbox.atom.databinding.ActivityMainBinding
 import com.mesh.core.InAppLogger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -923,7 +924,8 @@ class MainActivity : AppCompatActivity() {
     private fun observeLivePeers() {
         peerObserverJob?.cancel()
         peerObserverJob = lifecycleScope.launch {
-            AtomController.peers.collect { peers -> runOnUiThread { renderLivePeers(peers) } }
+            combine(AtomController.peers, AtomController.p2pPeers) { udp, p2p -> udp to p2p }
+                .collect { (udp, p2p) -> runOnUiThread { renderLivePeers(udp); renderP2pExtra(p2p, udp) } }
         }
         peerRefreshJob?.cancel()
         peerRefreshJob = lifecycleScope.launch {
@@ -931,6 +933,29 @@ class MainActivity : AppCompatActivity() {
                 try { kotlinx.coroutines.delay(10_000L) } catch (_: kotlinx.coroutines.CancellationException) { break }
                 renderLivePeers(AtomController.peers.value)
             }
+        }
+    }
+
+    private fun renderP2pExtra(p2pDevices: List<android.net.wifi.p2p.WifiP2pDevice>, udpPeers: List<Peer>) {
+        try {
+            val udpMacs = udpPeers.map { it.mac }.filter { it.isNotBlank() }.toSet()
+            val extra = p2pDevices.filter { it.deviceAddress !in udpMacs && it.deviceName.isNotBlank() }
+            for (dev in extra) {
+                val card = layoutInflater.inflate(R.layout.item_live_peer, b.livePeersContainer, false)
+                card.findViewById<android.widget.TextView>(R.id.peerName).text = "📶 ${dev.deviceName}"
+                card.setOnClickListener {
+                    try {
+                        android.widget.Toast.makeText(this,
+                            "P2P: через + → Wi-Fi Direct", android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) {}
+                }
+                b.livePeersContainer.addView(card)
+            }
+            if (extra.isNotEmpty()) {
+                b.liveStatus.visibility = android.view.View.GONE
+            }
+        } catch (e: Exception) {
+            InAppLogger.err("MainActivity", "renderP2pExtra: ${e.message}")
         }
     }
 

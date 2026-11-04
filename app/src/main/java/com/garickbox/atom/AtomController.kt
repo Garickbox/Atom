@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.mesh.core.InAppLogger
 import com.mesh.core.MeshNode
 import com.mesh.core.WifiDirectManager
+import android.net.wifi.p2p.WifiP2pDevice
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,7 @@ object AtomController {
         private set
 
     val peers = MutableStateFlow<List<Peer>>(emptyList())
+    val p2pPeers = MutableStateFlow<List<WifiP2pDevice>>(emptyList())
     val transferState = MutableStateFlow<TransferState>(TransferState.Idle)
 
     var myName: String = ""
@@ -106,6 +108,7 @@ object AtomController {
         // B11.2-fix: автосохранение MAC всех найденных/подключённых пиров.
         // Работает всегда: и когда мы инициируем, и когда к нам подключаются.
         wd.persistentOnPeersChanged = { p2pPeers ->
+            try { this@AtomController.p2pPeers.value = p2pPeers.toList() } catch (_: Exception) {}
             try {
                 p2pPeers.forEach { p ->
                     if (p.deviceAddress.isNotBlank()) {
