@@ -166,9 +166,16 @@ class MainActivity : AppCompatActivity() {
         setupTvIfNeeded()
 
         b.fab.setOnClickListener { showSendPicker() }
-        b.btnEmptyPhoto.setOnClickListener { pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) }
-        b.btnEmptyFiles.setOnClickListener { openFilePicker() }
-        b.btnEmptyReceive.setOnClickListener { try { WidgetReceiveService.toggle(this) } catch (_: Exception) {} }
+        runOnUiThread {
+            val lp = AtomController.lastPeer
+            if (lp != null && lp.name.isNotBlank()) {
+                b.lastPeerCard.visibility = android.view.View.VISIBLE
+                b.lastPeerName.text = lp.name
+                b.lastPeerCard.setOnClickListener {
+                    try { openFilePicker() } catch (_: Exception) {}
+                }
+            }
+        }
 
         // Авто-проверка обновления убрана — только manual (меню / кнопка на TV)
 
