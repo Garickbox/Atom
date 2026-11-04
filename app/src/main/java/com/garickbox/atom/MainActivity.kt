@@ -297,7 +297,11 @@ class MainActivity : AppCompatActivity() {
     private val filePicker = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        if (result.resultCode != RESULT_OK) {
+            MainActivity.pendingPeerForShareTarget = null
+            pickerShownForPeer = false
+            return@registerForActivityResult
+        }
         val data = result.data ?: return@registerForActivityResult
         val uris = mutableListOf<android.net.Uri>()
         data.clipData?.let { clip ->
@@ -324,7 +328,11 @@ class MainActivity : AppCompatActivity() {
     private val folderPicker = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { treeUri ->
-        if (treeUri == null) return@registerForActivityResult
+        if (treeUri == null) {
+            MainActivity.pendingPeerForShareTarget = null
+            pickerShownForPeer = false
+            return@registerForActivityResult
+        }
         try {
             contentResolver.takePersistableUriPermission(
                 treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -530,6 +538,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isNotEmpty()) startShareForUris(uris, null)
+        else { MainActivity.pendingPeerForShareTarget = null; pickerShownForPeer = false }
     }
 
     private fun showSendPicker() {
@@ -937,8 +946,7 @@ class MainActivity : AppCompatActivity() {
                     try {
                         InAppLogger.d("MainActivity", "live peer tapped: ${peer.name} @ ${peer.ip}")
                         AtomController.saveKnownP2pPeer(peer.mac, peer.name)
-                        MainActivity.pendingPeerForShareTarget = peer
-                        openFilePicker()
+                        showPeerActionSheet(peer)
                     } catch (e: Exception) {
                         InAppLogger.err("MainActivity", "live peer tap: ${e.message}")
                     }
@@ -947,6 +955,43 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             InAppLogger.err("MainActivity", "renderLivePeers: ${e.message}")
+        }
+    }
+
+    private fun showPeerActionSheet(peer: Peer) {
+        try {
+            val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+            val container = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48, 56, 48, 40)
+            }
+            container.addView(android.widget.TextView(this).apply {
+                text = "Отправить на ${peer.name}"
+                textSize = 20f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 0, 0, 32)
+            })
+            val opts = arrayOf("📷  Фото и видео", "📄  Файлы", "📁  Папка")
+            val actions = arrayOf<() -> Unit>(
+                { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) },
+                { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFilePicker() },
+                { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFolderPicker() }
+            )
+            opts.forEachIndexed { i, opt ->
+                container.addView(android.widget.TextView(this).apply {
+                    text = opt
+                    textSize = 16f
+                    setPadding(16, 36, 16, 36)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { sheet.dismiss(); actions[i]() }
+                })
+            }
+            sheet.setContentView(container)
+            sheet.show()
+            InAppLogger.d("MainActivity", "B134: peer action sheet for ${peer.name}")
+        } catch (e: Exception) {
+            InAppLogger.err("MainActivity", "showPeerActionSheet: ${e.message}")
         }
     }
 
