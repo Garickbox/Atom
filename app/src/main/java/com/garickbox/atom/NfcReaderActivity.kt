@@ -6,7 +6,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.net.wifi.WifiNetworkSpecifier
-import android.nfc.Ndef
+import android.nfc.tech.Ndef
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Build

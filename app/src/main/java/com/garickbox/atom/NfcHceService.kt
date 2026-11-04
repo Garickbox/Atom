@@ -88,7 +88,7 @@ class NfcHceService : HostApduService() {
         cc[9] = 0xE1.toByte(); cc[10] = 0x04
         cc[11] = ((mlen shr 8) and 0xFF).toByte()
         cc[12] = (mlen and 0xFF).toByte()
-        cc[13] = 0x00; cc[14] = 0xFF
+        cc[13] = 0x00; cc[14] = 0xFF.toByte()
         return cc
     }
 
