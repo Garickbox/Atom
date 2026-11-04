@@ -72,7 +72,9 @@ class NfcReaderActivity : AppCompatActivity() {
             isoDep.timeout = 5000
             // B147: HCE не сканируется через Ndef.get. Manual APDU Type 4 Tag:
             // SELECT AID → SELECT CC → READ CC → SELECT NDEF → READ NLEN → READ NDEF
-            val selectAid = byteArrayOf(0x00, 0xA4.toByte(), 0x04, 0x00, 0x06,
+            // B158: Lc=05 (AID F041544F4D = 5 байт), Le=00 (256).
+            // Было Lc=06 → 00 съедался как часть data → AID = F041544F4D00 → 6A82
+            val selectAid = byteArrayOf(0x00, 0xA4.toByte(), 0x04, 0x00, 0x05,
                 0xF0.toByte(), 0x41, 0x54, 0x4F, 0x4D, 0x00)
             val r1 = isoDep.transceive(selectAid)
             val sw1 = if (r1.size >= 2) String.format("%02X%02X", r1[r1.size-2], r1[r1.size-1]) else "short"
