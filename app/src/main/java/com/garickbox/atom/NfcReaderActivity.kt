@@ -73,7 +73,7 @@ class NfcReaderActivity : AppCompatActivity() {
             // B147: HCE не сканируется через Ndef.get. Manual APDU Type 4 Tag:
             // SELECT AID → SELECT CC → READ CC → SELECT NDEF → READ NLEN → READ NDEF
             val selectAid = byteArrayOf(0x00, 0xA4.toByte(), 0x04, 0x00, 0x06,
-                0xF0.toByte(), 0x41, 0x54, 0x4F, 0x4D)
+                0xF0.toByte(), 0x41, 0x54, 0x4F, 0x4D, 0x00)
             val r1 = isoDep.transceive(selectAid)
             val sw1 = if (r1.size >= 2) String.format("%02X%02X", r1[r1.size-2], r1[r1.size-1]) else "short"
             InAppLogger.d("NfcReader", "selectAid size=${r1.size} sw=$sw1")

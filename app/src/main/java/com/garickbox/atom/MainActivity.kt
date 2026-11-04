@@ -550,7 +550,8 @@ class MainActivity : AppCompatActivity() {
     private fun showSendPicker() {
         val options = arrayOf(
             "📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка",
-            "📱  Показать QR (принять)", "🔍  Сканировать QR (отправить)"
+            "📱  Показать QR (принять)", "🔍  Сканировать QR (отправить)",
+            "📱  NFC-касание (отправить)"
         )
         val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
         val container = android.widget.LinearLayout(this).apply {
@@ -571,7 +572,8 @@ class MainActivity : AppCompatActivity() {
             { startActivity(Intent(this, QrShareActivity::class.java)) },
             { qrFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) }
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) },
+            { NfcReaderActivity.pendingUris = emptyList(); NfcReaderActivity.pendingPaths = emptyList(); startActivity(Intent(this, NfcReaderActivity::class.java)) }
         )
         options.forEachIndexed { i, opt ->
             container.addView(android.widget.TextView(this).apply {
