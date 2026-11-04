@@ -550,7 +550,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSendPicker() {
         val options = arrayOf(
             "📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка",
-            "📱  Показать QR (принять)", "🔍  Сканировать QR (отправить)",
+            "🔍  Сканировать QR (отправить)",
             "📱  NFC-касание (отправить)"
         )
         val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
@@ -569,7 +569,6 @@ class MainActivity : AppCompatActivity() {
             { pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly) },
             { openFilePicker() },
             { openFolderPicker() },
-            { startActivity(Intent(this, QrShareActivity::class.java)) },
             { qrFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) },

@@ -78,6 +78,13 @@ class NfcReaderActivity : AppCompatActivity() {
     override fun onPause() { super.onPause(); nfcAdapter?.disableReaderMode(this) }
     override fun onDestroy() {
         super.onDestroy()
+        // B166: сброс P2P-клиента — иначе второй connect идёт на stale group
+        // (Redmi становится GO, POCO не клиент, роли перепутаны)
+        try {
+            AtomController.wifiDirect?.stopContinuousDiscover()
+            AtomController.wifiDirect?.disconnect()
+            InAppLogger.d("NfcReader", "B166: disconnect P2P after send")
+        } catch (_: Exception) {}
         try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
         NfcHceService.clear()
         handler.removeCallbacksAndMessages(null)

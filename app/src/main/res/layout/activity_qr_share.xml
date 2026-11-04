@@ -36,6 +36,17 @@
         android:textSize="12sp"
         android:textAlignment="center" />
 
+    <TextView
+        android:id="@+id/nfcHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:textSize="14sp"
+        android:textColor="?attr/colorPrimary"
+        android:textStyle="bold"
+        android:textAlignment="center"
+        android:text="📱 NFC: коснись телефоном&#10;или покажи QR" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnClose"
         style="@style/Widget.Material3.Button.OutlinedButton"

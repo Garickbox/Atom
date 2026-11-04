@@ -249,7 +249,7 @@ class QrShareActivity : AppCompatActivity() {
         } catch (e: Exception) {
             InAppLogger.err("QrServer", "B145: HCE arm: ${e.message}")
         }
-        statusText.text = "✅ Готов принимать — сканируйте QR на втором устройстве"
+        statusText.text = "✅ Готов принимать\n📱 Коснись телефоном или покажи QR"
         val displayPass = if (TvHelper.isTv(this)) pass else "••••••••"
         infoText.text = "SSID: $ssid\nПароль: $displayPass\nIP: $ip\nРежим: $mode"
 
