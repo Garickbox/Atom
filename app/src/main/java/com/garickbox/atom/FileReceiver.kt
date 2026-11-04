@@ -422,12 +422,20 @@ object FileReceiver {
                 // B114: _isBusy сбрасываем ТОЛЬКО если сессия ещё своя (gen==1),
                 // иначе снимем lock новой сессии после resume
                 if (cur != null && cur.generation.get() == 1) {
-                    activeSessions.remove(tidForLog)
-                    cur.failed.set(true)
-                    try { cur.channel.close() } catch (_: Exception) {}
-                    try { cur.raf.close() } catch (_: Exception) {}
-                    cur.partFile.delete()
-                    _isBusy.set(false)
+                    if (cur.sockets.size > 1) {
+                        // B124: другие потоки моей сессии ещё пишут — не убиваем канал/файл.
+                        // Cleanup через их finally (done==threadCount → finalizeSession(failed=true)).
+                        InAppLogger.d("FileReceiver",
+                            "B124: keep session, sockets=${cur.sockets.size} tid=${cur.tid.take(8)}")
+                        cur.failed.set(true)
+                    } else {
+                        activeSessions.remove(tidForLog)
+                        cur.failed.set(true)
+                        try { cur.channel.close() } catch (_: Exception) {}
+                        try { cur.raf.close() } catch (_: Exception) {}
+                        cur.partFile.delete()
+                        _isBusy.set(false)
+                    }
                 }
                 // если gen != 1 — busy управляется новой сессией, не трогаем
             }
