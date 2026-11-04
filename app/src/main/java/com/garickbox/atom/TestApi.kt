@@ -125,6 +125,7 @@ object TestApi {
             appendLine("free_mb=" + freeMb)
             appendLine("transferState=" + AtomController.transferState.value.javaClass.simpleName)
             appendLine("known_peers=" + AtomController.getKnownP2pPeers().size)
+            appendLine("live_peers=" + AtomController.peers.value.size)
             appendLine("verbose=" + com.mesh.core.InAppLogger.isVerbose())
         }
     }

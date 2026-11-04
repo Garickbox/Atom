@@ -6,6 +6,7 @@ import com.mesh.core.InAppLogger
 import com.mesh.core.MeshNode
 import com.mesh.core.WifiDirectManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -22,6 +23,8 @@ object AtomController {
 
 
     private lateinit var prefs: SharedPreferences
+    @Volatile private var appCtx: android.content.Context? = null
+    private var helloJob: Job? = null
     private var _meshNode: MeshNode? = null
     var wifiDirect: WifiDirectManager? = null
         private set
@@ -40,6 +43,7 @@ object AtomController {
 
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences("atom", Context.MODE_PRIVATE)
+        appCtx = ctx.applicationContext
         myId = prefs.getString("my_id", null) ?: java.util.UUID.randomUUID().toString().also {
             prefs.edit().putString("my_id", it).apply()
         }
@@ -123,12 +127,14 @@ object AtomController {
                         appForeground = true
                         try { AtomQSTile.requestUpdate(ctx.applicationContext) } catch (_: Exception) {}
                         startContinuousP2P()
+                        startContinuousHello()
                     }
                     override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                         InAppLogger.d("AtomController", "app background → stop discover loop")
                         appForeground = false
                         try { AtomQSTile.requestUpdate(ctx.applicationContext) } catch (_: Exception) {}
                         stopContinuousP2P()
+                        stopContinuousHello()
                     }
                 }
             )
@@ -245,6 +251,53 @@ object AtomController {
 
     fun hasName(): Boolean = myName.isNotBlank()
 
+
+    private fun startContinuousHello() {
+        if (helloJob?.isActive == true) return
+        helloJob = scope.launch {
+            InAppLogger.d("AtomController", "B133: startContinuousHello RUN")
+            kotlinx.coroutines.delay(500L)
+            while (true) {
+                try {
+                    val bcast = subnetBroadcastIp()
+                    if (bcast != null) {
+                        _meshNode?.sendHello(bcast)
+                        InAppLogger.d("AtomController", "B133: HELLO → $bcast")
+                    }
+                } catch (e: Exception) {
+                    InAppLogger.d("AtomController", "B133: hello loop: ${e.message}")
+                }
+                kotlinx.coroutines.delay(10_000L)
+            }
+        }
+    }
+
+    private fun stopContinuousHello() {
+        helloJob?.cancel()
+        helloJob = null
+        InAppLogger.d("AtomController", "B133: continuousHello stopped")
+    }
+
+    private fun subnetBroadcastIp(): String? {
+        return try {
+            val wm = appCtx?.getSystemService(Context.WIFI_SERVICE)
+                as? android.net.wifi.WifiManager ?: return null
+            @Suppress("DEPRECATION")
+            val dhcp = wm.dhcpInfo ?: return "255.255.255.255"
+            val ip = dhcp.ipAddress
+            val mask = dhcp.netmask
+            if (ip == 0 || mask == 0) return "255.255.255.255"
+            val bcast = (ip and mask) or mask.inv()
+            String.format("%d.%d.%d.%d",
+                bcast and 0xff,
+                (bcast shr 8) and 0xff,
+                (bcast shr 16) and 0xff,
+                (bcast shr 24) and 0xff)
+        } catch (e: Exception) {
+            InAppLogger.d("AtomController", "subnetBroadcastIp: ${e.message}")
+            null
+        }
+    }
 
     private fun startContinuousP2P() {
         if (transferActive) {
