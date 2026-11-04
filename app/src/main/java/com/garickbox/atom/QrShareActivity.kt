@@ -171,7 +171,18 @@ class QrShareActivity : AppCompatActivity() {
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Hotspot не создался")
                 .setMessage(msg)
-                .setPositiveButton("ОК") { _, _ -> finish() }
+                // B121: диалог с кнопкой «Открыть Wi-Fi» (axiom#128 — toggle только через system panel)
+                .setPositiveButton("Открыть Wi-Fi") { _, _ ->
+                    try {
+                        val i = if (android.os.Build.VERSION.SDK_INT >= 29)
+                            android.content.Intent(android.provider.Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                        else
+                            android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+                        startActivity(i)
+                    } catch (_: Exception) {}
+                    finish()
+                }
+                .setNegativeButton("Закрыть") { _, _ -> finish() }
                 .setCancelable(false)
                 .show()
         } catch (_: Exception) {}

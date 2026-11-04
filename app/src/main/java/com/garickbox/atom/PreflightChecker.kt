@@ -77,7 +77,8 @@ object PreflightChecker {
                 Id.AIRPLANE -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
                 Id.WIFI -> {
                     if (Build.VERSION.SDK_INT >= 29) {
-                        Intent(Settings.Panel.ACTION_WIFI)
+                        // B121: единая панель WiFi+Mobile+Airplane (лучше для HyperOS)
+                        Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
                     } else {
                         Intent(Settings.ACTION_WIFI_SETTINGS)
                     }

@@ -23,7 +23,8 @@ class WifiDirectManager(private val ctx: Context) {
     data class P2PConnection(
         val isGroupOwner: Boolean,
         val groupOwnerAddress: String,
-        val groupFormed: Boolean
+        val groupFormed: Boolean,
+        val frequencyHz: Int = 0  // B121: 0 = unknown (API<29 или до connect), иначе 2412/5180 MHz
     )
 
     var onPeersChanged: ((List<WifiP2pDevice>) -> Unit)? = null
@@ -157,13 +158,22 @@ class WifiDirectManager(private val ctx: Context) {
                     return@requestConnectionInfo
                 }
                 val ip = info.groupOwnerAddress?.hostAddress ?: ""
+                // B121: реальная частота P2P группы (API 29+)
+                val hz = if (Build.VERSION.SDK_INT >= 29) info.frequency else 0
+                val bandStr = when {
+                    hz >= 5000 -> "5 GHz (${hz} MHz)"
+                    hz >= 2400 -> "2.4 GHz (${hz} MHz)"
+                    hz > 0 -> "${hz} MHz"
+                    else -> "unknown"
+                }
                 val conn = P2PConnection(
                     isGroupOwner = info.isGroupOwner,
                     groupOwnerAddress = ip,
-                    groupFormed = true
+                    groupFormed = true,
+                    frequencyHz = hz
                 )
                 InAppLogger.d("WifiDirect",
-                    "connected: isGO=${conn.isGroupOwner} goIp=$ip")
+                    "connected: isGO=${conn.isGroupOwner} goIp=$ip band=$bandStr")
                 onConnected?.invoke(conn)
             }
         } catch (e: Exception) {
@@ -233,12 +243,19 @@ class WifiDirectManager(private val ctx: Context) {
             return
         }
         try {
-            // Как build-37: без reflection, без groupOwnerIntent.
-            // Framework сам выбирает band. Если повезёт — 5 GHz (лотерея).
-            val config = android.net.wifi.p2p.WifiP2pConfig().apply {
-                deviceAddress = mac
+            // B121: prefer 5 GHz (API 29+). Framework может игнорировать, если 5 GHz занят
+            val config = if (Build.VERSION.SDK_INT >= 29) {
+                android.net.wifi.p2p.WifiP2pConfig.Builder()
+                    .setDeviceAddress(mac)
+                    .setGroupOperatingBand(android.net.wifi.p2p.WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                android.net.wifi.p2p.WifiP2pConfig().apply {
+                    deviceAddress = mac
+                }
             }
-            InAppLogger.d("WifiDirect", "connect to $mac (B16: reinvoke-if-profile-exists)")
+            InAppLogger.d("WifiDirect", "connect to $mac (B121: prefer 5GHz on API29+)")
             manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     InAppLogger.d("WifiDirect", "connect initiated (system decides fresh vs reinvoke)")

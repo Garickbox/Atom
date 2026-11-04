@@ -781,6 +781,13 @@ class MainActivity : AppCompatActivity() {
                 b.transferDetail.text = buildString {
                     append("${formatBytes(state.bytesSent)} / ${formatBytes(state.bytesTotal)}")
                     append("  ·  $pct%")
+                    // B121: индикатор частоты P2P (только если известно)
+                    val hz = AtomController.currentP2pFrequencyHz
+                    when {
+                        hz >= 5000 -> append("  ·  📶 5 GHz")
+                        hz >= 2400 -> append("  ·  📶 2.4 GHz")
+                        else -> {}
+                    }
                 }
             }
             is TransferState.Success -> {

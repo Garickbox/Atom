@@ -33,6 +33,7 @@ object AtomController {
     var myId: String = ""
     var lastPeer: Peer? = null
     @Volatile var appForeground: Boolean = false
+    @Volatile var currentP2pFrequencyHz: Int = 0  // B121: 0=unknown, 2412/5180 MHz после connect
     var onKnownPeersUpdated: ((List<KnownP2pPeer>) -> Unit)? = null
 
     val meshNode: MeshNode? get() = _meshNode
@@ -83,7 +84,14 @@ object AtomController {
         wd.init()
         // P2P: после подключения клиент шлёт HELLO на IP Group Owner
         wd.onConnected = { conn ->
-            InAppLogger.d("AtomController", "p2p connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            currentP2pFrequencyHz = conn.frequencyHz
+            val bandStr = when {
+                conn.frequencyHz >= 5000 -> "5 GHz"
+                conn.frequencyHz >= 2400 -> "2.4 GHz"
+                else -> "unknown"
+            }
+            InAppLogger.d("AtomController",
+                "p2p connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress} band=$bandStr (${conn.frequencyHz} MHz)")
             if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
                 _meshNode?.sendHello(conn.groupOwnerAddress)
                 InAppLogger.d("AtomController", "HELLO → GO ${conn.groupOwnerAddress}")
