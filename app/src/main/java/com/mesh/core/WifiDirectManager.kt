@@ -301,12 +301,13 @@ class WifiDirectManager(private val ctx: Context) {
     fun forgetAllGroups() {
         // B166a: clean slate перед NFC connect — снять GO-роль с прошлой stale group
         try {
-            manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() { InAppLogger.d("WifiDirect", "B166a: removeGroup OK") }
-                override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B166a: removeGroup fail $reason") }
-            })
-            manager?.deletePersistentGroups()
-            InAppLogger.d("WifiDirect", "B166a: deletePersistentGroups")
+            channel?.let { ch ->
+                manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() { InAppLogger.d("WifiDirect", "B166a: removeGroup OK") }
+                    override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B166a: removeGroup fail $reason") }
+                })
+            }
+            InAppLogger.d("WifiDirect", "B166a: forgetAllGroups — removeGroup requested")
         } catch (e: Exception) {
             InAppLogger.err("WifiDirect", "B166a forgetAll: ${e.message}")
         }
