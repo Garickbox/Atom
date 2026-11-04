@@ -567,6 +567,14 @@ object FileReceiver {
             InAppLogger.d("FileReceiver",
                 "SHA-256: ${if (hashOk) "OK" else "MISMATCH"} in ${shaMs}ms actual=${actualHash.take(16)}… expected=${session.hash.take(16)}…")
 
+            // B123-FixA: cancel во время SHA (30-60s окно) — failed стал true после входа
+            if (session.failed.get()) {
+                InAppLogger.d("FileReceiver",
+                    "B123-FixA: cancel during SHA tid=${session.tid.take(8)} — skip Success/UpdatePending")
+                activeSessions.remove(session.tid)
+                return
+            }
+
             // Детект apk-обновления Атома (до сохранения)
             val updateVc = checkAtomUpdate(ctx, session.partFile, session.name)
 
@@ -628,11 +636,17 @@ object FileReceiver {
                     savedPath = savedPathValue
                 ))
                 if (updateVc != null && result.uri != null) {
-                    // B80#59: не перезаписывать UpdatePending если идёт newer Running
+                    // B123-FixB: skip UpdatePending если Running(другой) или user reset (симметрично B116)
                     val curU = AtomController.transferState.value
-                    if (curU is TransferState.Running && curU.transferId != session.tid) {
+                    val skipU = when (curU) {
+                        is TransferState.Running -> curU.transferId != session.tid
+                        is TransferState.Idle, is TransferState.Paused,
+                        is TransferState.Success, is TransferState.UpdatePending -> true
+                        else -> false
+                    }
+                    if (skipU) {
                         InAppLogger.d("FileReceiver",
-                            "B80#59: skip UpdatePending, newer Running " + curU.transferId.take(8))
+                            "B123-FixB: skip UpdatePending, state=${curU.javaClass.simpleName}")
                     } else {
                         AtomController.transferState.value = TransferState.UpdatePending(
                             apkUri = result.uri.toString(),
@@ -645,12 +659,17 @@ object FileReceiver {
                             "UpdatePending: build=$updateVc, uri=${result.uri}")
                     }
                 } else {
-                    // B80#59: не перезаписывать Success если идёт newer Running
+                    // B123-FixB: skip Success если Running(другой) или user reset (симметрично B116)
                     val curS = AtomController.transferState.value
-                    if (curS is TransferState.Running && curS.transferId != session.tid) {
+                    val skipS = when (curS) {
+                        is TransferState.Running -> curS.transferId != session.tid
+                        is TransferState.Idle, is TransferState.Paused,
+                        is TransferState.Success, is TransferState.UpdatePending -> true
+                        else -> false
+                    }
+                    if (skipS) {
                         InAppLogger.d("FileReceiver",
-                            "B80#59: skip Success, newer Running " + curS.transferId.take(8) +
-                            " (old " + session.tid.take(8) + " done)")
+                            "B123-FixB: skip Success, state=${curS.javaClass.simpleName}")
                     } else {
                         if (hashOk) {
                             try { BadgeHelper.increment(ctx) } catch (_: Exception) {}
