@@ -1,133 +1,134 @@
-# ⚛️ Atom
+# ⚛️ Atom — P2P file transfer for Android
 
-**Прямая передача файлов между Android-устройствами — без интернета, без облака, без аккаунтов.**
+<div align="center">
 
-Atom отправляет файлы и папки напрямую по Wi-Fi Direct / hotspot: ни серверов, ни рекламы, ни сбора данных. Только два устройства в одной сети — и до 20 МБ/с с проверкой SHA-256 каждого файла.
+**Прямая передача файлов между Android — без интернета, без облака, без аккаунтов.**
 
-[📥 Скачать APK](https://github.com/Garickbox/Atom/releases/latest/download/Atom.apk) · [🐛 Issues](https://github.com/Garickbox/Atom/issues) · [📋 Roadmap](#roadmap)
+[![Build](https://github.com/Garickbox/Atom/actions/workflows/build.yml/badge.svg)](https://github.com/Garickbox/Atom/actions/workflows/build.yml)
+[![Latest](https://img.shields.io/github/v/release/Garickbox/Atom?label=build&color=blue)](https://github.com/Garickbox/Atom/releases/latest)
+[![minSdk](https://img.shields.io/badge/Android-8.0%2B-green?logo=android)](https://developer.android.com)
 
----
+[📥 Скачать APK](https://github.com/Garickbox/Atom/releases/latest/download/Atom.apk) · [🐛 Issues](https://github.com/Garickbox/Atom/issues) · [📖 Roadmap](#-roadmap)
 
-## Что это
-
-Atom решает простую задачу: **перекинуть файлы с телефона на телефон без провода**. Bluetooth медленный. Облако требует интернета и сливает данные. Nearby Share требует Google. Atom — это **P2P-передатчик с открытым кодом**, который работает в вашей локальной сети.
-
-- ✅ Прямая связь (Wi-Fi Direct / hotspot)
-- ✅ SHA-256 проверка целостности
-- ✅ Папки с сохранением структуры
-- ✅ Пауза / продолжение с места обрыва
-- ✅ Открытый исходный код
-- ✅ Без рекламы, без трекинга, без аккаунтов
+</div>
 
 ---
 
-## Возможности
+## Почему Atom
 
-### 📤 Передача файлов
+Bluetooth — 1 MB/s и обрывы. Облако — трафик и приватность. Nearby Share — только Google. LocalSend — через роутер, но без Wi-Fi Direct.
 
-| | |
-|---|---|
-| **Любые файлы** | Фото, видео, документы, архивы, APK — без ограничения типа |
-| **Папки** | С сохранением структуры: `Photos/2024/IMG.jpg` → `Download/Atom/Photos/2024/IMG.jpg` |
-| **Multi-file** | Серия файлов подряд, pause / resume / cancel для всей серии |
-| **SHA-256** | Проверка каждого файла — не «дошёл ли», а «дошёл без повреждений» |
-| **Pause / Resume** | Прерванная передача продолжается с байта N, не с нуля |
-| **MediaStore** | Единый корень: `Download/Atom/{Documents,Music,Movies,Pictures}/` |
-| **Fallback** | API 29+: MediaStore, API 26-28: прямая запись в публичную папку |
+Atom — **напрямую**: два устройства в одной сети, **26+ MB/s**, SHA-256 проверка.
+
+| | Atom | LocalSend | Quick Share | Bluetooth |
+|---|:-:|:-:|:-:|:-:|
+| Без роутера (Wi-Fi Direct) | ✅ | ❌ | ✅ | ✅ |
+| Android 8.0+ | ✅ | ✅ | ⚠️ | ✅ |
+| Открытый код | ✅ | ✅ | ❌ | ⚠️ |
+| Скорость (P2P) | **26-38 MB/s** | — | ~30 | 1-3 |
+| Папки с структурой | ✅ | ✅ | ❌ | ❌ |
+| SHA-256 | ✅ | ✅ | ⚠️ | ❌ |
+
+**Verified: 10.6 GB / 13 файлов за 6 минут.**
+
+---
+
+## Что умеет
+
+### 📤 Передача
+- Любые файлы и папки (фото, видео, документы, APK)
+- Сохранение структуры: `Photos/2024/IMG.jpg` → `Download/Atom/Photos/2024/IMG.jpg`
+- 4 TCP-потока для файлов ≥ 4 MB (**26.9 MB/s avg, 38 MB/s пик**)
+- SHA-256 каждого файла
+- Pause / Resume с байта N
+- Multi-file серии до 100 файлов
 
 ### 📶 Сопряжение
-
-| | |
-|---|---|
-| **Wi-Fi Direct** | Прямое подключение без роутера |
-| **Hotspot + QR** | Хост создаёт точку доступа, гость сканирует QR |
-| **Quick Connect** | Список известных peer'ов — tap → connect без discovery |
-| **Force Fresh** | Fallback при stale P2P-профиле (peer reboot, gap >30 мин) |
+- Wi-Fi Direct (5 GHz prefer на Android 10+)
+- Hotspot + QR
+- Quick Connect (известные пиры в 1 тап)
+- Force Fresh (reconnect при stale профиле)
 
 ### 🎨 UI
+- Виджет 4×2 (toggle, прогресс, Pause/Cancel)
+- QS Tile (приём из шторки)
+- Direct Share («Атом → Redmi» в share sheet)
+- Badge counter, History + search + CSV, Settings + selftest
 
-| | |
-|---|---|
-| **Виджет 4×2** | Toggle приёма + прогресс + Pause / Cancel прямо с главного экрана |
-| **QS Tile** | В шторке: тап = приём ON/OFF, 2×тап = file picker |
-| **App Shortcuts** | 3 последних peer'а — тап → сразу connect |
-| **Direct Share** | В share sheet галереи/Telegram — «Атом → peer» сверху списка |
-| **Badge counter** | Цифра непрочитанных передач на иконке |
-| **Notification tap** | Тап на уведомление → открыть Атом |
-| **History** | 50 последних передач + фильтры + CSV export |
-| **Settings** | Имя, известные peers, очистка истории/логов, инфо |
-| **Onboarding** | Разрешения + battery + install unknown + HyperOS autostart за один проход |
 
-### 🤖 Автоматизация
+### 🤖 Tasker / Automate
 
-Broadcast intents через `am broadcast` или Tasker Action:
+~~~bash
+am broadcast -a com.garickbox.atom.RECEIVE_ON
+am broadcast -a com.garickbox.atom.SEND -e peer_mac "aa:bb:cc:dd:ee:ff"
+am broadcast -a com.garickbox.atom.CHECK_UPDATE
+am broadcast -a com.garickbox.atom.STATUS   # → STATUS_RESULT extra json
+am broadcast -a com.garickbox.atom.PEERS
+am broadcast -a com.garickbox.atom.HISTORY -e limit 5
+~~~
 
-    # Write-actions
-    am broadcast -a com.garickbox.atom.RECEIVE_ON
-    am broadcast -a com.garickbox.atom.RECEIVE_OFF
-    am broadcast -a com.garickbox.atom.SEND -e peer_mac "aa:bb:cc:dd:ee:ff" -e peer_name "Redmi"
-    am broadcast -a com.garickbox.atom.CHECK_UPDATE
-
-    # Read-only (результат в *_RESULT)
-    am broadcast -a com.garickbox.atom.STATUS    # build, device, peers, transferState
-    am broadcast -a com.garickbox.atom.PEERS     # list known peers
-    am broadcast -a com.garickbox.atom.HISTORY -e limit 5
-
-Результаты ловятся в Tasker → Intent Received → `com.garickbox.atom.STATUS_RESULT` → `%json`.
-
-### 🔄 Обновления
-
-| | |
-|---|---|
-| **OTA через GitHub** | APK скачивается из Releases, ставится системным installer'ом |
-| **Auto-update** | После build success — `/update` на устройстве → download + installer |
-| **Version check** | `axiom#85` — не предлагает установить уже установленный APK |
+Ловятся в Tasker → Intent Received → `com.garickbox.atom.STATUS_RESULT` → `%json`.
 
 ---
 
 ## Установка
 
-### Способ 1 — APK из Releases (рекомендуется)
+### Способ 1 — APK
 
-1. Откройте [releases/latest](https://github.com/Garickbox/Atom/releases/latest)
-2. Скачайте `Atom.apk`
-3. Установите (разрешите установку из этого источника)
-4. Откройте Атом → введите имя → разрешите permissions
+1. [releases/latest](https://github.com/Garickbox/Atom/releases/latest) → `Atom.apk`
+2. Установи (разреши источник)
+3. Запусти → имя → permissions
 
-### Способ 2 — сборка из исходников
+### Способ 2 — сборка
 
-    git clone https://github.com/Garickbox/Atom.git
-    cd Atom
-    # В Android Studio: Build → Build Bundle(s) / APK(s) → Build APK(s)
-    # Или через GitHub Actions: push → artifact в Actions
+~~~bash
+git clone https://github.com/Garickbox/Atom.git
+cd Atom
+# Android Studio: Build → Build APK(s)
+# Или: push → artifact в GitHub Actions
+~~~
 
-**Требования для сборки:** JDK 17, Android SDK 34, Gradle 8.7.
+**JDK 17 + Android SDK 34 + Gradle 8.7.**
 
 ---
 
 ## Быстрый старт
 
-### Отправить файл
+**📱 QR (без роутера, ~15 сек)**
+1. Приёмник: Атом → 📱 Показать QR
+2. Отправитель: 🔍 Сканировать QR
+3. Подключается → передача
 
-**Вариант А — QR (без роутера)**
-1. На приёмнике: **📱 QR приём** → создаётся hotspot + QR
-2. На отправителе: **🔍 Сканировать QR** → сканируй → передача
+**📶 Quick Connect**
+1. FAB → файлы → «📱 Redmi Note» (последний peer)
 
-**Вариант Б — последний peer**
-1. FAB → **📷 Фото / 🎬 Видео / 📄 Файл / 📁 Папка** → выбери файлы
-2. Тап на **📱 Redmi Note** (последний peer) → передача
+**📤 Direct Share**
+1. Галерея → фото → Поделиться → **Атом → Redmi**
 
-**Вариант В — share sheet**
-1. Галерея → фото → **Поделиться** → **Атом → Redmi** (Direct Share)
+**Принимать:**
+- Виджет → 📥 Принимать (10 мин)
+- QS Tile → тап
+- Shortcut → долгий тап → «Приём 10 мин»
+- Broadcast → `am broadcast -a com.garickbox.atom.RECEIVE_ON`
 
-### Принимать файлы
+Файлы → `Download/Atom/{Documents,Music,Movies,Pictures}/`
 
-- **Виджет**: тап «📥 Принимать» → 10 мин активен
-- **QS Tile**: тап → приём ON (2×тап = file picker)
-- **Shortcut**: долгий тап иконки → «Приём 10 мин»
-- **Broadcast**: `am broadcast -a com.garickbox.atom.RECEIVE_ON`
 
-Файлы сохраняются в `Download/Atom/{Documents,Music,Movies,Pictures}/`.
+---
+
+## Производительность (verified)
+
+POCO X5 5G (API 34) → MiTV (API 28), Wi-Fi Direct:
+
+| Файл | Размер | Время | Скорость |
+|------|--------|-------|----------|
+| 1/13 (прогрев) | 787 MB | 50 сек | 15.6 MB/s |
+| 2/13 | 697 MB | 36 сек | 19.1 MB/s |
+| 3/13 | 808 MB | 34 сек | 23.9 MB/s |
+| **13/13 (финал)** | **819 MB** | **24 сек** | **33.5 MB/s** |
+| **Итого** | **10.6 GB** | **6 мин** | **26.9 MB/s avg** |
+
+На 5 GHz Wi-Fi Direct — до **40-70 MB/s**.
 
 ---
 
@@ -135,14 +136,11 @@ Broadcast intents через `am broadcast` или Tasker Action:
 
 | | |
 |---|---|
-| **Android** | 8.0+ (API 26), targetSdk 34 |
-| **RAM** | 2 GB+ |
-| **Свободное место** | Размер файла + 5 MB буфер |
-| **Сеть** | Wi-Fi Direct hardware (опционально — hotspot работает везде) |
-
-**Не поддерживается:**
-- iOS, Windows, macOS, Linux (**в roadmap**)
-- Android < 8.0
+| Android | 8.0+ (API 26), targetSdk 34 |
+| RAM | 2 GB+ |
+| Место | Размер файла + 5 MB |
+| Сеть | Wi-Fi Direct (опц. — hotspot работает) |
+| Только Android | iOS / Win / mac / Linux — roadmap |
 
 ---
 
@@ -150,138 +148,65 @@ Broadcast intents через `am broadcast` или Tasker Action:
 
 ### ⚠️ HyperOS / MIUI: hotspot требует выключить Wi-Fi
 
-На HyperOS/MIUI (Xiaomi/Redmi/POCO) **LocalOnlyHotspot заблокирован при активном Wi-Fi тумблере**, если соединение `supplicantState=COMPLETED`. Framework отвечает `reason=2 INCOMPATIBLE_MODE` / `reason=3 NO_CHANNEL` за 5-10 мс.
+На Xiaomi / Redmi / POCO LocalOnlyHotspot блокирован при активном Wi-Fi (`reason=2 INCOMPATIBLE_MODE`).
 
-**Workaround:**
-1. Откройте `📱 QR приём`
-2. Если hotspot не создался — **выключите Wi-Fi тумблер** в шторке
-3. Вернитесь в Атом → hotspot создастся
-4. После передачи — Wi-Fi включится сам (или вручную)
-
-Это **ограничение HyperOS** для user-app, не баг Atom.
+**Workaround:** QR приём → если ошибка → **«Открыть Wi-Fi»** → выключи тумблер → вернись → AP создастся. Это ограничение HyperOS.
 
 ### 🔒 Нет шифрования (только целостность)
 
-SHA-256 проверяет, что файл дошёл **без повреждений**, но не скрывает его от других в той же сети. Не передавайте через Atom паспортные данные, пароли, приватные ключи.
+SHA-256 проверяет целостность, но не скрывает файл в сети. **TLS 1.3 + TOFU** в roadmap.
 
-**В roadmap:** TLS 1.3 + самоподписанные сертификаты + TOFU pinning.
+### 🚧 Early MVP (0.1)
 
-### 📱 Только Android
-
-iOS, Windows, macOS, Linux — **в roadmap**. Пока работает только Android ↔ Android.
-
-### 🚧 Ранняя версия (0.1-mvp)
-
-Без полноценного QA. Возможны:
-- Timeouts при pause/resume
-- Race conditions при multi-file
-- Нестабильный виджет
-
-**Не используйте для критичных данных** без проверки.
-
----
-
-## Технологии
-
-| | |
-|---|---|
-| **Язык** | Kotlin 1.9.24 |
-| **Сборка** | AGP 8.5.2, Gradle 8.7, JDK 17 |
-| **Архитектура** | Activity + Services (FGS) + Coroutines + ViewBinding |
-| **Сеть** | UDP (сигналинг) + TCP (данные), порт 47822 |
-| **P2P** | `WifiP2pManager` + `LocalOnlyHotspot` |
-| **Хранилище** | `MediaStore.Downloads` + `RELATIVE_PATH` (API 29+) / прямая запись (API 26-28) |
-| **QR** | `zxing-android-embedded` 4.3.0 |
-| **OTA** | OkHttp 4.12 + GitHub Releases API |
-
-**Структура проекта:**
-
-    app/src/main/java/
-    ├── com.garickbox.atom/          # UI, Activity, Service, Controller
-    │   ├── MainActivity.kt
-    │   ├── QrShareActivity.kt       # Host: создаёт AP + QR
-    │   ├── QrScanActivity.kt        # Guest: сканирует QR + connect
-    │   ├── FileSenderService.kt     # FGS отправки
-    │   ├── FileReceiver.kt          # приём (object)
-    │   ├── FileReceiverService.kt   # FGS приёма
-    │   ├── MediaStoreSaver.kt       # сохранение в Download/Atom/
-    │   ├── AtomWidgetProvider.kt    # виджет 4×2
-    │   ├── AtomQSTile.kt            # QS Tile
-    │   ├── AtomCommandReceiver.kt   # broadcast intents
-    │   ├── UpdateChecker.kt         # OTA через GitHub
-    │   ├── TestApi.kt               # debug HTTP API
-    │   └── ...
-    └── com.mesh.core/               # P2P-слой (без зависимости от garickbox)
-        ├── MeshNode.kt
-        ├── MeshPacket.kt
-        ├── WifiDirectManager.kt
-        ├── InAppLogger.kt
-        ├── CompactLog.kt
-        └── PowerLocks.kt
+Race conditions под нагрузкой, виджет нестабилен на HyperOS. **Не для критичных данных.**
 
 ---
 
 ## Roadmap
 
-### 🟢 Готово (0.1-mvp)
+### ✅ 0.1-mvp (build-292)
+- [x] Wi-Fi Direct + Quick Connect + QR
+- [x] Файлы, папки, серии, SHA-256, Pause/Resume
+- [x] Multi-thread (26.9 MB/s avg)
+- [x] Виджет, QS Tile, Shortcuts, Direct Share
+- [x] Tasker broadcasts, OTA, Badge, History, Settings
+- [x] 5 GHz detect + prefer (B121)
 
-- [x] Wi-Fi Direct connect + Quick Connect
-- [x] Hotspot + QR сопряжение
-- [x] Передача файлов, папок, серий
-- [x] SHA-256 проверка
-- [x] Pause / Resume / Cancel
-- [x] MediaStore save (единый корень)
-- [x] Виджет 4×2 + QS Tile + App Shortcuts
-- [x] Direct Share (Sharing Shortcuts)
-- [x] Broadcast intents для Tasker
-- [x] OTA через GitHub
-- [x] Badge counter
-- [x] History + CSV export
-- [x] Settings
-- [x] Onboarding
-- [x] Multi-thread (заготовка)
-
-### 🟡 В работе (0.2)
-
-- [ ] TLS 1.3 шифрование — самоподписанные сертификаты + TOFU pinning
-- [ ] Multi-thread активация — 4 потока для size ≥ 4 MB (30-40 МБ/с)
-- [ ] Hotspot на HyperOS без ручного Wi-Fi off
-- [ ] Ручной QA — 10 файлов × 1 GB × 3 устройства
+### 🟡 0.2 — В работе
+- [ ] TLS 1.3 + TOFU pinning
+- [ ] SHA FILE_DONE ack (sender ждёт hash)
+- [ ] Broadcast custom permission
 - [ ] Unit-тесты mesh protocol
+- [ ] QA 10 GB × 3 устройства
 
-### 🔵 В планах (0.3)
-
-- [ ] Desktop companion — Windows / macOS / Linux (KMP)
-- [ ] LocalSend compat — fallback LAN transport
-- [ ] Transfer history filters
-- [ ] Wi-Fi Aware
+### 🔵 0.3 — Планы
+- [ ] Desktop (Win/mac/Linux, KMP)
+- [ ] LAN fallback (Ktor HTTP)
+- [ ] Wi-Fi Aware (NAN)
 - [ ] Background auto-receive
 
-### ⚪ Долгосрочно (1.0)
+### ⚪ 1.0 — Долгосрочно
+- [ ] iOS, F-Droid, Play Store
+- [ ] LocalSend protocol compat
 
-- [ ] iOS-версия
-- [ ] F-Droid релиз
-- [ ] Play Store релиз
-- [ ] Multi-device sync
+---
+
+## Технологии
+
+Kotlin 1.9.24 · AGP 8.5.2 · Gradle 8.7 · JDK 17 · Coroutines 1.8.1 · OkHttp 4.12 · zxing 4.3.0
+
+Сеть: UDP (signal) + TCP (4 threads), порт 47822 · P2P: WifiP2pManager + LocalOnlyHotspot · Storage: MediaStore.Downloads (API 29+) / direct (26-28)
 
 ---
 
 ## Лицензия
 
-**TBD** — будет выбрана после стабилизации ядра (0.2). Планируется **GPL-3.0** или **Apache-2.0**.
+TBD (GPL-3.0 или Apache-2.0 после 0.2). Пока — использовать, модифицировать, распространять с указанием авторства.
 
-Пока можно использовать, модифицировать, распространять с указанием авторства.
+<div align="center">
 
----
+**⚛️ Atom** — без облаков, аккаунтов и рекламы.
 
-## Контакты
+[⭐ Star](https://github.com/Garickbox/Atom) · [📥 Download](https://github.com/Garickbox/Atom/releases/latest)
 
-- **Issues / идеи**: [github.com/Garickbox/Atom/issues](https://github.com/Garickbox/Atom/issues)
-- **Обсуждения**: [github.com/Garickbox/Atom/discussions](https://github.com/Garickbox/Atom/discussions)
-- **Автор**: [@Garickbox](https://github.com/Garickbox)
-
----
-
-<p align="center">
-  <b>⚛️ Atom</b> — передача файлов без облаков и рекламы
-</p>
+</div>
