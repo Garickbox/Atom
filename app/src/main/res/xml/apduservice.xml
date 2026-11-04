@@ -3,6 +3,6 @@
     android:description="@string/nfc_hce_desc"
     android:requireDeviceUnlock="false">
     <aid-group android:description="@string/nfc_aid_desc" android:category="other">
-        <aid-filter android:name="F0010203040506" />
+        <aid-filter android:name="F041544F4D" />
     </aid-group>
 </host-apdu-service>

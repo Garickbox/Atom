@@ -6,8 +6,8 @@ import com.mesh.core.InAppLogger
 
 class NfcHceService : HostApduService() {
     companion object {
-        private const val AID_HEX = "F0010203040506"
-        private const val AID_LEN = 7
+        private const val AID_HEX = "F041544F4D"
+        private const val AID_LEN = 6
         private val STATUS_OK = byteArrayOf(0x90.toByte(), 0x00)
         private val STATUS_NF = byteArrayOf(0x6A.toByte(), 0x82.toByte())
         @Volatile var currentUri: String = ""
