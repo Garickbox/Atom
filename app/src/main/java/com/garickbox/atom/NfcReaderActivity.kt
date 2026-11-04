@@ -173,17 +173,20 @@ class NfcReaderActivity : AppCompatActivity() {
         // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
         InAppLogger.d("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
         runOnUiThread { statusText.text = "P2P поиск..." }
-        // B172: hasActiveGroup → fast path (reinvoke), иначе full cleanup
+        // B173a: real check via requestGroupInfo (не time heuristic axiom#161)
         val wd = AtomController.wifiDirect
         if (wd == null) { fallbackWifiConnect(data); return }
-        if (wd.hasActiveGroup()) {
-            InAppLogger.d("NfcReader", "B172: active group → fast reinvoke")
-            handler.postDelayed({ fallbackWifiConnect(data) }, 100L)
-            return
-        }
-        InAppLogger.d("NfcReader", "B172: no group → full cleanup + discover")
-        wd.forgetAllGroupsAndThen {
-            handler.postDelayed({ fallbackWifiConnect(data) }, 300L)
+        wd.checkGroupAlive { alive ->
+            if (isFinishing || isDestroyed) return@checkGroupAlive
+            if (alive) {
+                InAppLogger.d("NfcReader", "B173a: group ALIVE → fast reinvoke")
+                handler.postDelayed({ fallbackWifiConnect(data) }, 100L)
+            } else {
+                InAppLogger.d("NfcReader", "B173a: group DEAD → full cleanup")
+                wd.forgetAllGroupsAndThen {
+                    handler.postDelayed({ fallbackWifiConnect(data) }, 300L)
+                }
+            }
         }
     }
 
@@ -257,13 +260,37 @@ class NfcReaderActivity : AppCompatActivity() {
             }
         }
 
+        var inversionCount = 0
         wd.onConnected = con@{ conn ->
             if (done) return@con
             InAppLogger.d("NfcReader", "B165: P2P connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            // B173c: детект инверсии — Redmi должен быть client (isGO=false)
+            if (conn.isGroupOwner) {
+                InAppLogger.err("NfcReader", "B173c: ROLE INVERSION — Redmi became GO (${inversionCount + 1}/3)")
+                if (inversionCount < 3) {
+                    inversionCount++
+                    connectInFlight = false
+                    targetMac = null
+                    try {
+                        wd.forgetAllGroupsAndThen {
+                            handler.postDelayed({
+                                try { wd.discoverPeers() } catch (_: Exception) {}
+                            }, 500L)
+                        }
+                    } catch (_: Exception) {
+                        handler.postDelayed({
+                            try { wd.discoverPeers() } catch (_: Exception) {}
+                        }, 1500L)
+                    }
+                    return@con
+                }
+                finishOnce("B173c: role inversion x3 → finish")
+                return@con
+            }
             done = true
             connectInFlight = false
             restore()
-            if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
+            if (conn.groupOwnerAddress.isNotBlank()) {
                 try { AtomController.meshNode?.sendHello(conn.groupOwnerAddress) } catch (_: Exception) {}
             }
             handler.postDelayed({ afterConnected(data) }, 2000L)

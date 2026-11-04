@@ -978,6 +978,8 @@ private fun displayName(uri: Uri): String? {
         try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
         // B112: снимаем счётчик ДО проверки — иначе transferActive видит сам себя
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+        // B173b: явный teardown P2P после transfer (axiom#161 — не гадать, сбрасывать)
+        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
         try {
             if (!AtomController.transferActive) {
                 QrScanActivity.unbind()

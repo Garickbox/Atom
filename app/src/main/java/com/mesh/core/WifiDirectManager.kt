@@ -34,7 +34,50 @@ class WifiDirectManager(private val ctx: Context) {
     @Volatile private var lastGroupValid: Boolean = false
     @Volatile private var lastGroupAt: Long = 0L
 
+    /**
+     * B173a: real check — requestGroupInfo + NetworkInterface sanity.
+     * Старый time-based heuristic давал false-positive → fast-reinvoke на мёртвую группу → BUSY (axiom#161).
+     */
+    @Deprecated("B173a: use checkGroupAlive(callback)")
     fun hasActiveGroup(): Boolean = lastGroupValid && (System.currentTimeMillis() - lastGroupAt) < 60_000L
+
+    fun checkGroupAlive(onResult: (Boolean) -> Unit) {
+        val ch = channel
+        if (ch == null) { onResult(false); return }
+        // 1. sync NetworkInterface sanity (HyperOS p2p0 UP без IP после teardown)
+        val p2pUp = try {
+            java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+                .filter { it.name.startsWith("p2p") && it.isUp }
+                .any { ni -> ni.inetAddresses.asSequence().any { !it.isLoopbackAddress } }
+        } catch (_: Exception) { false }
+        if (!p2pUp) {
+            InAppLogger.d("WifiDirect", "B173a: p2p iface DOWN → dead")
+            onResult(false); return
+        }
+        // 2. requestGroupInfo — source of truth (свежее чем requestConnectionInfo cache)
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        scope.launch {
+            kotlinx.coroutines.delay(2000L)
+            if (done.compareAndSet(false, true)) {
+                InAppLogger.d("WifiDirect", "B173a: requestGroupInfo timeout 2s → dead")
+                onResult(false)
+            }
+        }
+        try {
+            manager?.requestGroupInfo(ch) { group ->
+                if (done.compareAndSet(false, true)) {
+                    val alive = group != null
+                    InAppLogger.d("WifiDirect", "B173a: requestGroupInfo → ${if (alive) "ALIVE" else "DEAD"}")
+                    onResult(alive)
+                }
+            } ?: onResult(false)
+        } catch (e: Exception) {
+            if (done.compareAndSet(false, true)) {
+                InAppLogger.err("WifiDirect", "B173a: requestGroupInfo ${e.message}")
+                onResult(false)
+            }
+        }
+    }
     var onConnected: ((P2PConnection) -> Unit)? = null
     var onDisconnected: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
