@@ -166,6 +166,11 @@ class MainActivity : AppCompatActivity() {
         setupTvIfNeeded()
 
         b.fab.setOnClickListener { showSendPicker() }
+        b.btnHeroShowQr.setOnClickListener {
+            try { startActivity(Intent(this, QrShareActivity::class.java)) } catch (e: Exception) {
+                InAppLogger.err("MainActivity", "B136: QR: ${e.message}")
+            }
+        }
         observeLivePeers()
 
         // Авто-проверка обновления убрана — только manual (меню / кнопка на TV)

@@ -44,6 +44,13 @@
             android:text="Напрямую, без облаков"
             android:textSize="14sp"
             android:textColor="?attr/colorOnSurfaceVariant" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnHeroShowQr"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="📱  Показать QR" />
         <LinearLayout
             android:id="@+id/liveStatus"
             android:layout_width="wrap_content"

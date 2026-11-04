@@ -128,12 +128,25 @@ class ShareTargetActivity : AppCompatActivity() {
 
         // B24: preselected peer из shortcut → сразу connect
         val presel = MainActivity.pendingPeerForShareTarget
-        if (presel != null && presel.mac.isNotBlank() && !isTv()) {
+        if (presel != null && !isTv()) {
             MainActivity.pendingPeerForShareTarget = null
-            InAppLogger.d("ShareTarget", "preselected ${presel.name} → connectP2pQuick")
-            dialog?.dismiss()
-            connectP2pQuick(presel.mac, presel.name)
-            return
+            if (presel.ip.isNotBlank()) {
+                InAppLogger.d("ShareTarget", "B136: live peer direct send ${presel.name} @ ${presel.ip}")
+                try {
+                    FileSenderService.startTransfer(this, presel, uris, urisRelativePaths)
+                } catch (e: Exception) {
+                    InAppLogger.err("ShareTarget", "B136: direct send: ${e.message}")
+                }
+                finish()
+                return
+            }
+            if (presel.mac.isNotBlank()) {
+                InAppLogger.d("ShareTarget", "preselected ${presel.name} → connectP2pQuick")
+                dialog?.dismiss()
+                connectP2pQuick(presel.mac, presel.name)
+                return
+            }
+            InAppLogger.d("ShareTarget", "B136: presel без ip/mac → fallback sheet")
         }
 
         if (isTv()) {
