@@ -74,6 +74,7 @@ object TestApi {
                     "/find_apk" -> cmdFindApk(ctx)
                     "/badge" -> cmdBadge(ctx, params["action"] ?: "get", params["n"]?.toIntOrNull() ?: 0)
                     "/nfc" -> cmdNfc(ctx)
+                    "/nfc-log" -> cmdNfcLog(ctx)
                     "/verbose" -> cmdVerbose(params["on"])
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
@@ -114,6 +115,17 @@ object TestApi {
             try { out?.close() } catch (_: Exception) {}
             try { client.close() } catch (_: Exception) {}
         }
+    }
+
+    private fun cmdNfcLog(ctx: Context): String {
+        return try {
+            val f = com.mesh.core.InAppLogger.getNfcLogFile()
+            if (f == null) "(empty)"
+            else {
+                val c = f.readText()
+                if (c.length > 100_000) c.takeLast(100_000) else c
+            }
+        } catch (e: Exception) { "err: " + e.message }
     }
 
     private fun cmdNfc(ctx: Context): String {

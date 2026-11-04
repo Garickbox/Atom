@@ -51,7 +51,7 @@ class WifiDirectManager(private val ctx: Context) {
                 .any { ni -> ni.inetAddresses.asSequence().any { !it.isLoopbackAddress } }
         } catch (_: Exception) { false }
         if (!p2pUp) {
-            InAppLogger.d("WifiDirect", "B173a: p2p iface DOWN → dead")
+            InAppLogger.nfc("WifiDirect", "B173a: p2p iface DOWN → dead")
             onResult(false); return
         }
         // 2. requestGroupInfo — source of truth (свежее чем requestConnectionInfo cache)
@@ -59,7 +59,7 @@ class WifiDirectManager(private val ctx: Context) {
         scope.launch {
             kotlinx.coroutines.delay(2000L)
             if (done.compareAndSet(false, true)) {
-                InAppLogger.d("WifiDirect", "B173a: requestGroupInfo timeout 2s → dead")
+                InAppLogger.nfc("WifiDirect", "B173a: requestGroupInfo timeout 2s → dead")
                 onResult(false)
             }
         }
@@ -67,13 +67,13 @@ class WifiDirectManager(private val ctx: Context) {
             manager?.requestGroupInfo(ch) { group ->
                 if (done.compareAndSet(false, true)) {
                     val alive = group != null
-                    InAppLogger.d("WifiDirect", "B173a: requestGroupInfo → ${if (alive) "ALIVE" else "DEAD"}")
+                    InAppLogger.nfc("WifiDirect", "B173a: requestGroupInfo → ${if (alive) "ALIVE" else "DEAD"}")
                     onResult(alive)
                 }
             } ?: onResult(false)
         } catch (e: Exception) {
             if (done.compareAndSet(false, true)) {
-                InAppLogger.err("WifiDirect", "B173a: requestGroupInfo ${e.message}")
+                InAppLogger.nfc("WifiDirect:ERR", "B173a: requestGroupInfo ${e.message}")
                 onResult(false)
             }
         }
@@ -105,15 +105,15 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             manager = ctx.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
             if (manager == null) {
-                InAppLogger.d("WifiDirect", "no WifiP2pManager")
+                InAppLogger.nfc("WifiDirect", "no WifiP2pManager")
                 onError?.invoke("Wi-Fi Direct не поддерживается")
                 return
             }
             channel = manager!!.initialize(ctx, Looper.getMainLooper()) {
-                InAppLogger.d("WifiDirect", "channel disconnected")
+                InAppLogger.nfc("WifiDirect", "channel disconnected")
             }
             if (channel == null) {
-                InAppLogger.d("WifiDirect", "channel null")
+                InAppLogger.nfc("WifiDirect", "channel null")
                 onError?.invoke("Не удалось инициализировать channel")
                 return
             }
@@ -137,9 +137,9 @@ class WifiDirectManager(private val ctx: Context) {
                 ctx.registerReceiver(r, filter)
             }
             initialized = true
-            InAppLogger.d("WifiDirect", "initialized")
+            InAppLogger.nfc("WifiDirect", "initialized")
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "init error: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "init error: ${e.message}")
             onError?.invoke("Ошибка P2P: ${e.message}")
         }
     }
@@ -149,17 +149,17 @@ class WifiDirectManager(private val ctx: Context) {
             WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                 val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
                 val enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED
-                InAppLogger.d("WifiDirect", "state changed: enabled=$enabled")
+                InAppLogger.nfc("WifiDirect", "state changed: enabled=$enabled")
                 onP2pStateChanged?.invoke(enabled)
             }
             WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
-                InAppLogger.d("WifiDirect", "peers changed")
+                InAppLogger.nfc("WifiDirect", "peers changed")
                 try { requestPeers() } catch (e: Exception) {
-                    InAppLogger.d("WifiDirect", "B110: requestPeers после dead channel: ${e.javaClass.simpleName}")
+                    InAppLogger.nfc("WifiDirect", "B110: requestPeers после dead channel: ${e.javaClass.simpleName}")
                 }
             }
             WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
-                InAppLogger.d("WifiDirect", "connection changed")
+                InAppLogger.nfc("WifiDirect", "connection changed")
                 requestConnectionInfo()
             }
             WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> {
@@ -170,7 +170,7 @@ class WifiDirectManager(private val ctx: Context) {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE)
                 }
-                InAppLogger.d("WifiDirect", "this device: ${d?.deviceName ?: "?"} mac=${d?.deviceAddress ?: "?"}")
+                InAppLogger.nfc("WifiDirect", "this device: ${d?.deviceName ?: "?"} mac=${d?.deviceAddress ?: "?"}")
             }
         }
     }
@@ -183,7 +183,7 @@ class WifiDirectManager(private val ctx: Context) {
             manager?.requestPeers(channel) { list ->
                 val peers = list?.deviceList?.toList() ?: emptyList()
                 // B22-log: логировать ВСЕГДА (не только при смене) — иначе "0" невидим
-                InAppLogger.d("WifiDirect",
+                InAppLogger.nfc("WifiDirect",
                     "requestPeers → ${peers.size}: ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
                 if (peers.isNotEmpty()) {
                     onPeersChanged?.invoke(peers)
@@ -191,7 +191,7 @@ class WifiDirectManager(private val ctx: Context) {
                 }
             }
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect",
+            InAppLogger.nfc("WifiDirect",
                 "requestPeers error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
@@ -201,7 +201,7 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             manager?.requestConnectionInfo(channel) { info: WifiP2pInfo? ->
                 if (info == null || !info.groupFormed) {
-                    InAppLogger.d("WifiDirect", "group not formed")
+                    InAppLogger.nfc("WifiDirect", "group not formed")
                     lastGroupValid = false
                     onDisconnected?.invoke()
                     return@requestConnectionInfo
@@ -220,7 +220,7 @@ class WifiDirectManager(private val ctx: Context) {
                                 hz > 0 -> "${hz} MHz"
                                 else -> "unknown"
                             }
-                            InAppLogger.d("WifiDirect",
+                            InAppLogger.nfc("WifiDirect",
                                 "connected: isGO=$isGO goIp=$ip band=$bandStr")
                             lastGroupValid = true
                             lastGroupAt = System.currentTimeMillis()
@@ -232,20 +232,20 @@ class WifiDirectManager(private val ctx: Context) {
                             ))
                         }
                     } catch (e: Exception) {
-                        InAppLogger.d("WifiDirect",
+                        InAppLogger.nfc("WifiDirect",
                             "requestGroupInfo error: ${e.message}, freq=0 fallback")
                         lastGroupValid = true
                         lastGroupAt = System.currentTimeMillis()
                         onConnected?.invoke(P2PConnection(isGO, ip, true, 0))
                     }
                 } else {
-                    InAppLogger.d("WifiDirect",
+                    InAppLogger.nfc("WifiDirect",
                         "connected: isGO=$isGO goIp=$ip (API<29, freq unknown)")
                     onConnected?.invoke(P2PConnection(isGO, ip, true, 0))
                 }
             }
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "requestConnectionInfo error: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "requestConnectionInfo error: ${e.message}")
         }
     }
 
@@ -259,10 +259,10 @@ class WifiDirectManager(private val ctx: Context) {
             // B16: НЕ вызываем removeGroup перед discover — иначе стирается
             // persistent group profile и framework не может сделать reinvoke
             // (fast reconnect ~1-2s вместо полного цикла 5-15s с GO Negotiation).
-            InAppLogger.d("WifiDirect", "discoverPeers: skip removeGroup (keep persistent)")
+            InAppLogger.nfc("WifiDirect", "discoverPeers: skip removeGroup (keep persistent)")
             startDiscover()
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "discoverPeers error: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "discoverPeers error: ${e.message}")
             onError?.invoke("Ошибка поиска: ${e.message}")
         }
     }
@@ -272,35 +272,35 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             manager!!.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "discover started → requestPeers now")
+                    InAppLogger.nfc("WifiDirect", "discover started → requestPeers now")
                     requestPeers()  // B22-log2: сразу, не ждать 12s tick
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discover failed: $reason → requestPeers anyway")
+                    InAppLogger.nfc("WifiDirect", "discover failed: $reason → requestPeers anyway")
                     requestPeers()  // B22-log2: даже fail — что-то есть?
                     onError?.invoke("Поиск не начался (код $reason)")
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "startDiscover error: ${e.javaClass.simpleName}: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "startDiscover error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
     /** Пассивный discover — делает устройство видимым для других. */
     fun passiveDiscover() {
         if (manager == null || channel == null) return
-        InAppLogger.d("WifiDirect", "passive discover starting")
+        InAppLogger.nfc("WifiDirect", "passive discover starting")
         try {
             manager!!.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "passive discover started (we are visible)")
+                    InAppLogger.nfc("WifiDirect", "passive discover started (we are visible)")
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "passive discover failed: $reason")
+                    InAppLogger.nfc("WifiDirect", "passive discover failed: $reason")
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "passiveDiscover error: ${e.javaClass.simpleName}")
+            InAppLogger.nfc("WifiDirect", "passiveDiscover error: ${e.javaClass.simpleName}")
         }
     }
 
@@ -326,16 +326,16 @@ class WifiDirectManager(private val ctx: Context) {
                     groupOwnerIntent = 0
                 }
             }
-            InAppLogger.d("WifiDirect", "B172: connectAsClient $mac (intent=0, 5GHz)")
+            InAppLogger.nfc("WifiDirect", "B172: connectAsClient $mac (intent=0, 5GHz)")
             manager!!.connect(ch, config, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() { InAppLogger.d("WifiDirect", "B172: connectAsClient initiated") }
+                override fun onSuccess() { InAppLogger.nfc("WifiDirect", "B172: connectAsClient initiated") }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "B172: connectAsClient failed $reason")
+                    InAppLogger.nfc("WifiDirect", "B172: connectAsClient failed $reason")
                     onError?.invoke("Connect failed (код $reason)")
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.err("WifiDirect", "B172 connectAsClient: ${e.message}")
+            InAppLogger.nfc("WifiDirect:ERR", "B172 connectAsClient: ${e.message}")
             onError?.invoke("Connect error: ${e.message}")
         }
     }
@@ -360,18 +360,18 @@ class WifiDirectManager(private val ctx: Context) {
                     deviceAddress = mac
                 }
             }
-            InAppLogger.d("WifiDirect", "connect to $mac (B121: prefer 5GHz on API29+)")
+            InAppLogger.nfc("WifiDirect", "connect to $mac (B121: prefer 5GHz on API29+)")
             manager!!.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "connect initiated (system decides fresh vs reinvoke)")
+                    InAppLogger.nfc("WifiDirect", "connect initiated (system decides fresh vs reinvoke)")
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "connect failed: $reason")
+                    InAppLogger.nfc("WifiDirect", "connect failed: $reason")
                     onError?.invoke("Connect failed (код $reason)")
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "connect error: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "connect error: ${e.message}")
             onError?.invoke("Ошибка connect: ${e.message}")
         }
     }
@@ -391,8 +391,8 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             channel?.let { ch ->
                 manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() { InAppLogger.d("WifiDirect", "B166a: removeGroup OK") }
-                    override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B166a: removeGroup fail $reason") }
+                    override fun onSuccess() { InAppLogger.nfc("WifiDirect", "B166a: removeGroup OK") }
+                    override fun onFailure(reason: Int) { InAppLogger.nfc("WifiDirect", "B166a: removeGroup fail $reason") }
                 })
             }
         } catch (_: Exception) {}
@@ -408,7 +408,7 @@ class WifiDirectManager(private val ctx: Context) {
         var attempt = 0
         fun finishOnce() {
             if (finished.compareAndSet(false, true)) {
-                InAppLogger.d("WifiDirect", "B170: forgetAll done → continue")
+                InAppLogger.nfc("WifiDirect", "B170: forgetAll done → continue")
                 onDone()
             }
         }
@@ -416,7 +416,7 @@ class WifiDirectManager(private val ctx: Context) {
             if (finished.get()) return
             attempt++
             if (attempt > 3) {
-                InAppLogger.d("WifiDirect", "B170: removeGroup max 3 → continue")
+                InAppLogger.nfc("WifiDirect", "B170: removeGroup max 3 → continue")
                 finishOnce(); return
             }
             try {
@@ -424,24 +424,24 @@ class WifiDirectManager(private val ctx: Context) {
                 if (ch == null) { finishOnce(); return }
                 manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
                     override fun onSuccess() {
-                        InAppLogger.d("WifiDirect", "B170: removeGroup OK (attempt $attempt)")
+                        InAppLogger.nfc("WifiDirect", "B170: removeGroup OK (attempt $attempt)")
                         finishOnce()
                     }
                     override fun onFailure(reason: Int) {
                         if (reason == 2 && attempt < 3) {
-                            InAppLogger.d("WifiDirect", "B170: removeGroup BUSY → retry 1s (attempt $attempt/3)")
+                            InAppLogger.nfc("WifiDirect", "B170: removeGroup BUSY → retry 1s (attempt $attempt/3)")
                             scope.launch {
                                 kotlinx.coroutines.delay(1000L)
                                 tryRemove()
                             }
                         } else {
-                            InAppLogger.d("WifiDirect", "B170: removeGroup fail $reason (attempt $attempt) → continue")
+                            InAppLogger.nfc("WifiDirect", "B170: removeGroup fail $reason (attempt $attempt) → continue")
                             finishOnce()
                         }
                     }
                 })
             } catch (e: Exception) {
-                InAppLogger.err("WifiDirect", "B170 forgetAll: ${e.message}")
+                InAppLogger.nfc("WifiDirect:ERR", "B170 forgetAll: ${e.message}")
                 finishOnce()
             }
         }
@@ -449,7 +449,7 @@ class WifiDirectManager(private val ctx: Context) {
         scope.launch {
             kotlinx.coroutines.delay(8000L)
             if (!finished.get()) {
-                InAppLogger.d("WifiDirect", "B170: forgetAll hard timeout 8s → continue")
+                InAppLogger.nfc("WifiDirect", "B170: forgetAll hard timeout 8s → continue")
                 finishOnce()
             }
         }
@@ -460,16 +460,16 @@ class WifiDirectManager(private val ctx: Context) {
     fun cancelPendingConnect() {
         try {
             manager?.cancelConnect(channel, null)
-            InAppLogger.d("WifiDirect", "B168: cancelConnect sent")
+            InAppLogger.nfc("WifiDirect", "B168: cancelConnect sent")
         } catch (_: Exception) {}
     }
 
     fun disconnect() {
         try {
             manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() { InAppLogger.d("WifiDirect", "group removed (forget)") }
+                override fun onSuccess() { InAppLogger.nfc("WifiDirect", "group removed (forget)") }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "removeGroup failed: $reason")
+                    InAppLogger.nfc("WifiDirect", "removeGroup failed: $reason")
                 }
             })
         } catch (_: Exception) {}
@@ -491,18 +491,18 @@ class WifiDirectManager(private val ctx: Context) {
      */
     fun forceFreshConnect(mac: String) {
         if (manager == null || channel == null) return
-        InAppLogger.d("WifiDirect", "forceFreshConnect: removeGroup + reconnect $mac")
+        InAppLogger.nfc("WifiDirect", "forceFreshConnect: removeGroup + reconnect $mac")
         try {
             manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("WifiDirect", "forceFresh: removeGroup OK, reconnect in 500ms")
+                    InAppLogger.nfc("WifiDirect", "forceFresh: removeGroup OK, reconnect in 500ms")
                     scope.launch {
                         kotlinx.coroutines.delay(500L)
                         connect(mac)
                     }
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "forceFresh: removeGroup failed $reason, reconnect anyway")
+                    InAppLogger.nfc("WifiDirect", "forceFresh: removeGroup failed $reason, reconnect anyway")
                     scope.launch {
                         kotlinx.coroutines.delay(500L)
                         connect(mac)
@@ -510,21 +510,21 @@ class WifiDirectManager(private val ctx: Context) {
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "forceFreshConnect error: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "forceFreshConnect error: ${e.message}")
         }
     }
 
     fun startContinuousDiscover() {
         if (continuousJob?.isActive == true) return
         continuousJob = scope.launch {
-            InAppLogger.d("WifiDirect", "continuousDiscover RUN (doDiscoverTick every 12s)")
-            InAppLogger.d("WifiDirect", "continuousDiscover started")
+            InAppLogger.nfc("WifiDirect", "continuousDiscover RUN (doDiscoverTick every 12s)")
+            InAppLogger.nfc("WifiDirect", "continuousDiscover started")
             delay(500)
             while (true) {
                 try {
                     doDiscoverTick()
                 } catch (e: Exception) {
-                    InAppLogger.d("WifiDirect", "tick error: ${e.javaClass.simpleName}: ${e.message}")
+                    InAppLogger.nfc("WifiDirect", "tick error: ${e.javaClass.simpleName}: ${e.message}")
                 }
                 delay(12_000)
             }
@@ -534,13 +534,13 @@ class WifiDirectManager(private val ctx: Context) {
     fun stopContinuousDiscover() {
         continuousJob?.cancel()
         continuousJob = null
-        InAppLogger.d("WifiDirect", "continuousDiscover stopped")
+        InAppLogger.nfc("WifiDirect", "continuousDiscover stopped")
     }
 
     @SuppressLint("MissingPermission")
     private fun doDiscoverTick() {
         if (suppressDiscover) {
-            InAppLogger.d("WifiDirect", "B141: skip discover — transfer active")
+            InAppLogger.nfc("WifiDirect", "B141: skip discover — transfer active")
             return
         }
         try {
@@ -550,12 +550,12 @@ class WifiDirectManager(private val ctx: Context) {
                     requestPeers()
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("WifiDirect", "discover tick fail: $reason → requestPeers anyway")
+                    InAppLogger.nfc("WifiDirect", "discover tick fail: $reason → requestPeers anyway")
                     requestPeers()
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("WifiDirect", "doDiscoverTick error: ${e.message}")
+            InAppLogger.nfc("WifiDirect", "doDiscoverTick error: ${e.message}")
         }
     }
 
@@ -565,6 +565,6 @@ class WifiDirectManager(private val ctx: Context) {
         } catch (_: Exception) {}
         receiver = null
         initialized = false
-        InAppLogger.d("WifiDirect", "cleanup")
+        InAppLogger.nfc("WifiDirect", "cleanup")
     }
 }

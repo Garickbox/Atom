@@ -43,7 +43,7 @@ class NfcHceService : HostApduService() {
         val ins = apdu[1].toInt() and 0xFF
         val p1 = apdu[2].toInt() and 0xFF
         val p2 = apdu[3].toInt() and 0xFF
-        InAppLogger.d("NfcHce", "APDU cla=$cla ins=$ins p1=$p1 p2=$p2")
+        InAppLogger.nfc("NfcHce", "APDU cla=$cla ins=$ins p1=$p1 p2=$p2")
         if (cla == 0x00 && ins == 0xA4 && p1 == 0x04) return handleSelectAid(apdu)
         if (cla == 0x00 && ins == 0xA4 && p1 == 0x00) {
             if (apdu.size < 7) return STATUS_NF
@@ -121,11 +121,11 @@ class NfcHceService : HostApduService() {
         rec[4] = 0x00
         System.arraycopy(ub, 0, rec, 5, ub.size)
         ndefMessage = rec
-        InAppLogger.d("NfcHce", "NDEF uri=$uri len=${rec.size}")
+        InAppLogger.nfc("NfcHce", "NDEF uri=$uri len=${rec.size}")
     }
 
     override fun onDeactivated(reason: Int) {
-        InAppLogger.d("NfcHce", "onDeactivated $reason")
+        InAppLogger.nfc("NfcHce", "onDeactivated $reason")
         selectedFile = 0
     }
 }

@@ -65,7 +65,7 @@ class QrShareActivity : AppCompatActivity() {
         statusText.text = "Создаю P2P группу…"
         val wm = getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
         if (wm == null) {
-            InAppLogger.d("QrServer", "no WifiP2pManager → hotspot")
+            InAppLogger.nfc("QrServer", "no WifiP2pManager → hotspot")
             startHotspot()
             return
         }
@@ -77,7 +77,7 @@ class QrShareActivity : AppCompatActivity() {
         // Таймаут: если за 8 сек группа не сформировалась — hotspot
         val timeout = Runnable {
             if (!groupCreated) {
-                InAppLogger.d("QrServer", "createGroup timeout 8s → hotspot")
+                InAppLogger.nfc("QrServer", "createGroup timeout 8s → hotspot")
                 startHotspot()
             }
         }
@@ -87,16 +87,16 @@ class QrShareActivity : AppCompatActivity() {
         try {
             wm.removeGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("QrServer", "removeGroup OK, createGroup in 500ms")
+                    InAppLogger.nfc("QrServer", "removeGroup OK, createGroup in 500ms")
                     handler.postDelayed({ doCreateGroup(wm, channel, timeout) }, 500L)
                 }
                 override fun onFailure(reason: Int) {
-                    InAppLogger.d("QrServer", "removeGroup fail $reason, createGroup anyway")
+                    InAppLogger.nfc("QrServer", "removeGroup fail $reason, createGroup anyway")
                     handler.postDelayed({ doCreateGroup(wm, channel, timeout) }, 500L)
                 }
             })
         } catch (e: Exception) {
-            InAppLogger.d("QrServer", "removeGroup exception: ${e.message}")
+            InAppLogger.nfc("QrServer", "removeGroup exception: ${e.message}")
             doCreateGroup(wm, channel, timeout)
         }
     }
@@ -105,18 +105,18 @@ class QrShareActivity : AppCompatActivity() {
         try {
             wm.createGroup(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    InAppLogger.d("QrServer", "createGroup OK, requestGroupInfo retry")
+                    InAppLogger.nfc("QrServer", "createGroup OK, requestGroupInfo retry")
                     tryRequestGroupInfo(wm, channel, timeout, 0)
                 }
                 override fun onFailure(reason: Int) {
                     handler.removeCallbacks(timeout)
-                    InAppLogger.d("QrServer", "createGroup FAIL: $reason → hotspot")
+                    InAppLogger.nfc("QrServer", "createGroup FAIL: $reason → hotspot")
                     startHotspot()
                 }
             })
         } catch (e: Exception) {
             handler.removeCallbacks(timeout)
-            InAppLogger.d("QrServer", "createGroup exception: ${e.message}")
+            InAppLogger.nfc("QrServer", "createGroup exception: ${e.message}")
             startHotspot()
         }
     }
@@ -128,7 +128,7 @@ class QrShareActivity : AppCompatActivity() {
         attempt: Int
     ) {
         if (attempt >= 10) {
-            InAppLogger.d("QrServer", "requestGroupInfo 10x null → hotspot")
+            InAppLogger.nfc("QrServer", "requestGroupInfo 10x null → hotspot")
             handler.removeCallbacks(timeout)
             startHotspot()
             return
@@ -142,17 +142,17 @@ class QrShareActivity : AppCompatActivity() {
                     groupCreated = true
                     usingHotspot = false
                     val ip = "192.168.49.1"
-                    InAppLogger.d("QrServer", "creds OK on attempt $attempt, ip=$ip")
+                    InAppLogger.nfc("QrServer", "creds OK on attempt $attempt, ip=$ip")
                     showQr(ssid, pass, ip, "P2P")
                 } else {
-                    InAppLogger.d("QrServer", "requestGroupInfo $attempt: empty → retry 500ms")
+                    InAppLogger.nfc("QrServer", "requestGroupInfo $attempt: empty → retry 500ms")
                     handler.postDelayed({
                         tryRequestGroupInfo(wm, channel, timeout, attempt + 1)
                     }, 500L)
                 }
             }
         } catch (e: Exception) {
-            InAppLogger.d("QrServer", "requestGroupInfo error: ${e.message} → retry")
+            InAppLogger.nfc("QrServer", "requestGroupInfo error: ${e.message} → retry")
             handler.postDelayed({
                 tryRequestGroupInfo(wm, channel, timeout, attempt + 1)
             }, 500L)
@@ -217,7 +217,7 @@ class QrShareActivity : AppCompatActivity() {
                     showQr(ssid, pass, "192.168.43.1", "Hotspot")
                 }
                 override fun onFailed(reason: Int) {
-                    InAppLogger.d("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
+                    InAppLogger.nfc("QrServer", "hotspot FAIL: $reason retry=$hotspotRetryCount")
                     if (reason == 2 && hotspotRetryCount < 2) {
                         hotspotRetryCount++
                         statusText.text = "Hotspot занят, retry…"
@@ -234,22 +234,22 @@ class QrShareActivity : AppCompatActivity() {
                     showHotspotFailDialog(hint, reason)
                 }
                 override fun onStopped() {
-                    InAppLogger.d("QrServer", "hotspot stopped")
+                    InAppLogger.nfc("QrServer", "hotspot stopped")
                 }
             }, handler)
         } catch (e: Exception) {
-            InAppLogger.d("QrServer", "hotspot exception: ${e.message}")
+            InAppLogger.nfc("QrServer", "hotspot exception: ${e.message}")
             statusText.text = "Ошибка: ${e.message}"
         }
     }
 
     private fun showQr(ssid: String, pass: String, ip: String, mode: String) {
-        InAppLogger.d("QrServer", "READY mode=$mode ssid=$ssid ip=$ip")
+        InAppLogger.nfc("QrServer", "READY mode=$mode ssid=$ssid ip=$ip")
         try {
             NfcHceService.setUri(NfcHandover(ssid, pass, ip).toUri())
-            InAppLogger.d("QrServer", "B145: HCE armed $ssid@$ip")
+            InAppLogger.nfc("QrServer", "B145: HCE armed $ssid@$ip")
         } catch (e: Exception) {
-            InAppLogger.err("QrServer", "B145: HCE arm: ${e.message}")
+            InAppLogger.nfc("QrServer:ERR", "B145: HCE arm: ${e.message}")
         }
         statusText.text = "✅ Готов принимать\n📱 Коснись телефоном или покажи QR"
         val displayPass = if (TvHelper.isTv(this)) pass else "••••••••"
@@ -265,7 +265,7 @@ class QrShareActivity : AppCompatActivity() {
                 val bmp = BarcodeEncoder().encodeBitmap(qrText, BarcodeFormat.QR_CODE, sizePx, sizePx)
                 qrImage.setImageBitmap(bmp)
             } catch (e: Exception) {
-                InAppLogger.d("QrServer", "QR gen error: ${e.message}")
+                InAppLogger.nfc("QrServer", "QR gen error: ${e.message}")
                 statusText.text = "QR ошибка: ${e.message}"
             }
         }
@@ -277,15 +277,15 @@ class QrShareActivity : AppCompatActivity() {
             val nfcManager = getSystemService(android.nfc.NfcManager::class.java)
             val adapter = nfcManager?.defaultAdapter
             if (adapter == null || !adapter.isEnabled) {
-                InAppLogger.d("NfcHce", "B157: NFC off/disabled")
+                InAppLogger.nfc("NfcHce", "B157: NFC off/disabled")
                 return
             }
             val ce = android.nfc.cardemulation.CardEmulation.getInstance(adapter)
             val comp = android.content.ComponentName(this, NfcHceService::class.java)
             val ok = ce.setPreferredService(this, comp)
-            InAppLogger.d("NfcHce", "B157: setPreferredService=$ok")
+            InAppLogger.nfc("NfcHce", "B157: setPreferredService=$ok")
         } catch (e: Exception) {
-            InAppLogger.err("NfcHce", "B157: setPreferredService: ${e.message}")
+            InAppLogger.nfc("NfcHce:ERR", "B157: setPreferredService: ${e.message}")
         }
     }
 
@@ -297,9 +297,9 @@ class QrShareActivity : AppCompatActivity() {
             if (!adapter.isEnabled) return
             val ce = android.nfc.cardemulation.CardEmulation.getInstance(adapter)
             ce.unsetPreferredService(this)
-            InAppLogger.d("NfcHce", "B157: unsetPreferredService")
+            InAppLogger.nfc("NfcHce", "B157: unsetPreferredService")
         } catch (e: Exception) {
-            InAppLogger.err("NfcHce", "B157: unsetPreferredService: ${e.message}")
+            InAppLogger.nfc("NfcHce:ERR", "B157: unsetPreferredService: ${e.message}")
         }
     }
 
@@ -315,6 +315,6 @@ class QrShareActivity : AppCompatActivity() {
                 wm?.removeGroup(channel, null)
             } catch (_: Exception) {}
         }
-        InAppLogger.d("QrServer", "onDestroy, group cleaned")
+        InAppLogger.nfc("QrServer", "onDestroy, group cleaned")
     }
 }

@@ -109,7 +109,7 @@ class NfcReaderActivity : AppCompatActivity() {
                 0xF0.toByte(), 0x41, 0x54, 0x4F, 0x4D, 0x00)
             val r1 = isoDep.transceive(selectAid)
             val sw1 = if (r1.size >= 2) String.format("%02X%02X", r1[r1.size-2], r1[r1.size-1]) else "short"
-            InAppLogger.d("NfcReader", "selectAid size=${r1.size} sw=$sw1")
+            InAppLogger.nfc("NfcReader", "selectAid size=${r1.size} sw=$sw1")
             if (sw1 != "9000") {
                 try { isoDep.close() } catch (_: Exception) {}
                 runOnUiThread { statusText.text = "AID: $sw1" }
@@ -125,8 +125,8 @@ class NfcReaderActivity : AppCompatActivity() {
                 return
             }
             val nlen = ((nlenResp[0].toInt() and 0xFF) shl 8) or (nlenResp[1].toInt() and 0xFF)
-            InAppLogger.d("NfcReader", "nlen=$nlen")
-            InAppLogger.d("NfcReader", "nlen=$nlen")
+            InAppLogger.nfc("NfcReader", "nlen=$nlen")
+            InAppLogger.nfc("NfcReader", "nlen=$nlen")
             if (nlen <= 0 || nlen > 900) {
                 try { isoDep.close() } catch (_: Exception) {}
                 runOnUiThread { statusText.text = "NLEN=$nlen (пусто)" }
@@ -156,14 +156,14 @@ class NfcReaderActivity : AppCompatActivity() {
                 return
             }
             val uri = msg.records[0].toUri()
-            InAppLogger.d("NfcReader", "uri=$uri")
+            InAppLogger.nfc("NfcReader", "uri=$uri")
             if (uri == null) { runOnUiThread { statusText.text = "Не URI" }; return }
             val data = NfcHandover.parse(uri.toString())
             if (data == null) { runOnUiThread { statusText.text = "Не Atom: $uri" }; return }
             runOnUiThread { statusText.text = "→ ${data.ssid}..." }
             connectWifi(data)
         } catch (e: Exception) {
-            InAppLogger.err("NfcReader", "processTag: ${e.message}")
+            InAppLogger.nfc("NfcReader:ERR", "processTag: ${e.message}")
             runOnUiThread { statusText.text = "Ошибка: ${e.message}" }
         }
     }
@@ -171,7 +171,7 @@ class NfcReaderActivity : AppCompatActivity() {
     private fun connectWifi(data: NfcHandover) {
         // B164: WNS→P2P SSID → onUnavailable (Android 14), WifiManager.addNetwork → -1 (deprecated).
         // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
-        InAppLogger.d("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
+        InAppLogger.nfc("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
         runOnUiThread { statusText.text = "P2P поиск..." }
         // B173a: real check via requestGroupInfo (не time heuristic axiom#161)
         val wd = AtomController.wifiDirect
@@ -179,10 +179,10 @@ class NfcReaderActivity : AppCompatActivity() {
         wd.checkGroupAlive { alive ->
             if (isFinishing || isDestroyed) return@checkGroupAlive
             if (alive) {
-                InAppLogger.d("NfcReader", "B173a: group ALIVE → fast reinvoke")
+                InAppLogger.nfc("NfcReader", "B173a: group ALIVE → fast reinvoke")
                 handler.postDelayed({ fallbackWifiConnect(data) }, 100L)
             } else {
-                InAppLogger.d("NfcReader", "B173a: group DEAD → full cleanup")
+                InAppLogger.nfc("NfcReader", "B173a: group DEAD → full cleanup")
                 wd.forgetAllGroupsAndThen {
                     handler.postDelayed({ fallbackWifiConnect(data) }, 300L)
                 }
@@ -192,8 +192,8 @@ class NfcReaderActivity : AppCompatActivity() {
 
     private fun fallbackWifiConnect(data: NfcHandover) {
         val wd = AtomController.wifiDirect
-        if (wd == null) { InAppLogger.err("NfcReader", "B164: no WifiDirect"); finish(); return }
-        InAppLogger.d("NfcReader", "B164: P2P discover для ssid=${data.ssid}")
+        if (wd == null) { InAppLogger.nfc("NfcReader:ERR", "B164: no WifiDirect"); finish(); return }
+        InAppLogger.nfc("NfcReader", "B164: P2P discover для ssid=${data.ssid}")
 
         // Save & restore callbacks (axiom#75)
         val prevOnConnected = wd.onConnected
@@ -212,7 +212,7 @@ class NfcReaderActivity : AppCompatActivity() {
             done = true
             restore()
             if (err != null) {
-                InAppLogger.err("NfcReader", "B164: $err")
+                InAppLogger.nfc("NfcReader:ERR", "B164: $err")
                 try { finish() } catch (_: Exception) {}
             }
         }
@@ -233,7 +233,7 @@ class NfcReaderActivity : AppCompatActivity() {
             if (connectAttempts >= 8) { finishOnce("connect attempts=8"); return }
             connectAttempts++
             connectInFlight = true
-            InAppLogger.d("NfcReader", "B165: connect attempt #$connectAttempts mac=$mac")
+            InAppLogger.nfc("NfcReader", "B165: connect attempt #$connectAttempts mac=$mac")
             try { wd.connectAsClient(mac) } catch (e: Exception) {
                 connectInFlight = false
                 finishOnce("connect throw: ${e.message}")
@@ -242,7 +242,7 @@ class NfcReaderActivity : AppCompatActivity() {
 
         wd.onPeersChanged = peers@{ peers ->
             if (done) return@peers
-            InAppLogger.d("NfcReader", "B165: peers ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+            InAppLogger.nfc("NfcReader", "B165: peers ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
             if (connectInFlight || targetMac != null) return@peers
             val exact = peers.firstOrNull {
                 it.deviceName.equals(deviceNameFromSsid, ignoreCase = true) &&
@@ -254,7 +254,7 @@ class NfcReaderActivity : AppCompatActivity() {
             }
             val target = exact ?: fallback
             if (target != null) {
-                InAppLogger.d("NfcReader", "B165: P2P found ${target.deviceName} ${target.deviceAddress} → connect ONCE")
+                InAppLogger.nfc("NfcReader", "B165: P2P found ${target.deviceName} ${target.deviceAddress} → connect ONCE")
                 targetMac = target.deviceAddress
                 handler.post { tryConnect() }
             }
@@ -263,10 +263,10 @@ class NfcReaderActivity : AppCompatActivity() {
         var inversionCount = 0
         wd.onConnected = con@{ conn ->
             if (done) return@con
-            InAppLogger.d("NfcReader", "B165: P2P connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            InAppLogger.nfc("NfcReader", "B165: P2P connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
             // B173c: детект инверсии — Redmi должен быть client (isGO=false)
             if (conn.isGroupOwner) {
-                InAppLogger.err("NfcReader", "B173c: ROLE INVERSION — Redmi became GO (${inversionCount + 1}/3)")
+                InAppLogger.nfc("NfcReader:ERR", "B173c: ROLE INVERSION — Redmi became GO (${inversionCount + 1}/3)")
                 if (inversionCount < 3) {
                     inversionCount++
                     connectInFlight = false
@@ -298,7 +298,7 @@ class NfcReaderActivity : AppCompatActivity() {
 
         wd.onError = err@{ err ->
             if (done) return@err
-            InAppLogger.err("NfcReader", "B168: P2P error $err (attempt $connectAttempts)")
+            InAppLogger.nfc("NfcReader:ERR", "B168: P2P error $err (attempt $connectAttempts)")
             connectInFlight = false
             val isBusy = err.contains("BUSY") || err.contains("код 2") || err.contains("busy")
             if (isBusy) {
@@ -306,7 +306,7 @@ class NfcReaderActivity : AppCompatActivity() {
                 try { wd.cancelPendingConnect() } catch (_: Exception) {}
                 if (connectAttempts < 8) {
                     val backoff = if (connectAttempts <= 2) 1500L else 2500L
-                    InAppLogger.d("NfcReader", "B168: BUSY → retry ${backoff}ms (attempt $connectAttempts/8)")
+                    InAppLogger.nfc("NfcReader", "B168: BUSY → retry ${backoff}ms (attempt $connectAttempts/8)")
                     handler.postDelayed({ tryConnect() }, backoff)
                 } else {
                     finishOnce("BUSY max attempts 8")
@@ -332,10 +332,10 @@ class NfcReaderActivity : AppCompatActivity() {
 
     private fun afterConnected(data: NfcHandover) {
         val node = AtomController.meshNode
-        if (node == null) { InAppLogger.err("NfcReader", "afterConnected: node null"); finish(); return }
-        InAppLogger.d("NfcReader", "afterConnected ip=${data.ip} ssid=${data.ssid}")
+        if (node == null) { InAppLogger.nfc("NfcReader:ERR", "afterConnected: node null"); finish(); return }
+        InAppLogger.nfc("NfcReader", "afterConnected ip=${data.ip} ssid=${data.ssid}")
         node.sendHello(data.ip)
-        InAppLogger.d("NfcReader", "sendHello → ${data.ip}")
+        InAppLogger.nfc("NfcReader", "sendHello → ${data.ip}")
         currentHandover = data
         handler.postDelayed({
             val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
@@ -343,12 +343,12 @@ class NfcReaderActivity : AppCompatActivity() {
             currentPeer = peer
             // B169: Activity может быть destroyed (user back / transfer finish) — не показываем sheet
             if (isFinishing || isDestroyed) {
-                InAppLogger.d("NfcReader", "B169: skip sheet — activity finishing/destroyed")
+                InAppLogger.nfc("NfcReader", "B169: skip sheet — activity finishing/destroyed")
                 return@postDelayed
             }
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this, peer, pendingUris, pendingPaths)
-                InAppLogger.d("NfcReader", "sent ${pendingUris.size} files to ${data.ip}")
+                InAppLogger.nfc("NfcReader", "sent ${pendingUris.size} files to ${data.ip}")
                 finish()
             } else {
                 // B160: файл не выбран на старте NFC (FAB sheet) → показать выбор
@@ -388,9 +388,9 @@ class NfcReaderActivity : AppCompatActivity() {
             sheet.setOnCancelListener { if (!isFinishing) finish() }
             sheet.setContentView(c)
             sheet.show()
-            InAppLogger.d("NfcReader", "B160: post-connect sheet")
+            InAppLogger.nfc("NfcReader", "B160: post-connect sheet")
         } catch (e: Exception) {
-            InAppLogger.err("NfcReader", "B160 showPostConnectActionSheet: ${e.message}")
+            InAppLogger.nfc("NfcReader:ERR", "B160 showPostConnectActionSheet: ${e.message}")
             finish()
         }
     }
@@ -399,9 +399,9 @@ class NfcReaderActivity : AppCompatActivity() {
         val peer = currentPeer ?: run { finish(); return }
         try {
             FileSenderService.startTransfer(this, peer, uris, emptyList())
-            InAppLogger.d("NfcReader", "B160: send ${uris.size} files to ${peer.name}")
+            InAppLogger.nfc("NfcReader", "B160: send ${uris.size} files to ${peer.name}")
         } catch (e: Exception) {
-            InAppLogger.err("NfcReader", "B160 send: ${e.message}")
+            InAppLogger.nfc("NfcReader:ERR", "B160 send: ${e.message}")
         }
         finish()
     }
@@ -410,9 +410,9 @@ class NfcReaderActivity : AppCompatActivity() {
         val peer = currentPeer ?: run { finish(); return }
         try {
             FileSenderService.startTransfer(this, peer, files.map { it.first }, files.map { it.second })
-            InAppLogger.d("NfcReader", "B160: send folder ${files.size} files to ${peer.name}")
+            InAppLogger.nfc("NfcReader", "B160: send folder ${files.size} files to ${peer.name}")
         } catch (e: Exception) {
-            InAppLogger.err("NfcReader", "B160 send folder: ${e.message}")
+            InAppLogger.nfc("NfcReader:ERR", "B160 send folder: ${e.message}")
         }
         finish()
     }

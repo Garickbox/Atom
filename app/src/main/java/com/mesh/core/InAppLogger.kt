@@ -133,6 +133,36 @@ object InAppLogger {
         } catch (_: Exception) {}
     }
 
+    /**
+     * B174: полное NFC-логирование БЕЗ whitelist. atom-nfc.log.
+     * axiom#150: не гадать — видеть всё что касается NFC/P2P/connect.
+     */
+    @Synchronized
+    fun nfc(tag: String, msg: String) {
+        val dd = dir ?: return
+        try {
+            val t = fmtHmS.format(Date())
+            val st = shortTag(tag)
+            val line = t + st + " " + msg.take(500) + "\n"
+            val f = java.io.File(dd, "atom-nfc.log")
+            if (f.exists() && f.length() > 1_000_000L) {
+                for (i in 3 downTo 2) {
+                    val src = java.io.File(dd, "atom-nfc.log.\$i")
+                    val dst = java.io.File(dd, "atom-nfc.log.\${i + 1}")
+                    if (src.exists()) src.renameTo(dst)
+                }
+                f.renameTo(java.io.File(dd, "atom-nfc.log.1"))
+            }
+            java.io.File(dd, "atom-nfc.log").appendText(line)
+        } catch (_: Exception) {}
+    }
+
+    fun getNfcLogFile(): java.io.File? {
+        val dd = dir ?: return null
+        val f = java.io.File(dd, "atom-nfc.log")
+        return if (f.exists() && f.length() > 0) f else null
+    }
+
     @Synchronized
     fun err(tag: String, msg: String) {
         val dd = dir ?: return
