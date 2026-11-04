@@ -111,6 +111,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen(this)
         super.onCreate(savedInstanceState)
         if (!com.garickbox.atom.TvHelper.isTv(this)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -163,6 +164,9 @@ class MainActivity : AppCompatActivity() {
         setupTvIfNeeded()
 
         b.fab.setOnClickListener { showSendPicker() }
+        b.btnEmptyPhoto.setOnClickListener { pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) }
+        b.btnEmptyFiles.setOnClickListener { openFilePicker() }
+        b.btnEmptyReceive.setOnClickListener { try { WidgetReceiveService.toggle(this) } catch (_: Exception) {} }
 
         // Авто-проверка обновления убрана — только manual (меню / кнопка на TV)
 
@@ -531,25 +535,37 @@ class MainActivity : AppCompatActivity() {
             "📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка",
             "📱  Показать QR (принять)", "🔍  Сканировать QR (отправить)"
         )
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Что отправить?")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    1 -> pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                    2 -> openFilePicker()
-                    3 -> openFolderPicker()
-                    4 -> startActivity(Intent(this, QrShareActivity::class.java))
-                    5 -> {
-                        qrFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        })
-                    }
-                }
-            }
-            .show()
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 56, 48, 40)
+        }
+        container.addView(android.widget.TextView(this).apply {
+            text = "Что отправить?"
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, 32)
+        })
+        val acts = arrayOf<() -> Unit>(
+            { pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) },
+            { pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly) },
+            { openFilePicker() },
+            { openFolderPicker() },
+            { startActivity(Intent(this, QrShareActivity::class.java)) },
+            { qrFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) }
+        )
+        options.forEachIndexed { i, opt ->
+            container.addView(android.widget.TextView(this).apply {
+                text = opt; textSize = 16f
+                setPadding(16, 36, 16, 36)
+                isClickable = true; isFocusable = true
+                setOnClickListener { sheet.dismiss(); acts[i]() }
+            })
+        }
+        sheet.setContentView(container)
+        sheet.show()
     }
 
     private fun pickMedia(type: ActivityResultContracts.PickVisualMedia.VisualMediaType) {
@@ -774,6 +790,7 @@ class MainActivity : AppCompatActivity() {
                 val pct = if (state.bytesTotal > 0)
                     ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
                 b.transferProgress.progress = pct
+                b.transferCircular.setProgressCompat(pct, true)
                 val speedText = if (state.bytesPerSecond > 0)
                     "%.1f МБ/с".format(state.bytesPerSecond / 1024.0 / 1024.0)
                     else "…"

@@ -6,6 +6,7 @@ import com.mesh.core.InAppLogger
 class AtomApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
         InAppLogger.init(this)
         com.mesh.core.CompactLog.init(this)
         NotificationHelper.createChannels(this)
