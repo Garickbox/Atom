@@ -166,16 +166,7 @@ class MainActivity : AppCompatActivity() {
         setupTvIfNeeded()
 
         b.fab.setOnClickListener { showSendPicker() }
-        runOnUiThread {
-            val lp = AtomController.lastPeer
-            if (lp != null && lp.name.isNotBlank()) {
-                b.lastPeerCard.visibility = android.view.View.VISIBLE
-                b.lastPeerName.text = lp.name
-                b.lastPeerCard.setOnClickListener {
-                    try { openFilePicker() } catch (_: Exception) {}
-                }
-            }
-        }
+        observeLivePeers()
 
         // Авто-проверка обновления убрана — только manual (меню / кнопка на TV)
 
@@ -455,6 +446,8 @@ class MainActivity : AppCompatActivity() {
         try { downloadDialog?.dismiss() } catch (_: Exception) {}
         downloadDialog = null
         downloadProgressBar = null
+        peerObserverJob?.cancel()
+        peerRefreshJob?.cancel()
         super.onDestroy()
     }
 
@@ -714,7 +707,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         b.emptyText.visibility = android.view.View.GONE
-        b.historyScroll.visibility = android.view.View.VISIBLE
+        b.historyScroll.visibility = android.view.View.GONE
         b.historyContainer.removeAllViews()
         for (r in records) {
             val row = layoutInflater.inflate(android.R.layout.simple_list_item_2, b.historyContainer, false)
@@ -780,6 +773,8 @@ class MainActivity : AppCompatActivity() {
 
 
     private var transferObserverJob: kotlinx.coroutines.Job? = null
+    private var peerObserverJob: kotlinx.coroutines.Job? = null
+    private var peerRefreshJob: kotlinx.coroutines.Job? = null
 
     private fun observeTransferState() {
         transferObserverJob?.cancel()
@@ -794,12 +789,18 @@ class MainActivity : AppCompatActivity() {
         when (state) {
             is TransferState.Running -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
+                b.emptyText.visibility = android.view.View.GONE
                 val arrow = if (state.isReceiver) "📥 Приём от" else "📤 Отправка →"
                 b.transferTitle.text = "$arrow ${state.peerName}\n${state.fileName}"
                 val pct = if (state.bytesTotal > 0)
                     ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
                 b.transferProgress.progress = pct
                 b.transferCircular.setProgressCompat(pct, true)
+                b.btnTransferPause.visibility = android.view.View.VISIBLE
+                b.btnTransferPause.setOnClickListener { sendActionToSender(TransferNotification.ACTION_PAUSE) }
+                b.btnTransferResume.visibility = android.view.View.GONE
+                b.btnTransferCancel.visibility = android.view.View.VISIBLE
+                b.btnTransferCancel.setOnClickListener { sendActionToSender(TransferNotification.ACTION_CANCEL) }
                 val speedText = if (state.bytesPerSecond > 0)
                     "%.1f МБ/с".format(state.bytesPerSecond / 1024.0 / 1024.0)
                     else "…"
@@ -818,7 +819,11 @@ class MainActivity : AppCompatActivity() {
             }
             is TransferState.Success -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
+                b.emptyText.visibility = android.view.View.GONE
                 b.transferTitle.text = "✅ Готово"
+                b.btnTransferPause.visibility = android.view.View.GONE
+                b.btnTransferResume.visibility = android.view.View.GONE
+                b.btnTransferCancel.visibility = android.view.View.GONE
                 b.transferSpeed.text = ""
                 // B115: плюрализация
                 val fw = when {
@@ -840,7 +845,11 @@ class MainActivity : AppCompatActivity() {
             }
             is TransferState.UpdatePending -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
+                b.emptyText.visibility = android.view.View.GONE
                 b.transferTitle.text = "⬆️ Обновление Атома build-${state.versionCode}"
+                b.btnTransferPause.visibility = android.view.View.GONE
+                b.btnTransferResume.visibility = android.view.View.GONE
+                b.btnTransferCancel.visibility = android.view.View.GONE
                 b.transferSpeed.text = ""
                 b.transferDetail.text = "От ${state.peerName} · тап для установки"
                 b.transferProgress.progress = 100
@@ -861,22 +870,25 @@ class MainActivity : AppCompatActivity() {
             }
             is TransferState.Paused -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
+                b.emptyText.visibility = android.view.View.GONE
                 b.transferTitle.text = "⏸ Пауза: ${state.fileName}" +
                     (if (state.fileCount > 0) " · файл ${state.fileIndex}/${state.fileCount}" else "")
                 b.transferSpeed.text = ""
                 b.transferDetail.text = "${state.peerName} · ${formatBytes(state.bytesSent)} / ${formatBytes(state.bytesTotal)} · тап для продолжения"
                 b.transferProgress.progress = if (state.bytesTotal > 0) ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
-                b.transferPanel.setOnClickListener {
-                    val i = android.content.Intent(this@MainActivity, FileSenderService::class.java).apply {
-                        action = TransferNotification.ACTION_RESUME
-                    }
-                    androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, i)
-                    b.transferPanel.setOnClickListener(null)
-                }
+                b.btnTransferPause.visibility = android.view.View.GONE
+                b.btnTransferResume.visibility = android.view.View.VISIBLE
+                b.btnTransferResume.setOnClickListener { sendActionToSender(TransferNotification.ACTION_RESUME) }
+                b.btnTransferCancel.visibility = android.view.View.VISIBLE
+                b.btnTransferCancel.setOnClickListener { sendActionToSender(TransferNotification.ACTION_CANCEL) }
             }
             is TransferState.Failed -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
+                b.emptyText.visibility = android.view.View.GONE
                 b.transferTitle.text = "⚠️ ${state.peerName}: ${state.reason}"
+                b.btnTransferPause.visibility = android.view.View.GONE
+                b.btnTransferResume.visibility = android.view.View.GONE
+                b.btnTransferCancel.visibility = android.view.View.GONE
                 b.transferSpeed.text = ""
                 b.transferDetail.text = state.fileName
                 b.transferProgress.progress = 0
@@ -893,6 +905,62 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun observeLivePeers() {
+        peerObserverJob?.cancel()
+        peerObserverJob = lifecycleScope.launch {
+            AtomController.peers.collect { peers -> runOnUiThread { renderLivePeers(peers) } }
+        }
+        peerRefreshJob?.cancel()
+        peerRefreshJob = lifecycleScope.launch {
+            while (true) {
+                try { kotlinx.coroutines.delay(10_000L) } catch (_: kotlinx.coroutines.CancellationException) { break }
+                renderLivePeers(AtomController.peers.value)
+            }
+        }
+    }
+
+    private fun renderLivePeers(peers: List<Peer>) {
+        try {
+            val now = System.currentTimeMillis()
+            val live = peers.filter { now - it.lastSeenMs < 30_000L && it.name.isNotBlank() }
+            b.livePeersContainer.removeAllViews()
+            if (live.isEmpty()) {
+                b.liveStatus.visibility = android.view.View.VISIBLE
+                return
+            }
+            b.liveStatus.visibility = android.view.View.GONE
+            for (peer in live) {
+                val card = layoutInflater.inflate(R.layout.item_live_peer, b.livePeersContainer, false)
+                card.findViewById<android.widget.TextView>(R.id.peerName).text = peer.name
+                card.setOnClickListener {
+                    try {
+                        InAppLogger.d("MainActivity", "live peer tapped: ${peer.name} @ ${peer.ip}")
+                        AtomController.saveKnownP2pPeer(peer.mac, peer.name)
+                        MainActivity.pendingPeerForShareTarget = peer
+                        openFilePicker()
+                    } catch (e: Exception) {
+                        InAppLogger.err("MainActivity", "live peer tap: ${e.message}")
+                    }
+                }
+                b.livePeersContainer.addView(card)
+            }
+        } catch (e: Exception) {
+            InAppLogger.err("MainActivity", "renderLivePeers: ${e.message}")
+        }
+    }
+
+    private fun sendActionToSender(action: String) {
+        try {
+            val i = android.content.Intent(this, FileSenderService::class.java).apply {
+                this.action = action
+            }
+            androidx.core.content.ContextCompat.startForegroundService(this, i)
+            InAppLogger.d("MainActivity", "transfer action: $action")
+        } catch (e: Exception) {
+            InAppLogger.err("MainActivity", "transfer action $action: ${e.message}")
+        }
+    }
 
     private fun setupTvIfNeeded() {
         if (!isTv()) return
