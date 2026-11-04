@@ -945,9 +945,18 @@ class MainActivity : AppCompatActivity() {
                 card.findViewById<android.widget.TextView>(R.id.peerName).text = "📶 ${dev.deviceName}"
                 card.setOnClickListener {
                     try {
-                        android.widget.Toast.makeText(this,
-                            "P2P: через + → Wi-Fi Direct", android.widget.Toast.LENGTH_SHORT).show()
-                    } catch (_: Exception) {}
+                        val peer = Peer(
+                            id = "p2p-" + dev.deviceAddress.takeLast(8).replace(":", ""),
+                            name = dev.deviceName,
+                            ip = "",
+                            mac = dev.deviceAddress
+                        )
+                        showPeerActionSheet(peer)
+                        InAppLogger.d("MainActivity",
+                            "B142: P2P tap ${dev.deviceName} (${dev.deviceAddress}) → sheet")
+                    } catch (e: Exception) {
+                        InAppLogger.err("MainActivity", "B142: P2P tap: ${e.message}")
+                    }
                 }
                 b.livePeersContainer.addView(card)
             }
