@@ -6,7 +6,8 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.net.wifi.WifiNetworkSpecifier
-import android.nfc.tech.Ndef
+import android.nfc.NdefMessage
+import android.nfc.tech.IsoDep
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Build
@@ -62,15 +63,61 @@ class NfcReaderActivity : AppCompatActivity() {
 
     private fun processTag(tag: Tag) {
         try {
-            val ndef = Ndef.get(tag)
-            if (ndef == null) {
-                runOnUiThread { statusText.text = "Не NDEF: ${tag.techList.joinToString()}" }
+            val isoDep = IsoDep.get(tag)
+            if (isoDep == null) {
+                runOnUiThread { statusText.text = "Не IsoDep: ${tag.techList.joinToString()}" }
                 return
             }
-            ndef.connect()
-            val msg = ndef.ndefMessage
-            ndef.close()
-            if (msg == null || msg.records.isEmpty()) {
+            isoDep.connect()
+            isoDep.timeout = 5000
+            // B147: HCE не сканируется через Ndef.get. Manual APDU Type 4 Tag:
+            // SELECT AID → SELECT CC → READ CC → SELECT NDEF → READ NLEN → READ NDEF
+            val selectAid = byteArrayOf(0x00, 0xA4.toByte(), 0x04, 0x00, 0x06,
+                0xF0.toByte(), 0x41, 0x54, 0x4F, 0x4D)
+            val r1 = isoDep.transceive(selectAid)
+            val sw1 = if (r1.size >= 2) String.format("%02X%02X", r1[r1.size-2], r1[r1.size-1]) else "short"
+            InAppLogger.d("NfcReader", "selectAid size=${r1.size} sw=$sw1")
+            if (sw1 != "9000") {
+                try { isoDep.close() } catch (_: Exception) {}
+                runOnUiThread { statusText.text = "AID: $sw1" }
+                return
+            }
+            isoDep.transceive(byteArrayOf(0x00, 0xA4.toByte(), 0x00, 0x0C, 0x02, 0xE1.toByte(), 0x03))
+            isoDep.transceive(byteArrayOf(0x00, 0xB0.toByte(), 0x00, 0x00, 0x0F))
+            isoDep.transceive(byteArrayOf(0x00, 0xA4.toByte(), 0x00, 0x0C, 0x02, 0xE1.toByte(), 0x04))
+            val nlenResp = isoDep.transceive(byteArrayOf(0x00, 0xB0.toByte(), 0x00, 0x00, 0x02))
+            if (nlenResp.size < 2) {
+                try { isoDep.close() } catch (_: Exception) {}
+                runOnUiThread { statusText.text = "NLEN не прочитан" }
+                return
+            }
+            val nlen = ((nlenResp[0].toInt() and 0xFF) shl 8) or (nlenResp[1].toInt() and 0xFF)
+            InAppLogger.d("NfcReader", "nlen=$nlen")
+            if (nlen <= 0 || nlen > 900) {
+                try { isoDep.close() } catch (_: Exception) {}
+                runOnUiThread { statusText.text = "NLEN=$nlen (пусто)" }
+                return
+            }
+            val ndefBuf = ByteArray(nlen)
+            var off = 0
+            while (off < nlen) {
+                val chunk = minOf(50, nlen - off)
+                val cmd = byteArrayOf(0x00, 0xB0.toByte(),
+                    (((off + 2) shr 8) and 0xFF).toByte(),
+                    ((off + 2) and 0xFF).toByte(),
+                    chunk.toByte())
+                val resp = isoDep.transceive(cmd)
+                if (resp.size < chunk + 2 || resp[resp.size-2] != 0x90.toByte() || resp[resp.size-1] != 0x00.toByte()) {
+                    try { isoDep.close() } catch (_: Exception) {}
+                    runOnUiThread { statusText.text = "read off=$off resp=${resp.size}" }
+                    return
+                }
+                System.arraycopy(resp, 0, ndefBuf, off, chunk)
+                off += chunk
+            }
+            try { isoDep.close() } catch (_: Exception) {}
+            val msg = NdefMessage(ndefBuf)
+            if (msg.records.isEmpty()) {
                 runOnUiThread { statusText.text = "NDEF пуст" }
                 return
             }
