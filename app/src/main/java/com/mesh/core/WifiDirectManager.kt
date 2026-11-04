@@ -292,7 +292,6 @@ class WifiDirectManager(private val ctx: Context) {
      * Пробует выставить 5 GHz в WifiP2pConfig через reflection.
      * 3 стратегии: getMethod (public) → getDeclaredMethod (hidden) → Builder (API 30+).
      */
-@SuppressLint("MissingPermission")
     /**
      * B16: явное «забыть группу» — стирает persistent profile.
      * Вызывать только из кнопки «Отключиться / Забыть устройство», НЕ из flow.
