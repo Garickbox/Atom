@@ -29,6 +29,8 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B166a: каждое открытие QrShare — с чистого P2P
+        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
         // B102b: TV — снять portrait lock + overscan 48/27dp
         if (!TvHelper.isTv(this)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT

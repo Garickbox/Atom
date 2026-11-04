@@ -297,6 +297,21 @@ class WifiDirectManager(private val ctx: Context) {
      * B16: явное «забыть группу» — стирает persistent profile.
      * Вызывать только из кнопки «Отключиться / Забыть устройство», НЕ из flow.
      */
+    @SuppressLint("MissingPermission")
+    fun forgetAllGroups() {
+        // B166a: clean slate перед NFC connect — снять GO-роль с прошлой stale group
+        try {
+            manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { InAppLogger.d("WifiDirect", "B166a: removeGroup OK") }
+                override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B166a: removeGroup fail $reason") }
+            })
+            manager?.deletePersistentGroups()
+            InAppLogger.d("WifiDirect", "B166a: deletePersistentGroups")
+        } catch (e: Exception) {
+            InAppLogger.err("WifiDirect", "B166a forgetAll: ${e.message}")
+        }
+    }
+
     fun disconnect() {
         try {
             manager?.removeGroup(channel, object : WifiP2pManager.ActionListener {

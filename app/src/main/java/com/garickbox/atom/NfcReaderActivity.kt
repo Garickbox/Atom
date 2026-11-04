@@ -82,8 +82,8 @@ class NfcReaderActivity : AppCompatActivity() {
         // (Redmi становится GO, POCO не клиент, роли перепутаны)
         try {
             AtomController.wifiDirect?.stopContinuousDiscover()
-            AtomController.wifiDirect?.disconnect()
-            InAppLogger.d("NfcReader", "B166: disconnect P2P after send")
+            AtomController.wifiDirect?.forgetAllGroups()
+            InAppLogger.d("NfcReader", "B166a: forgetAllGroups after send")
         } catch (_: Exception) {}
         try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
         NfcHceService.clear()
