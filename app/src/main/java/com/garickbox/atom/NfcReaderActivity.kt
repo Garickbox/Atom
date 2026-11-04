@@ -183,7 +183,8 @@ class NfcReaderActivity : AppCompatActivity() {
                         cm.bindProcessToNetwork(network)
                         boundCm = cm
                         AtomController.meshNode?.recreateUdpSocket()
-                        InAppLogger.d("NfcReader", "WNS bind + recreate UDP ok")
+                        AtomController.meshNode?.recreateTcpServer()
+                        InAppLogger.d("NfcReader", "WNS bind + recreate UDP+TCP ok")
                     } catch (e: Exception) {
                         InAppLogger.err("NfcReader", "WNS bind: ${e.message}")
                     }

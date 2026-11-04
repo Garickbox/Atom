@@ -108,6 +108,25 @@ class MeshNode(private val ctx: Context) {
      *  После bindProcessToNetwork старый сокет остаётся на своей Network —
      *  Android 10+ не переносит открытые сокеты в новую default-сеть. */
     @Synchronized
+    fun recreateTcpServer() {
+        // B163: TCP ServerSocket создан ДО bindProcessToNetwork → слушает wlan0,
+        // но Redmi из DIRECT-сети (p2p0) → нужен новый listener на p2p0.
+        // tcpLoop при закрытии старого поймает exception и возьмёт новый tcpServer.
+        try {
+            val old = tcpServer
+            val fresh = ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(PORT))
+            }
+            tcpServer = fresh
+            try { old?.close() } catch (_: Exception) {}
+            InAppLogger.d("MeshNode", "B163: tcp server recreated (port ${PORT})")
+        } catch (e: Exception) {
+            InAppLogger.err("MeshNode", "B163 recreateTcpServer: ${e.message}")
+        }
+    }
+
+    @Synchronized
     fun recreateUdpSocket() {
         try {
             val fresh = DatagramSocket(null).apply {
