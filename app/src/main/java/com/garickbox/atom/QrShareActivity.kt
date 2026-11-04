@@ -271,6 +271,7 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
         if (groupCreated && !usingHotspot) {
