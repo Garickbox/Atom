@@ -924,8 +924,7 @@ class MainActivity : AppCompatActivity() {
     private fun observeLivePeers() {
         peerObserverJob?.cancel()
         peerObserverJob = lifecycleScope.launch {
-            combine(AtomController.peers, AtomController.p2pPeers) { udp, p2p -> udp to p2p }
-                .collect { (udp, p2p) -> runOnUiThread { renderLivePeers(udp); renderP2pExtra(p2p, udp) } }
+            AtomController.peers.collect { peers -> runOnUiThread { renderLivePeers(peers) } }
         }
         peerRefreshJob?.cancel()
         peerRefreshJob = lifecycleScope.launch {
