@@ -165,71 +165,88 @@ class NfcReaderActivity : AppCompatActivity() {
     }
 
     private fun connectWifi(data: NfcHandover) {
-        if (Build.VERSION.SDK_INT < 29) { runOnUiThread { statusText.text = "API<29 unsupported" }; return }
-        try {
-            val spec = WifiNetworkSpecifier.Builder()
-                .setSsid(data.ssid)
-                .setWpa2Passphrase(data.passphrase)
-                .build()
-            val req = NetworkRequest.Builder()
-                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                .setNetworkSpecifier(spec)
-                .build()
-            val cm = getSystemService(ConnectivityManager::class.java)
-            cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    InAppLogger.d("NfcReader", "WNS onAvailable network=$network")
-                    try {
-                        cm.bindProcessToNetwork(network)
-                        boundCm = cm
-                        AtomController.meshNode?.recreateUdpSocket()
-                        AtomController.meshNode?.recreateTcpServer()
-                        InAppLogger.d("NfcReader", "WNS bind + recreate UDP+TCP ok")
-                    } catch (e: Exception) {
-                        InAppLogger.err("NfcReader", "WNS bind: ${e.message}")
-                    }
-                    // B162: дать сокету время после bind перед sendHello (axiom#53)
-                    handler.postDelayed({ afterConnected(data) }, 300L)
-                }
-                override fun onUnavailable() {
-                    InAppLogger.err("NfcReader", "WNS onUnavailable — fallback WifiManager")
-                    runOnUiThread { statusText.text = "WNS fail, fallback..." }
-                    fallbackWifiConnect(data)
-                }
-            }, 20000)
-        } catch (e: Exception) {
-            InAppLogger.err("NfcReader", "connect: ${e.message}")
-        }
+        // B164: WNS→P2P SSID → onUnavailable (Android 14), WifiManager.addNetwork → -1 (deprecated).
+        // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
+        InAppLogger.d("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
+        runOnUiThread { statusText.text = "P2P поиск..." }
+        fallbackWifiConnect(data)
     }
 
     private fun fallbackWifiConnect(data: NfcHandover) {
+        val wd = AtomController.wifiDirect
+        if (wd == null) { InAppLogger.err("NfcReader", "B164: no WifiDirect"); finish(); return }
+        InAppLogger.d("NfcReader", "B164: P2P discover для ssid=${data.ssid}")
+
+        // Save & restore callbacks (axiom#75)
+        val prevOnConnected = wd.onConnected
+        val prevOnError = wd.onError
+        val prevOnPeers = wd.onPeersChanged
+        var done = false
+
+        fun restore() {
+            wd.onConnected = prevOnConnected
+            wd.onError = prevOnError
+            wd.onPeersChanged = prevOnPeers
+        }
+
+        fun finishOnce(err: String?) {
+            if (done) return
+            done = true
+            restore()
+            if (err != null) {
+                InAppLogger.err("NfcReader", "B164: $err")
+                try { finish() } catch (_: Exception) {}
+            }
+        }
+
+        // SSID "DIRECT-xx-DeviceName" → "DeviceName"
+        val deviceNameFromSsid = data.ssid
+            .removePrefix("DIRECT-")
+            .substringAfter("-", "")
+            .trim()
+
+        wd.onPeersChanged = peers@{ peers ->
+            if (done) return@peers
+            InAppLogger.d("NfcReader", "B164: peers ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+            val exact = peers.firstOrNull {
+                it.deviceName.equals(deviceNameFromSsid, ignoreCase = true) &&
+                    it.deviceAddress.isNotBlank()
+            }
+            val fallback = peers.firstOrNull {
+                it.deviceAddress.isNotBlank() &&
+                    it.status == android.net.wifi.p2p.WifiP2pDevice.AVAILABLE
+            }
+            val target = exact ?: fallback
+            if (target != null) {
+                InAppLogger.d("NfcReader", "B164: P2P found ${target.deviceName} ${target.deviceAddress}")
+                try { wd.connect(target.deviceAddress) } catch (e: Exception) {
+                    finishOnce("connect: ${e.message}")
+                }
+            }
+        }
+
+        wd.onConnected = con@{ conn ->
+            if (done) return@con
+            InAppLogger.d("NfcReader", "B164: P2P connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            done = true
+            restore()
+            if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
+                try { AtomController.meshNode?.sendHello(conn.groupOwnerAddress) } catch (_: Exception) {}
+            }
+            handler.postDelayed({ afterConnected(data) }, 2000L)
+        }
+
+        wd.onError = err@{ err ->
+            finishOnce("P2P error: $err")
+        }
+
+        handler.postDelayed({ finishOnce("P2P timeout 20s") }, 20000L)
+
         try {
-            @Suppress("DEPRECATION")
-            val wm = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
-            if (wm == null) { InAppLogger.err("NfcReader", "fallback: no WifiManager"); finish(); return }
-            @Suppress("DEPRECATION")
-            val conf = android.net.wifi.WifiConfiguration().apply {
-                SSID = "\"${data.ssid}\""
-                preSharedKey = "\"${data.passphrase}\""
-                allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.WPA_PSK)
-            }
-            @Suppress("DEPRECATION")
-            val netId = wm.addNetwork(conf)
-            if (netId < 0) {
-                InAppLogger.err("NfcReader", "fallback addNetwork=$netId → finish")
-                finish(); return
-            }
-            InAppLogger.d("NfcReader", "fallback netId=$netId, enable+reconnect")
-            @Suppress("DEPRECATION")
-            run {
-                wm.disconnect()
-                wm.enableNetwork(netId, true)
-                wm.reconnect()
-            }
-            handler.postDelayed({ afterConnected(data) }, 5000L)
+            wd.stopContinuousDiscover()
+            wd.discoverPeers()
         } catch (e: Exception) {
-            InAppLogger.err("NfcReader", "fallback: ${e.message}")
-            finish()
+            finishOnce("discover: ${e.message}")
         }
     }
 

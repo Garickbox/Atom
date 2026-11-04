@@ -62,6 +62,7 @@ object InAppLogger {
         "nlen=", "uri=", "onAvailable", "onUnavailable", "WNS",
         "afterConnected", "fallback", "bind", "sendHello", "recreate",
         "ENETUNREACH", "DIRECT-", "postConnect", "peer=",
+        "B164", "discoverPeers", "P2P found", "P2P connected", "P2P error", "P2P timeout",
     )
 
     private fun shortTag(tag: String): String = when (tag) {
