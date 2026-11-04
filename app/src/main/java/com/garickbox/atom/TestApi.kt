@@ -73,6 +73,7 @@ object TestApi {
                     "/widgets" -> cmdWidgets(ctx)
                     "/find_apk" -> cmdFindApk(ctx)
                     "/badge" -> cmdBadge(ctx, params["action"] ?: "get", params["n"]?.toIntOrNull() ?: 0)
+                    "/nfc" -> cmdNfc(ctx)
                     "/verbose" -> cmdVerbose(params["on"])
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
@@ -108,6 +109,19 @@ object TestApi {
             out.print(body)
             out.flush()
         } catch (_: Exception) {}
+    }
+
+    private fun cmdNfc(ctx: Context): String {
+        return try {
+            val nm = ctx.getSystemService(Context.NFC_SERVICE) as? android.nfc.NfcManager
+            val adapter = nm?.defaultAdapter
+            buildString {
+                appendLine("supported=" + (adapter != null))
+                appendLine("enabled=" + (adapter?.isEnabled == true))
+                appendLine("hceActive=" + NfcHceService.active)
+                appendLine("hceUri=" + NfcHceService.currentUri.take(80))
+            }
+        } catch (e: Exception) { "err: " + e.message }
     }
 
     private fun cmdState(ctx: Context): String {

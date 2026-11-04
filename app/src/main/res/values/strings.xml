@@ -28,4 +28,6 @@
     <string name="qr_share_hint">Пусть второе устройство отсканирует код</string>
     <string name="qr_scan_hint">Наведи камеру на QR на другом телефоне</string>
     <string name="qr_connecting">Подключаюсь к Wi-Fi…</string>
+    <string name="nfc_hce_desc">Atom NFC handover</string>
+    <string name="nfc_aid_desc">Atom file transfer</string>
 </resources>

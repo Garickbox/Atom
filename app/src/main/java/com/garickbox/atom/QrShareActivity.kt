@@ -243,6 +243,12 @@ class QrShareActivity : AppCompatActivity() {
 
     private fun showQr(ssid: String, pass: String, ip: String, mode: String) {
         InAppLogger.d("QrServer", "READY mode=$mode ssid=$ssid ip=$ip")
+        try {
+            NfcHceService.setUri(NfcHandover(ssid, pass, ip).toUri())
+            InAppLogger.d("QrServer", "B145: HCE armed $ssid@$ip")
+        } catch (e: Exception) {
+            InAppLogger.err("QrServer", "B145: HCE arm: ${e.message}")
+        }
         statusText.text = "✅ Готов принимать — сканируйте QR на втором устройстве"
         val displayPass = if (TvHelper.isTv(this)) pass else "••••••••"
         infoText.text = "SSID: $ssid\nПароль: $displayPass\nIP: $ip\nРежим: $mode"

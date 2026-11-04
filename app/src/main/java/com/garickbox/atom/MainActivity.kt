@@ -1009,13 +1009,14 @@ class MainActivity : AppCompatActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(0, 0, 0, 32)
             })
-            val opts = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка", "📷  Сканировать QR")
+            val opts = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка", "📷  Сканировать QR", "📱  NFC-касание")
             val actions = arrayOf<() -> Unit>(
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) },
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly) },
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFilePicker() },
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFolderPicker() },
-                { sheet.dismiss(); startQrScanWithActionSheet() }
+                { sheet.dismiss(); startQrScanWithActionSheet() },
+                { sheet.dismiss(); NfcReaderActivity.pendingUris = emptyList(); NfcReaderActivity.pendingPaths = emptyList(); startActivity(Intent(this, NfcReaderActivity::class.java)) }
             )
             opts.forEachIndexed { i, opt ->
                 container.addView(android.widget.TextView(this).apply {
