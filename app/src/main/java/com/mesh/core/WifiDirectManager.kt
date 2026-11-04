@@ -30,6 +30,7 @@ class WifiDirectManager(private val ctx: Context) {
     var onPeersChanged: ((List<WifiP2pDevice>) -> Unit)? = null
     // B11.2-fix: постоянный слушатель — работает даже когда Activity не открыт
     var persistentOnPeersChanged: ((List<WifiP2pDevice>) -> Unit)? = null
+    @Volatile var suppressDiscover: Boolean = false  // B141: skip background discover при transfer
     var onConnected: ((P2PConnection) -> Unit)? = null
     var onDisconnected: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
@@ -371,6 +372,10 @@ class WifiDirectManager(private val ctx: Context) {
 
     @SuppressLint("MissingPermission")
     private fun doDiscoverTick() {
+        if (suppressDiscover) {
+            InAppLogger.d("WifiDirect", "B141: skip discover — transfer active")
+            return
+        }
         try {
             manager?.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {

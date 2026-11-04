@@ -324,7 +324,11 @@ object AtomController {
     fun setTransferActive(active: Boolean) {
         val v = if (active) _transferActive.incrementAndGet() else _transferActive.decrementAndGet()
         if (v < 0) _transferActive.set(0)
-        com.mesh.core.InAppLogger.d("AtomController", "transferActive count=${_transferActive.get()}")
+        // B141: discoverPeers на HyperOS/MIUI рубит wlan0 на 5-10 сек → UDP ENETUNREACH → FILE_OFFER timeout.
+        // Паузим background P2P discover пока идёт transfer (sender или receiver).
+        try { wifiDirect?.suppressDiscover = _transferActive.get() > 0 } catch (_: Exception) {}
+        com.mesh.core.InAppLogger.d("AtomController",
+            "transferActive count=${_transferActive.get()} suppressDiscover=${_transferActive.get() > 0}")
     }
 
 }
