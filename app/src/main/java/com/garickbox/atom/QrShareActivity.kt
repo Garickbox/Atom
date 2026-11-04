@@ -269,6 +269,38 @@ class QrShareActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        try {
+            val nfcManager = getSystemService(android.nfc.NfcManager::class.java)
+            val adapter = nfcManager?.defaultAdapter
+            if (adapter == null || !adapter.isEnabled) {
+                InAppLogger.d("NfcHce", "B157: NFC off/disabled")
+                return
+            }
+            val ce = android.nfc.cardemulation.CardEmulation.getInstance(adapter)
+            val comp = android.content.ComponentName(this, NfcHceService::class.java)
+            val ok = ce.setPreferredService(this, comp)
+            InAppLogger.d("NfcHce", "B157: setPreferredService=$ok")
+        } catch (e: Exception) {
+            InAppLogger.err("NfcHce", "B157: setPreferredService: ${e.message}")
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try {
+            val nfcManager = getSystemService(android.nfc.NfcManager::class.java)
+            val adapter = nfcManager?.defaultAdapter ?: return
+            if (!adapter.isEnabled) return
+            val ce = android.nfc.cardemulation.CardEmulation.getInstance(adapter)
+            ce.unsetPreferredService(this)
+            InAppLogger.d("NfcHce", "B157: unsetPreferredService")
+        } catch (e: Exception) {
+            InAppLogger.err("NfcHce", "B157: unsetPreferredService: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try { NfcHceService.clear() } catch (_: Exception) {}
