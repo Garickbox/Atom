@@ -298,7 +298,7 @@ class WifiDirectManager(private val ctx: Context) {
      */
     @SuppressLint("MissingPermission")
     fun forgetAllGroups() {
-        // B166a: clean slate перед NFC connect — снять GO-роль с прошлой stale group
+        // B166a: fire-and-forget (для Settings «забыть»)
         try {
             channel?.let { ch ->
                 manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
@@ -306,10 +306,50 @@ class WifiDirectManager(private val ctx: Context) {
                     override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B166a: removeGroup fail $reason") }
                 })
             }
-            InAppLogger.d("WifiDirect", "B166a: forgetAllGroups — removeGroup requested")
-        } catch (e: Exception) {
-            InAppLogger.err("WifiDirect", "B166a forgetAll: ${e.message}")
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * B168: async removeGroup + callback + 3s timeout fallback.
+     * HyperOS needs 2-3s to actually tear down — fixed delay(500) insufficient.
+     */
+    @SuppressLint("MissingPermission")
+    fun forgetAllGroupsAndThen(onDone: () -> Unit) {
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun finishOnce() {
+            if (finished.compareAndSet(false, true)) {
+                InAppLogger.d("WifiDirect", "B168: forgetAll done → continue")
+                onDone()
+            }
         }
+        try {
+            val ch = channel
+            if (ch == null) { finishOnce(); return }
+            manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { InAppLogger.d("WifiDirect", "B168: removeGroup OK"); finishOnce() }
+                override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B168: removeGroup fail $reason"); finishOnce() }
+            })
+            // Timeout: если callback не пришёл за 3s
+            scope.launch {
+                kotlinx.coroutines.delay(3000L)
+                if (!finished.get()) {
+                    InAppLogger.d("WifiDirect", "B168: forgetAll timeout 3s — continue anyway")
+                    finishOnce()
+                }
+            }
+        } catch (e: Exception) {
+            InAppLogger.err("WifiDirect", "B168 forgetAll: ${e.message}")
+            finishOnce()
+        }
+    }
+
+    /** B168: cancel any pending connect before retry */
+    @SuppressLint("MissingPermission")
+    fun cancelPendingConnect() {
+        try {
+            manager?.cancelConnect(channel, null)
+            InAppLogger.d("WifiDirect", "B168: cancelConnect sent")
+        } catch (_: Exception) {}
     }
 
     fun disconnect() {

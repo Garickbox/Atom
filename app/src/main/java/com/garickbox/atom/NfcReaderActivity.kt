@@ -173,9 +173,12 @@ class NfcReaderActivity : AppCompatActivity() {
         // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
         InAppLogger.d("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
         runOnUiThread { statusText.text = "P2P поиск..." }
-        // B166b: cleanup stale P2P BEFORE new connect (безопасно — transfer не активен)
-        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
-        handler.postDelayed({ fallbackWifiConnect(data) }, 500L)
+        // B168: wait for removeGroup callback (2-3s on HyperOS), then connect
+        val wd = AtomController.wifiDirect
+        if (wd == null) { fallbackWifiConnect(data); return }
+        wd.forgetAllGroupsAndThen {
+            handler.postDelayed({ fallbackWifiConnect(data) }, 300L)
+        }
     }
 
     private fun fallbackWifiConnect(data: NfcHandover) {
@@ -218,7 +221,7 @@ class NfcReaderActivity : AppCompatActivity() {
         fun tryConnect() {
             val mac = targetMac ?: return
             if (done) return
-            if (connectAttempts >= 5) { finishOnce("connect attempts=5"); return }
+            if (connectAttempts >= 8) { finishOnce("connect attempts=8"); return }
             connectAttempts++
             connectInFlight = true
             InAppLogger.d("NfcReader", "B165: connect attempt #$connectAttempts mac=$mac")
@@ -262,13 +265,25 @@ class NfcReaderActivity : AppCompatActivity() {
 
         wd.onError = err@{ err ->
             if (done) return@err
-            InAppLogger.err("NfcReader", "B165: P2P error $err (attempt $connectAttempts)")
+            InAppLogger.err("NfcReader", "B168: P2P error $err (attempt $connectAttempts)")
             connectInFlight = false
             val isBusy = err.contains("BUSY") || err.contains("код 2") || err.contains("busy")
-            if (isBusy && connectAttempts < 5) {
-                handler.postDelayed({ tryConnect() }, 800L)
+            if (isBusy) {
+                // B168: cancel pending + retry с backoff (BUSY = framework busy, подожди)
+                try { wd.cancelPendingConnect() } catch (_: Exception) {}
+                if (connectAttempts < 8) {
+                    val backoff = if (connectAttempts <= 2) 1500L else 2500L
+                    InAppLogger.d("NfcReader", "B168: BUSY → retry ${backoff}ms (attempt $connectAttempts/8)")
+                    handler.postDelayed({ tryConnect() }, backoff)
+                } else {
+                    finishOnce("BUSY max attempts 8")
+                }
             } else {
-                handler.postDelayed({ tryConnect() }, 1500L)
+                if (connectAttempts < 5) {
+                    handler.postDelayed({ tryConnect() }, 1500L)
+                } else {
+                    finishOnce("max attempts 5")
+                }
             }
         }
 
