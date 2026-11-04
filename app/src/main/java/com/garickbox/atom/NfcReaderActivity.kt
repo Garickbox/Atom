@@ -173,9 +173,15 @@ class NfcReaderActivity : AppCompatActivity() {
         // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
         InAppLogger.d("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
         runOnUiThread { statusText.text = "P2P поиск..." }
-        // B168: wait for removeGroup callback (2-3s on HyperOS), then connect
+        // B172: hasActiveGroup → fast path (reinvoke), иначе full cleanup
         val wd = AtomController.wifiDirect
         if (wd == null) { fallbackWifiConnect(data); return }
+        if (wd.hasActiveGroup()) {
+            InAppLogger.d("NfcReader", "B172: active group → fast reinvoke")
+            handler.postDelayed({ fallbackWifiConnect(data) }, 100L)
+            return
+        }
+        InAppLogger.d("NfcReader", "B172: no group → full cleanup + discover")
         wd.forgetAllGroupsAndThen {
             handler.postDelayed({ fallbackWifiConnect(data) }, 300L)
         }
@@ -225,7 +231,7 @@ class NfcReaderActivity : AppCompatActivity() {
             connectAttempts++
             connectInFlight = true
             InAppLogger.d("NfcReader", "B165: connect attempt #$connectAttempts mac=$mac")
-            try { wd.connect(mac) } catch (e: Exception) {
+            try { wd.connectAsClient(mac) } catch (e: Exception) {
                 connectInFlight = false
                 finishOnce("connect throw: ${e.message}")
             }

@@ -31,6 +31,10 @@ class WifiDirectManager(private val ctx: Context) {
     // B11.2-fix: постоянный слушатель — работает даже когда Activity не открыт
     var persistentOnPeersChanged: ((List<WifiP2pDevice>) -> Unit)? = null
     @Volatile var suppressDiscover: Boolean = false  // B141: skip background discover при transfer
+    @Volatile private var lastGroupValid: Boolean = false
+    @Volatile private var lastGroupAt: Long = 0L
+
+    fun hasActiveGroup(): Boolean = lastGroupValid && (System.currentTimeMillis() - lastGroupAt) < 60_000L
     var onConnected: ((P2PConnection) -> Unit)? = null
     var onDisconnected: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
@@ -155,6 +159,7 @@ class WifiDirectManager(private val ctx: Context) {
             manager?.requestConnectionInfo(channel) { info: WifiP2pInfo? ->
                 if (info == null || !info.groupFormed) {
                     InAppLogger.d("WifiDirect", "group not formed")
+                    lastGroupValid = false
                     onDisconnected?.invoke()
                     return@requestConnectionInfo
                 }
@@ -174,6 +179,8 @@ class WifiDirectManager(private val ctx: Context) {
                             }
                             InAppLogger.d("WifiDirect",
                                 "connected: isGO=$isGO goIp=$ip band=$bandStr")
+                            lastGroupValid = true
+                            lastGroupAt = System.currentTimeMillis()
                             onConnected?.invoke(P2PConnection(
                                 isGroupOwner = isGO,
                                 groupOwnerAddress = ip,
@@ -184,6 +191,8 @@ class WifiDirectManager(private val ctx: Context) {
                     } catch (e: Exception) {
                         InAppLogger.d("WifiDirect",
                             "requestGroupInfo error: ${e.message}, freq=0 fallback")
+                        lastGroupValid = true
+                        lastGroupAt = System.currentTimeMillis()
                         onConnected?.invoke(P2PConnection(isGO, ip, true, 0))
                     }
                 } else {
@@ -252,6 +261,39 @@ class WifiDirectManager(private val ctx: Context) {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun connectAsClient(mac: String) {
+        // B172: Redmi всегда client — skip GO Negotiation (~3-5s)
+        try {
+            val ch = channel
+            if (ch == null) { onError?.invoke("channel null"); return }
+            val config = if (Build.VERSION.SDK_INT >= 29) {
+                android.net.wifi.p2p.WifiP2pConfig.Builder()
+                    .setDeviceAddress(android.net.MacAddress.fromString(mac))
+                    .setGroupOperatingBand(android.net.wifi.p2p.WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                    .setGroupOwnerIntent(0)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                android.net.wifi.p2p.WifiP2pConfig().apply {
+                    deviceAddress = mac
+                    groupOwnerIntent = 0
+                }
+            }
+            InAppLogger.d("WifiDirect", "B172: connectAsClient $mac (intent=0, 5GHz)")
+            manager!!.connect(ch, config, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { InAppLogger.d("WifiDirect", "B172: connectAsClient initiated") }
+                override fun onFailure(reason: Int) {
+                    InAppLogger.d("WifiDirect", "B172: connectAsClient failed $reason")
+                    onError?.invoke("Connect failed (код $reason)")
+                }
+            })
+        } catch (e: Exception) {
+            InAppLogger.err("WifiDirect", "B172 connectAsClient: ${e.message}")
+            onError?.invoke("Connect error: ${e.message}")
+        }
+    }
+
 @SuppressLint("MissingPermission")
     fun connect(mac: String) {
         if (manager == null || channel == null) {
@@ -298,6 +340,7 @@ class WifiDirectManager(private val ctx: Context) {
      */
     @SuppressLint("MissingPermission")
     fun forgetAllGroups() {
+        lastGroupValid = false
         // B166a: fire-and-forget (для Settings «забыть»)
         try {
             channel?.let { ch ->
