@@ -27,6 +27,7 @@ import com.mesh.core.InAppLogger
 
 class QrScanActivity : AppCompatActivity() {
     companion object {
+        const val EXTRA_PENDING_ACTION_SHEET = "pending_action_sheet"
         var boundCm: ConnectivityManager? = null
         var boundNetwork: Network? = null
         fun unbind() {
@@ -40,6 +41,8 @@ class QrScanActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private var pendingUris: List<Uri> = emptyList()
+    private var pendingActionSheet: Boolean = false
+    private var currentConnectedPeer: Peer? = null
     private var pendingRelativePaths: List<String?> = emptyList()  // B113
     private val handler = Handler(Looper.getMainLooper())
 
@@ -51,6 +54,29 @@ class QrScanActivity : AppCompatActivity() {
             statusText.text = "Нужно разрешение на камеру"
             Toast.makeText(this, "Разреши камеру в настройках", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private val mediaPicker = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris -> if (uris.isNotEmpty()) sendPickedUris(uris) }
+
+    private val filePicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK || result.data == null) return@registerForActivityResult
+        val uris = mutableListOf<Uri>()
+        result.data?.clipData?.let { c -> for (i in 0 until c.itemCount) uris.add(c.getItemAt(i).uri) }
+        result.data?.data?.let { uris.add(it) }
+        if (uris.isNotEmpty()) sendPickedUris(uris)
+    }
+
+    private val folderPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri == null) return@registerForActivityResult
+        try { contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+        val files = collectTreeFiles(treeUri)
+        if (files.isNotEmpty()) sendPickedUrisWithPaths(files)
     }
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
@@ -67,9 +93,9 @@ class QrScanActivity : AppCompatActivity() {
         setContentView(R.layout.activity_qr_scan)
         statusText = findViewById(R.id.statusText)
         pendingUris = collectUris(intent)
-        // B113: atom_relative_paths для папок (иначе плоско)
         pendingRelativePaths = intent?.getStringArrayListExtra("atom_relative_paths")
             ?.map { it.ifBlank { null } } ?: emptyList()
+        pendingActionSheet = intent?.getBooleanExtra(EXTRA_PENDING_ACTION_SHEET, false) ?: false
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED) {
@@ -217,6 +243,88 @@ class QrScanActivity : AppCompatActivity() {
         }
     }
 
+    private fun showPostConnectActionSheet() {
+        try {
+            val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+            val c = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48, 56, 48, 40)
+            }
+            c.addView(android.widget.TextView(this).apply {
+                text = "Что отправить на ${currentConnectedPeer?.name ?: "пира"}?"
+                textSize = 20f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 0, 0, 32)
+            })
+            val opts = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка")
+            val acts = arrayOf<() -> Unit>(
+                { mediaPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                { mediaPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
+                { filePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) },
+                { folderPicker.launch(null) }
+            )
+            opts.forEachIndexed { i, opt ->
+                c.addView(android.widget.TextView(this).apply {
+                    text = opt; textSize = 16f
+                    setPadding(16, 36, 16, 36)
+                    isClickable = true; isFocusable = true
+                    setOnClickListener { sheet.dismiss(); acts[i]() }
+                })
+            }
+            sheet.setOnCancelListener { if (!isFinishing) finish() }
+            sheet.setContentView(c)
+            sheet.show()
+        } catch (e: Exception) {
+            InAppLogger.err("QrScan", "showPostConnectActionSheet: ${e.message}")
+            finish()
+        }
+    }
+
+    private fun sendPickedUris(uris: List<Uri>) {
+        val peer = currentConnectedPeer ?: run { finish(); return }
+        try { FileSenderService.startTransfer(this, peer, uris, emptyList()) } catch (e: Exception) { InAppLogger.err("QrScan", "send: ${e.message}") }
+        finish()
+    }
+
+    private fun sendPickedUrisWithPaths(files: List<Pair<Uri, String>>) {
+        val peer = currentConnectedPeer ?: run { finish(); return }
+        try { FileSenderService.startTransfer(this, peer, files.map { it.first }, files.map { it.second }) } catch (e: Exception) { InAppLogger.err("QrScan", "send folder: ${e.message}") }
+        finish()
+    }
+
+    private fun collectTreeFiles(treeUri: Uri): List<Pair<Uri, String>> {
+        val cap = 501
+        val result = mutableListOf<Pair<Uri, String>>()
+        val rootDocId = try { android.provider.DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return emptyList() }
+        val rootName = try {
+            var n = "folder"
+            val rootUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
+            contentResolver.query(rootUri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) n = c.getString(0) ?: "folder" }
+            n
+        } catch (_: Exception) { "folder" }
+        fun walk(parentId: String, path: String) {
+            if (result.size >= cap) return
+            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+            try {
+                contentResolver.query(childrenUri, arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+                ), null, null, null)?.use { c ->
+                    while (c.moveToNext() && result.size < cap) {
+                        val id = c.getString(0) ?: continue
+                        val name = c.getString(1) ?: continue
+                        val mime = c.getString(2) ?: ""
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) walk(id, "$path/$name")
+                        else result.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id) to "$path/$name")
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        walk(rootDocId, rootName)
+        return result
+    }
+
     private fun afterConnected(qrIp: String) {
         statusText.text = "Подключено, отправляю…"
         val node = AtomController.meshNode
@@ -232,13 +340,16 @@ class QrScanActivity : AppCompatActivity() {
             // Через 2.5 сек — ждём HELLO
             val peer = AtomController.peers.value.firstOrNull { it.ip == targetIp }
                 ?: Peer(id = "qr", name = "QR", ip = targetIp)
+            currentConnectedPeer = peer
             if (pendingUris.isNotEmpty()) {
-                // B113: передаём relative paths (папки)
                 FileSenderService.startTransfer(this, peer, pendingUris, pendingRelativePaths)
+                finish()
+            } else if (pendingActionSheet) {
+                showPostConnectActionSheet()
             } else {
-                Toast.makeText(this, "QR отсканирован, но файлы не выбраны — вернись и выбери файлы", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "QR отсканирован, но файлы не выбраны", Toast.LENGTH_LONG).show()
+                finish()
             }
-            finish()
         }, 2500L)
     }
 }

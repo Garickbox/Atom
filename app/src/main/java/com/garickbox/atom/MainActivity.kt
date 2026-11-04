@@ -971,11 +971,13 @@ class MainActivity : AppCompatActivity() {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(0, 0, 0, 32)
             })
-            val opts = arrayOf("📷  Фото и видео", "📄  Файлы", "📁  Папка")
+            val opts = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка", "📷  Сканировать QR")
             val actions = arrayOf<() -> Unit>(
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) },
+                { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly) },
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFilePicker() },
-                { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFolderPicker() }
+                { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFolderPicker() },
+                { sheet.dismiss(); startQrScanWithActionSheet() }
             )
             opts.forEachIndexed { i, opt ->
                 container.addView(android.widget.TextView(this).apply {
@@ -992,6 +994,21 @@ class MainActivity : AppCompatActivity() {
             InAppLogger.d("MainActivity", "B134: peer action sheet for ${peer.name}")
         } catch (e: Exception) {
             InAppLogger.err("MainActivity", "showPeerActionSheet: ${e.message}")
+        }
+    }
+
+    private fun startQrScanWithActionSheet() {
+        try {
+            MainActivity.pendingPeerForShareTarget = null
+            pickerShownForPeer = false
+            val i = Intent(this, QrScanActivity::class.java).apply {
+                putExtra(QrScanActivity.EXTRA_PENDING_ACTION_SHEET, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(i)
+            InAppLogger.d("MainActivity", "B135: QR-then-pick flow")
+        } catch (e: Exception) {
+            InAppLogger.err("MainActivity", "startQrScanWithActionSheet: ${e.message}")
         }
     }
 
