@@ -80,11 +80,8 @@ class NfcReaderActivity : AppCompatActivity() {
         super.onDestroy()
         // B166: сброс P2P-клиента — иначе второй connect идёт на stale group
         // (Redmi становится GO, POCO не клиент, роли перепутаны)
-        try {
-            AtomController.wifiDirect?.stopContinuousDiscover()
-            AtomController.wifiDirect?.forgetAllGroups()
-            InAppLogger.d("NfcReader", "B166a: forgetAllGroups after send")
-        } catch (_: Exception) {}
+        // B166b: НЕ трогаем P2P в onDestroy — FileSenderService ещё использует P2P.
+        // B166a forgetAllGroups → RST TCP во время transfer. Cleanup — в connectWifi (перед new connect).
         try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
         NfcHceService.clear()
         handler.removeCallbacksAndMessages(null)
@@ -176,7 +173,9 @@ class NfcReaderActivity : AppCompatActivity() {
         // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
         InAppLogger.d("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
         runOnUiThread { statusText.text = "P2P поиск..." }
-        fallbackWifiConnect(data)
+        // B166b: cleanup stale P2P BEFORE new connect (безопасно — transfer не активен)
+        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
+        handler.postDelayed({ fallbackWifiConnect(data) }, 500L)
     }
 
     private fun fallbackWifiConnect(data: NfcHandover) {
