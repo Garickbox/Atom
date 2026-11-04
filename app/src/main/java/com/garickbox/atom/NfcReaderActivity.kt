@@ -1,5 +1,6 @@
 package com.garickbox.atom
 
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -15,6 +16,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.mesh.core.InAppLogger
 
@@ -27,6 +29,31 @@ class NfcReaderActivity : AppCompatActivity() {
     private var nfcAdapter: NfcAdapter? = null
     private var boundCm: ConnectivityManager? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var currentPeer: Peer? = null
+    private var currentHandover: NfcHandover? = null
+
+    private val mediaPicker = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris -> if (uris.isNotEmpty()) sendPickedUris(uris) }
+
+    private val filePicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK || result.data == null) return@registerForActivityResult
+        val uris = mutableListOf<Uri>()
+        result.data?.clipData?.let { c -> for (i in 0 until c.itemCount) uris.add(c.getItemAt(i).uri) }
+        result.data?.data?.let { uris.add(it) }
+        if (uris.isNotEmpty()) sendPickedUris(uris)
+    }
+
+    private val folderPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri == null) return@registerForActivityResult
+        try { contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+        val files = collectTreeFiles(treeUri)
+        if (files.isNotEmpty()) sendPickedUrisWithPaths(files)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -170,14 +197,112 @@ class NfcReaderActivity : AppCompatActivity() {
         val node = AtomController.meshNode
         if (node == null) { finish(); return }
         node.sendHello(data.ip)
+        currentHandover = data
         handler.postDelayed({
             val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
                 ?: Peer(id = "nfc", name = "NFC", ip = data.ip)
+            currentPeer = peer
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this, peer, pendingUris, pendingPaths)
                 InAppLogger.d("NfcReader", "sent ${pendingUris.size} files to ${data.ip}")
+                finish()
+            } else {
+                // B160: файл не выбран на старте NFC (FAB sheet) → показать выбор
+                showPostConnectActionSheet()
             }
-            finish()
         }, 2000L)
+    }
+
+    private fun showPostConnectActionSheet() {
+        try {
+            val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+            val c = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48, 56, 48, 40)
+            }
+            c.addView(android.widget.TextView(this).apply {
+                text = "Что отправить на ${currentPeer?.name ?: "пира"}?"
+                textSize = 20f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, 0, 0, 32)
+            })
+            val opts = arrayOf("📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка")
+            val acts = arrayOf<() -> Unit>(
+                { mediaPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                { mediaPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
+                { filePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) },
+                { folderPicker.launch(null) }
+            )
+            opts.forEachIndexed { i, opt ->
+                c.addView(android.widget.TextView(this).apply {
+                    text = opt; textSize = 16f
+                    setPadding(16, 36, 16, 36)
+                    isClickable = true; isFocusable = true
+                    setOnClickListener { sheet.dismiss(); acts[i]() }
+                })
+            }
+            sheet.setOnCancelListener { if (!isFinishing) finish() }
+            sheet.setContentView(c)
+            sheet.show()
+            InAppLogger.d("NfcReader", "B160: post-connect sheet")
+        } catch (e: Exception) {
+            InAppLogger.err("NfcReader", "B160 showPostConnectActionSheet: ${e.message}")
+            finish()
+        }
+    }
+
+    private fun sendPickedUris(uris: List<Uri>) {
+        val peer = currentPeer ?: run { finish(); return }
+        try {
+            FileSenderService.startTransfer(this, peer, uris, emptyList())
+            InAppLogger.d("NfcReader", "B160: send ${uris.size} files to ${peer.name}")
+        } catch (e: Exception) {
+            InAppLogger.err("NfcReader", "B160 send: ${e.message}")
+        }
+        finish()
+    }
+
+    private fun sendPickedUrisWithPaths(files: List<Pair<Uri, String>>) {
+        val peer = currentPeer ?: run { finish(); return }
+        try {
+            FileSenderService.startTransfer(this, peer, files.map { it.first }, files.map { it.second })
+            InAppLogger.d("NfcReader", "B160: send folder ${files.size} files to ${peer.name}")
+        } catch (e: Exception) {
+            InAppLogger.err("NfcReader", "B160 send folder: ${e.message}")
+        }
+        finish()
+    }
+
+    private fun collectTreeFiles(treeUri: Uri): List<Pair<Uri, String>> {
+        val cap = 501
+        val result = mutableListOf<Pair<Uri, String>>()
+        val rootDocId = try { android.provider.DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return emptyList() }
+        val rootName = try {
+            var n = "folder"
+            val rootUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
+            contentResolver.query(rootUri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cur -> if (cur.moveToFirst()) n = cur.getString(0) ?: "folder" }
+            n
+        } catch (_: Exception) { "folder" }
+        fun walk(parentId: String, path: String) {
+            if (result.size >= cap) return
+            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+            try {
+                contentResolver.query(childrenUri, arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
+                ), null, null, null)?.use { cur ->
+                    while (cur.moveToNext() && result.size < cap) {
+                        val id = cur.getString(0) ?: continue
+                        val name = cur.getString(1) ?: continue
+                        val mime = cur.getString(2) ?: ""
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) walk(id, "$path/$name")
+                        else result.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id) to "$path/$name")
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        walk(rootDocId, rootName)
+        return result
     }
 }
