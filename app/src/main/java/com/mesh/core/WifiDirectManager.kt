@@ -158,23 +158,38 @@ class WifiDirectManager(private val ctx: Context) {
                     return@requestConnectionInfo
                 }
                 val ip = info.groupOwnerAddress?.hostAddress ?: ""
-                // B121: реальная частота P2P группы (API 29+)
-                val hz = if (Build.VERSION.SDK_INT >= 29) info.frequency else 0
-                val bandStr = when {
-                    hz >= 5000 -> "5 GHz (${hz} MHz)"
-                    hz >= 2400 -> "2.4 GHz (${hz} MHz)"
-                    hz > 0 -> "${hz} MHz"
-                    else -> "unknown"
+                val isGO = info.isGroupOwner
+                // B121fix2: WifiP2pInfo НЕ содержит frequency.
+                // Реальная частота — WifiP2pGroup.frequency (API 29+).
+                if (Build.VERSION.SDK_INT >= 29) {
+                    try {
+                        manager?.requestGroupInfo(channel) { group ->
+                            val hz = group?.frequency ?: 0
+                            val bandStr = when {
+                                hz >= 5000 -> "5 GHz (${hz} MHz)"
+                                hz >= 2400 -> "2.4 GHz (${hz} MHz)"
+                                hz > 0 -> "${hz} MHz"
+                                else -> "unknown"
+                            }
+                            InAppLogger.d("WifiDirect",
+                                "connected: isGO=$isGO goIp=$ip band=$bandStr")
+                            onConnected?.invoke(P2PConnection(
+                                isGroupOwner = isGO,
+                                groupOwnerAddress = ip,
+                                groupFormed = true,
+                                frequencyHz = hz
+                            ))
+                        }
+                    } catch (e: Exception) {
+                        InAppLogger.d("WifiDirect",
+                            "requestGroupInfo error: ${e.message}, freq=0 fallback")
+                        onConnected?.invoke(P2PConnection(isGO, ip, true, 0))
+                    }
+                } else {
+                    InAppLogger.d("WifiDirect",
+                        "connected: isGO=$isGO goIp=$ip (API<29, freq unknown)")
+                    onConnected?.invoke(P2PConnection(isGO, ip, true, 0))
                 }
-                val conn = P2PConnection(
-                    isGroupOwner = info.isGroupOwner,
-                    groupOwnerAddress = ip,
-                    groupFormed = true,
-                    frequencyHz = hz
-                )
-                InAppLogger.d("WifiDirect",
-                    "connected: isGO=${conn.isGroupOwner} goIp=$ip band=$bandStr")
-                onConnected?.invoke(conn)
             }
         } catch (e: Exception) {
             InAppLogger.d("WifiDirect", "requestConnectionInfo error: ${e.message}")
@@ -245,8 +260,9 @@ class WifiDirectManager(private val ctx: Context) {
         try {
             // B121: prefer 5 GHz (API 29+). Framework может игнорировать, если 5 GHz занят
             val config = if (Build.VERSION.SDK_INT >= 29) {
+                // B121fix2: Builder.setDeviceAddress ожидает MacAddress, не String
                 android.net.wifi.p2p.WifiP2pConfig.Builder()
-                    .setDeviceAddress(mac)
+                    .setDeviceAddress(android.net.MacAddress.fromString(mac))
                     .setGroupOperatingBand(android.net.wifi.p2p.WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
                     .build()
             } else {
