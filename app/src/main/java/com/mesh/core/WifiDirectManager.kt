@@ -268,11 +268,14 @@ class WifiDirectManager(private val ctx: Context) {
             val ch = channel
             if (ch == null) { onError?.invoke("channel null"); return }
             val config = if (Build.VERSION.SDK_INT >= 29) {
-                android.net.wifi.p2p.WifiP2pConfig.Builder()
+                val c = android.net.wifi.p2p.WifiP2pConfig.Builder()
                     .setDeviceAddress(android.net.MacAddress.fromString(mac))
                     .setGroupOperatingBand(android.net.wifi.p2p.WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
-                    .setGroupOwnerIntent(0)
                     .build()
+                // B172fix: groupOwnerIntent — public field на WifiP2pConfig, не Builder
+                @Suppress("DEPRECATION")
+                c.groupOwnerIntent = 0
+                c
             } else {
                 @Suppress("DEPRECATION")
                 android.net.wifi.p2p.WifiP2pConfig().apply {
