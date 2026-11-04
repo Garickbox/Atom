@@ -205,9 +205,27 @@ class NfcReaderActivity : AppCompatActivity() {
             .substringAfter("-", "")
             .trim()
 
+        var connectInFlight = false
+        var connectAttempts = 0
+        var targetMac: String? = null
+
+        fun tryConnect() {
+            val mac = targetMac ?: return
+            if (done) return
+            if (connectAttempts >= 5) { finishOnce("connect attempts=5"); return }
+            connectAttempts++
+            connectInFlight = true
+            InAppLogger.d("NfcReader", "B165: connect attempt #$connectAttempts mac=$mac")
+            try { wd.connect(mac) } catch (e: Exception) {
+                connectInFlight = false
+                finishOnce("connect throw: ${e.message}")
+            }
+        }
+
         wd.onPeersChanged = peers@{ peers ->
             if (done) return@peers
-            InAppLogger.d("NfcReader", "B164: peers ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+            InAppLogger.d("NfcReader", "B165: peers ${peers.map { "${it.deviceName}/${it.deviceAddress}/${it.status}" }}")
+            if (connectInFlight || targetMac != null) return@peers
             val exact = peers.firstOrNull {
                 it.deviceName.equals(deviceNameFromSsid, ignoreCase = true) &&
                     it.deviceAddress.isNotBlank()
@@ -218,17 +236,17 @@ class NfcReaderActivity : AppCompatActivity() {
             }
             val target = exact ?: fallback
             if (target != null) {
-                InAppLogger.d("NfcReader", "B164: P2P found ${target.deviceName} ${target.deviceAddress}")
-                try { wd.connect(target.deviceAddress) } catch (e: Exception) {
-                    finishOnce("connect: ${e.message}")
-                }
+                InAppLogger.d("NfcReader", "B165: P2P found ${target.deviceName} ${target.deviceAddress} → connect ONCE")
+                targetMac = target.deviceAddress
+                handler.post { tryConnect() }
             }
         }
 
         wd.onConnected = con@{ conn ->
             if (done) return@con
-            InAppLogger.d("NfcReader", "B164: P2P connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
+            InAppLogger.d("NfcReader", "B165: P2P connected isGO=${conn.isGroupOwner} goIp=${conn.groupOwnerAddress}")
             done = true
+            connectInFlight = false
             restore()
             if (!conn.isGroupOwner && conn.groupOwnerAddress.isNotBlank()) {
                 try { AtomController.meshNode?.sendHello(conn.groupOwnerAddress) } catch (_: Exception) {}
@@ -237,10 +255,18 @@ class NfcReaderActivity : AppCompatActivity() {
         }
 
         wd.onError = err@{ err ->
-            finishOnce("P2P error: $err")
+            if (done) return@err
+            InAppLogger.err("NfcReader", "B165: P2P error $err (attempt $connectAttempts)")
+            connectInFlight = false
+            val isBusy = err.contains("BUSY") || err.contains("код 2") || err.contains("busy")
+            if (isBusy && connectAttempts < 5) {
+                handler.postDelayed({ tryConnect() }, 800L)
+            } else {
+                handler.postDelayed({ tryConnect() }, 1500L)
+            }
         }
 
-        handler.postDelayed({ finishOnce("P2P timeout 20s") }, 20000L)
+        handler.postDelayed({ finishOnce("P2P timeout 25s") }, 25000L)
 
         try {
             wd.stopContinuousDiscover()
