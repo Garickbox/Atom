@@ -308,6 +308,11 @@ class NfcReaderActivity : AppCompatActivity() {
             val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
                 ?: Peer(id = "nfc", name = "NFC", ip = data.ip)
             currentPeer = peer
+            // B169: Activity может быть destroyed (user back / transfer finish) — не показываем sheet
+            if (isFinishing || isDestroyed) {
+                InAppLogger.d("NfcReader", "B169: skip sheet — activity finishing/destroyed")
+                return@postDelayed
+            }
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this, peer, pendingUris, pendingPaths)
                 InAppLogger.d("NfcReader", "sent ${pendingUris.size} files to ${data.ip}")

@@ -316,30 +316,53 @@ class WifiDirectManager(private val ctx: Context) {
     @SuppressLint("MissingPermission")
     fun forgetAllGroupsAndThen(onDone: () -> Unit) {
         val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        var attempt = 0
         fun finishOnce() {
             if (finished.compareAndSet(false, true)) {
-                InAppLogger.d("WifiDirect", "B168: forgetAll done → continue")
+                InAppLogger.d("WifiDirect", "B170: forgetAll done → continue")
                 onDone()
             }
         }
-        try {
-            val ch = channel
-            if (ch == null) { finishOnce(); return }
-            manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() { InAppLogger.d("WifiDirect", "B168: removeGroup OK"); finishOnce() }
-                override fun onFailure(reason: Int) { InAppLogger.d("WifiDirect", "B168: removeGroup fail $reason"); finishOnce() }
-            })
-            // Timeout: если callback не пришёл за 3s
-            scope.launch {
-                kotlinx.coroutines.delay(3000L)
-                if (!finished.get()) {
-                    InAppLogger.d("WifiDirect", "B168: forgetAll timeout 3s — continue anyway")
-                    finishOnce()
-                }
+        fun tryRemove() {
+            if (finished.get()) return
+            attempt++
+            if (attempt > 3) {
+                InAppLogger.d("WifiDirect", "B170: removeGroup max 3 → continue")
+                finishOnce(); return
             }
-        } catch (e: Exception) {
-            InAppLogger.err("WifiDirect", "B168 forgetAll: ${e.message}")
-            finishOnce()
+            try {
+                val ch = channel
+                if (ch == null) { finishOnce(); return }
+                manager?.removeGroup(ch, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {
+                        InAppLogger.d("WifiDirect", "B170: removeGroup OK (attempt $attempt)")
+                        finishOnce()
+                    }
+                    override fun onFailure(reason: Int) {
+                        if (reason == 2 && attempt < 3) {
+                            InAppLogger.d("WifiDirect", "B170: removeGroup BUSY → retry 1s (attempt $attempt/3)")
+                            scope.launch {
+                                kotlinx.coroutines.delay(1000L)
+                                tryRemove()
+                            }
+                        } else {
+                            InAppLogger.d("WifiDirect", "B170: removeGroup fail $reason (attempt $attempt) → continue")
+                            finishOnce()
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                InAppLogger.err("WifiDirect", "B170 forgetAll: ${e.message}")
+                finishOnce()
+            }
+        }
+        tryRemove()
+        scope.launch {
+            kotlinx.coroutines.delay(8000L)
+            if (!finished.get()) {
+                InAppLogger.d("WifiDirect", "B170: forgetAll hard timeout 8s → continue")
+                finishOnce()
+            }
         }
     }
 
