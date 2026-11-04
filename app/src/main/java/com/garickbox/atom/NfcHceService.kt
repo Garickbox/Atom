@@ -16,11 +16,27 @@ class NfcHceService : HostApduService() {
             private set
         fun setUri(uri: String) { currentUri = uri; active = true }
         fun clear() { active = false; currentUri = "" }
+        val lastApdus = java.util.concurrent.CopyOnWriteArrayList<String>()
     }
     private var selectedFile: Int = 0
     private var ndefMessage: ByteArray = ByteArray(0)
 
     override fun processCommandApdu(apdu: ByteArray?, extras: Bundle?): ByteArray {
+        val result = processApdu(apdu)
+        if (apdu != null && apdu.size >= 4) {
+            try {
+                val hex = apdu.take(12).joinToString("") { "%02X".format(it) }
+                val sw = if (result.size >= 2)
+                    String.format("%02X%02X", result[result.size-2], result[result.size-1])
+                    else "??"
+                lastApdus.add("$hex sw=$sw")
+                while (lastApdus.size > 5) lastApdus.removeAt(0)
+            } catch (_: Exception) {}
+        }
+        return result
+    }
+
+    private fun processApdu(apdu: ByteArray?): ByteArray {
         if (apdu == null || apdu.size < 4) return STATUS_NF
         if (!active) return STATUS_NF
         val cla = apdu[0].toInt() and 0xFF

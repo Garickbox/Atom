@@ -57,6 +57,8 @@ object InAppLogger {
         "skip Success", "skip UpdatePending", "skip Update", "Badge",
         "findDownloadedApk", "saveApkToDownloads", "skip Failed",
         "skip Success", "skip UpdatePending", "skip Update", "Badge",
+        "NfcHce", "NfcReader", "APDU", "selectAid", "NDEF",
+        "hceActive", "hceUri", "6A82", "6700", "9000", "onDeactivated",
     )
 
     private fun shortTag(tag: String): String = when (tag) {

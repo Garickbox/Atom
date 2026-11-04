@@ -32,7 +32,7 @@ object TestApi {
             try {
                 server = ServerSocket(PORT)
                 InAppLogger.d("TestApi", "listening 0.0.0.0:" + PORT)
-                val pool = Executors.newFixedThreadPool(4)
+                val pool = Executors.newFixedThreadPool(8)
                 while (running) {
                     val client = try { server?.accept() } catch (_: Exception) { break } ?: break
                     pool.submit { handle(client, ctx) }
@@ -46,7 +46,7 @@ object TestApi {
 
     private fun handle(client: Socket, ctx: Context) {
         try {
-            client.soTimeout = 30_000
+            client.soTimeout = 8_000
             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
             val line = reader.readLine() ?: return
             val parts = line.split(" ")
@@ -98,9 +98,10 @@ object TestApi {
     }
 
     private fun respond(client: Socket, body: String) {
+        val bytes = body.toByteArray(Charsets.UTF_8)
+        var out: PrintWriter? = null
         try {
-            val bytes = body.toByteArray(Charsets.UTF_8)
-            val out = PrintWriter(client.getOutputStream(), true)
+            out = PrintWriter(client.getOutputStream(), true)
             out.println("HTTP/1.1 200 OK")
             out.println("Content-Type: text/plain; charset=utf-8")
             out.println("Content-Length: " + bytes.size)
@@ -108,7 +109,11 @@ object TestApi {
             out.println()
             out.print(body)
             out.flush()
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        } finally {
+            try { out?.close() } catch (_: Exception) {}
+            try { client.close() } catch (_: Exception) {}
+        }
     }
 
     private fun cmdNfc(ctx: Context): String {
@@ -120,6 +125,7 @@ object TestApi {
                 appendLine("enabled=" + (adapter?.isEnabled == true))
                 appendLine("hceActive=" + NfcHceService.active)
                 appendLine("hceUri=" + NfcHceService.currentUri.take(80))
+                appendLine("lastApdus=" + NfcHceService.lastApdus.takeLast(5).joinToString(" | "))
             }
         } catch (e: Exception) { "err: " + e.message }
     }
