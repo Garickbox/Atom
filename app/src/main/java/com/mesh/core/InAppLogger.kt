@@ -59,6 +59,9 @@ object InAppLogger {
         "skip Success", "skip UpdatePending", "skip Update", "Badge",
         "NfcHce", "NfcReader", "APDU", "selectAid", "NDEF",
         "hceActive", "hceUri", "6A82", "6700", "9000", "onDeactivated",
+        "nlen=", "uri=", "onAvailable", "onUnavailable", "WNS",
+        "afterConnected", "fallback", "bind", "sendHello", "recreate",
+        "ENETUNREACH", "DIRECT-", "postConnect", "peer=",
     )
 
     private fun shortTag(tag: String): String = when (tag) {

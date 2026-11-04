@@ -122,6 +122,7 @@ class NfcReaderActivity : AppCompatActivity() {
             }
             val nlen = ((nlenResp[0].toInt() and 0xFF) shl 8) or (nlenResp[1].toInt() and 0xFF)
             InAppLogger.d("NfcReader", "nlen=$nlen")
+            InAppLogger.d("NfcReader", "nlen=$nlen")
             if (nlen <= 0 || nlen > 900) {
                 try { isoDep.close() } catch (_: Exception) {}
                 runOnUiThread { statusText.text = "NLEN=$nlen (пусто)" }
@@ -177,15 +178,22 @@ class NfcReaderActivity : AppCompatActivity() {
             val cm = getSystemService(ConnectivityManager::class.java)
             cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
+                    InAppLogger.d("NfcReader", "WNS onAvailable network=$network")
                     try {
                         cm.bindProcessToNetwork(network)
                         boundCm = cm
                         AtomController.meshNode?.recreateUdpSocket()
-                    } catch (_: Exception) {}
-                    handler.post { afterConnected(data) }
+                        InAppLogger.d("NfcReader", "WNS bind + recreate UDP ok")
+                    } catch (e: Exception) {
+                        InAppLogger.err("NfcReader", "WNS bind: ${e.message}")
+                    }
+                    // B162: дать сокету время после bind перед sendHello (axiom#53)
+                    handler.postDelayed({ afterConnected(data) }, 300L)
                 }
                 override fun onUnavailable() {
-                    runOnUiThread { statusText.text = "WiFi не подключился" }
+                    InAppLogger.err("NfcReader", "WNS onUnavailable — fallback WifiManager")
+                    runOnUiThread { statusText.text = "WNS fail, fallback..." }
+                    fallbackWifiConnect(data)
                 }
             }, 20000)
         } catch (e: Exception) {
@@ -193,10 +201,43 @@ class NfcReaderActivity : AppCompatActivity() {
         }
     }
 
+    private fun fallbackWifiConnect(data: NfcHandover) {
+        try {
+            @Suppress("DEPRECATION")
+            val wm = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
+            if (wm == null) { InAppLogger.err("NfcReader", "fallback: no WifiManager"); finish(); return }
+            @Suppress("DEPRECATION")
+            val conf = android.net.wifi.WifiConfiguration().apply {
+                SSID = "\"${data.ssid}\""
+                preSharedKey = "\"${data.passphrase}\""
+                allowedKeyManagement.set(android.net.wifi.WifiConfiguration.KeyMgmt.WPA_PSK)
+            }
+            @Suppress("DEPRECATION")
+            val netId = wm.addNetwork(conf)
+            if (netId < 0) {
+                InAppLogger.err("NfcReader", "fallback addNetwork=$netId → finish")
+                finish(); return
+            }
+            InAppLogger.d("NfcReader", "fallback netId=$netId, enable+reconnect")
+            @Suppress("DEPRECATION")
+            run {
+                wm.disconnect()
+                wm.enableNetwork(netId, true)
+                wm.reconnect()
+            }
+            handler.postDelayed({ afterConnected(data) }, 5000L)
+        } catch (e: Exception) {
+            InAppLogger.err("NfcReader", "fallback: ${e.message}")
+            finish()
+        }
+    }
+
     private fun afterConnected(data: NfcHandover) {
         val node = AtomController.meshNode
-        if (node == null) { finish(); return }
+        if (node == null) { InAppLogger.err("NfcReader", "afterConnected: node null"); finish(); return }
+        InAppLogger.d("NfcReader", "afterConnected ip=${data.ip} ssid=${data.ssid}")
         node.sendHello(data.ip)
+        InAppLogger.d("NfcReader", "sendHello → ${data.ip}")
         currentHandover = data
         handler.postDelayed({
             val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
