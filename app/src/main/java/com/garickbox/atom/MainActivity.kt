@@ -1,5 +1,7 @@
 package com.garickbox.atom
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -111,7 +113,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen(this)
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         if (!com.garickbox.atom.TvHelper.isTv(this)) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
