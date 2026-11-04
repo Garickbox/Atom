@@ -124,7 +124,7 @@ class AtomWidgetProvider : AppWidgetProvider() {
                         val lastPeer = AtomController.lastPeer
                         if (lastPeer != null && lastPeer.name.isNotBlank()) {
                             "📱 ${lastPeer.name.take(14)}"
-                        } else "Тап: приём · 2×тап: отправить"
+                        } else "Готов к передаче"
                     }
                     rv.setTextViewText(R.id.subtitle, sub)
                     rv.setViewVisibility(R.id.progress, View.GONE)
