@@ -412,9 +412,10 @@ class FileSenderService : Service() {
                 val name = displayName(uri) ?: "file_${idx}"
                 val size = fileSize(uri)
                 // B76#16: skip small AND empty (0B) с явной записью в историю
-                if (size in 0..1023) {
-                    InAppLogger.d("FileSenderService",
-                        "skip small/empty ${size}B: $name")
+                // B186: skip только если size==0 AND uri недоступен (проверка была в fileSize)
+                if (size == 0L) {
+                    InAppLogger.err("FileSenderService",
+                        "B186: SKIP size=0 (uri unreachable): $name uri=$uri")
                     try {
                         TransferHistory.add(this@FileSenderService, TransferHistory.Record(
                             id = "skip-" + System.currentTimeMillis(),
@@ -429,6 +430,7 @@ class FileSenderService : Service() {
                     } catch (_: Exception) {}
                     continue
                 }
+                // B186: размер 1-1023 байт теперь ОТПРАВЛЯЕТСЯ (было skip — axiom#207)
                 val resumeOffset = if (idx == 0) resumeFirstOffset else 0L
                 val transferId = if (idx == 0 && resumeFirstTid != null) resumeFirstTid else UUID.randomUUID().toString()
                 val realIdx = idx + fileIndexOffset + 1
@@ -833,9 +835,53 @@ class FileSenderService : Service() {
                     dos.flush()
 
                     // Данные
+                    var pos = start
+                    val isFileScheme = uri.scheme == "file"
+                    val contentIns: java.io.InputStream? = if (isFileScheme) {
+                        val f = java.io.File(uri.path ?: "")
+                        if (f.exists()) java.io.FileInputStream(f) else null
+                    } else null
+                    if (isFileScheme) {
+                        if (contentIns == null) throw java.io.FileNotFoundException("B186: file:// not found $uri")
+                        contentIns.use { ins ->
+                            var localPos = start
+                            val skip = ins.skip(start)
+                            InAppLogger.d("FileSenderService", "B186: file skip=$skip expected=$start")
+                            val buf = ByteArray(512 * 1024)
+                            while (localPos < end && currentCoroutineContext().isActive) {
+                                if (failed.get()) break
+                                val toRead = minOf(buf.size.toLong(), end - localPos).toInt()
+                                val read = ins.read(buf, 0, toRead)
+                                if (read < 0) break
+                                dos.write(buf, 0, read)
+                                localPos += read
+                                val total = progress.addAndGet(read.toLong())
+                                val displayTotal = resumeOffset + total
+                                currentProgressBytes.set(displayTotal)
+                                val now = System.currentTimeMillis()
+                                val prev = lastNotif.get()
+                                if (now - prev > 500 && lastNotif.compareAndSet(prev, now)) {
+                                    dos.flush()
+                                    senderSpeedTracker.onProgress(total)
+                                    val bps = senderSpeedTracker.bytesPerSecond()
+                                    TransferNotification.updateIfChanged(this@FileSenderService, NOTIF_ID,
+                                        TransferNotification.buildRunning(
+                                            this@FileSenderService, transferId, peerName,
+                                            name, displayTotal, size, bps, fileIndex, fileCount))
+                                    val curF1 = AtomController.transferState.value
+                                    if (curF1 !is TransferState.Paused || curF1.transferId != transferId) {
+                                        AtomController.transferState.value = TransferState.Running(
+                                            transferId, peerName, name, displayTotal, size,
+                                            bytesPerSecond = bps, isReceiver = false,
+                                            fileIndex = fileIndex, fileCount = fileCount)
+                                    }
+                                }
+                            }
+                            dos.flush()
+                        }
+                    } else {
                     val pfd = contentResolver.openFileDescriptor(uri, "r")
                         ?: throw java.io.FileNotFoundException("cannot open $uri")
-                    var pos = start
                     pfd.use { descriptor ->
                         java.io.FileInputStream(descriptor.fileDescriptor).use { ins ->
                             ins.channel.position(start)
@@ -876,6 +922,7 @@ class FileSenderService : Service() {
                             }
                             dos.flush()
                         }
+                    }
                     }
                     InAppLogger.d("FileSenderService",
                         "thread $i done: ${pos - start} bytes")
@@ -925,17 +972,26 @@ class FileSenderService : Service() {
     private suspend fun computeSha256(uri: Uri): String? = withContext(Dispatchers.IO) {
         try {
             val md = MessageDigest.getInstance("SHA-256")
-            contentResolver.openInputStream(uri)?.use { input ->
+            val input: java.io.InputStream? = if (uri.scheme == "file") {
+                val f = java.io.File(uri.path ?: "")
+                if (f.exists()) java.io.FileInputStream(f) else null
+            } else {
+                contentResolver.openInputStream(uri)
+            }
+            input?.use { inp ->
                 val buf = ByteArray(128 * 1024)
                 while (true) {
-                    val r = input.read(buf)
+                    val r = inp.read(buf)
                     if (r <= 0) break
                     md.update(buf, 0, r)
                 }
+            } ?: run {
+                InAppLogger.err("FileSenderService", "B186: cannot open for hash: $uri")
+                return@withContext null
             }
             md.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
-            InAppLogger.d("FileSenderService", "hash error: ${e.message}")
+            InAppLogger.err("FileSenderService", "B186: hash error ${uri}: ${e.message}")
             null
         }
     }
@@ -949,6 +1005,11 @@ class FileSenderService : Service() {
     }
 
 private fun displayName(uri: Uri): String? {
+        // B186: file:// — contentResolver не работает, брать из File
+        if (uri.scheme == "file") {
+            val path = uri.path ?: return null
+            return java.io.File(path).name.ifBlank { "file" }
+        }
         // B181: 3 уровня + MediaStore by ID
         // 1. OpenableColumns.DISPLAY_NAME (folder picker, SAF)
         try {
@@ -992,11 +1053,15 @@ private fun displayName(uri: Uri): String? {
     }
 
     private fun fileSize(uri: Uri): Long {
+        // B186: file:// — через File.length()
+        if (uri.scheme == "file") {
+            return try { java.io.File(uri.path ?: return 0L).length() } catch (_: Exception) { 0L }
+        }
         try {
-            contentResolver.query(uri, null, null, null, null)?.use { c: Cursor ->
+            contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c: Cursor ->
                 if (c.moveToFirst()) {
-                    val idx = c.getColumnIndex(OpenableColumns.SIZE)
-                    if (idx >= 0) return c.getLong(idx)
+                    val sz = c.getLong(0)
+                    if (sz > 0) return sz
                 }
             }
         } catch (_: Exception) {}
