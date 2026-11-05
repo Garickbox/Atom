@@ -146,6 +146,7 @@ class FileBrowserActivity : AppCompatActivity() {
         cats += Category("audio", "Музыка", "🎵", countMedia(MediaStoreKind.AUDIO))
         cats += Category("apk", "Приложения", "📦", countUserApps(pm))
         cats += Category("downloads", "Загрузки", "📥", 0, "папки")
+        cats += Category("recent", "Недавние", "🕒", 0, "100 последних")
         if (hasTermux) cats += Category("termux", "Termux", "📟", 0, "~/.termux")
         return cats
     }
@@ -215,7 +216,7 @@ class FileBrowserActivity : AppCompatActivity() {
                     launchTreePicker("saf_downloads_uri", "📥 Загрузки", "primary:Download")
                 }
             }
-            "images", "video", "audio" -> {
+            "images", "video", "audio", "recent" -> {
                 startActivity(Intent(this, FileListActivity::class.java).apply {
                     putExtra(FileListActivity.EXTRA_MODE, cat.id)
                     putExtra(FileListActivity.EXTRA_TITLE, cat.title)

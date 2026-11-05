@@ -89,6 +89,7 @@ class FileListActivity : AppCompatActivity() {
             when (sortMode) {
                 "date" -> filtered
                 "size" -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenByDescending { it.size })
+                "name_desc" -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenByDescending { it.name.lowercase() })
                 else -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenBy { it.name.lowercase() })
             }
         }
@@ -109,8 +110,15 @@ class FileListActivity : AppCompatActivity() {
                             Box {
                                 IconButton(onClick = { sortMenuExpanded = true }) { Text("⇅", fontSize = 22.sp) }
                                 DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
-                                    listOf("name" to "По имени", "date" to "По дате", "size" to "По размеру").forEach { (k, l) ->
-                                        DropdownMenuItem(text = { Text(l) }, onClick = { sortMode = k; sortMenuExpanded = false })
+                                    listOf(
+                                        "name" to "По имени А→Я",
+                                        "name_desc" to "По имени Я→А",
+                                        "date" to "По дате",
+                                        "size" to "По размеру"
+                                    ).forEach { (k, l) ->
+                                        DropdownMenuItem(
+                                            text = { Text(l) },
+                                            onClick = { sortMode = k; sortMenuExpanded = false })
                                     }
                                 }
                             }
@@ -183,7 +191,13 @@ class FileListActivity : AppCompatActivity() {
             }
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(row.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontWeight = if (row.isDir) FontWeight.Medium else FontWeight.Normal)
-                Text(if (row.isDir) "папка" else fmtBytes(row.size), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val sub = when {
+                    searchQuery.isNotBlank() && row.relPath.isNotBlank() && row.relPath != row.name ->
+                        row.relPath
+                    row.isDir -> "папка"
+                    else -> fmtBytes(row.size)
+                }
+                Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (!row.isDir) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) }, modifier = Modifier.size(40.dp))
         }
@@ -287,6 +301,8 @@ class FileListActivity : AppCompatActivity() {
         return out
     }
 
+    private val apkCacheDir by lazy { java.io.File(cacheDir, "apks").apply { mkdirs() } }
+
     private fun loadInstalledApps(): List<Row> {
         val out = mutableListOf<Row>()
         val pm = packageManager
@@ -295,10 +311,19 @@ class FileListActivity : AppCompatActivity() {
                 if ((app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) return@forEach
                 val label = pm.getApplicationLabel(app).toString()
                 val icon = pm.getApplicationIcon(app)
-                val apkPath = app.sourceDir
-                val uri = Uri.fromFile(java.io.File(apkPath))
-                out.add(Row(uri, label, false, java.io.File(apkPath).length(), label, app.packageName, icon))
+                val apkFile = java.io.File(app.sourceDir)
+                if (!apkFile.exists()) return@forEach
+                // B184d: копируем APK в cache при первой загрузке — иначе file:// нельзя отправить
+                val cacheApk = java.io.File(apkCacheDir, app.packageName + ".apk")
+                if (!cacheApk.exists() || cacheApk.length() != apkFile.length()) {
+                    try { apkFile.copyTo(cacheApk, overwrite = true) }
+                    catch (e: Exception) { InAppLogger.err("FileList", "copy ${app.packageName}: ${e.message}"); return@forEach }
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", cacheApk)
+                out.add(Row(uri, label, false, apkFile.length(), label + ".apk", app.packageName, icon))
             }
+            InAppLogger.d("FileList", "installed_apps: ${out.size} user apps")
         } catch (e: Exception) { InAppLogger.err("FileList", "loadInstalledApps: ${e.message}") }
         out.sortBy { it.name.lowercase() }
         return out
