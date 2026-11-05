@@ -232,8 +232,8 @@ class NfcReaderActivity : AppCompatActivity() {
     }
 
     private fun connectWifi(data: NfcHandover) {
-        // B191: WNS + HELLO verification + fallback WPS-PBC
-        InAppLogger.nfc("NfcReader", "B191: WNS connect ssid=${data.ssid} ip=${data.ip}")
+        // B192: NFC = QR (axiom#221). Не проверяем peerSeen — доверяем credentials. WNS → afterConnected.
+        InAppLogger.nfc("NfcReader", "B192: WNS connect ssid=${data.ssid} ip=${data.ip}")
         runOnUiThread { statusText.text = "Подключаюсь к Wi-Fi…" }
         if (Build.VERSION.SDK_INT < 29) { fallbackWifiConnect(data); return }
         var attempt = 0
@@ -254,51 +254,29 @@ class NfcReaderActivity : AppCompatActivity() {
                 cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
                         if (!finished.compareAndSet(false, true)) return
-                        InAppLogger.nfc("NfcReader", "B191: WNS onAvailable $network (attempt $attempt)")
+                        InAppLogger.nfc("NfcReader", "B192: WNS onAvailable $network (attempt $attempt)")
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
                             AtomController.meshNode?.recreateUdpSocket()
                         } catch (e: Exception) {
-                            InAppLogger.err("NfcReader", "B191: bind ${e.message}")
+                            InAppLogger.err("NfcReader", "B192: bind ${e.message}")
                         }
-                        // B191: ждём 2000ms до первого HELLO (route setup), потом серия HELLO
-                        handler.postDelayed({
-                            AtomController.meshNode?.sendHello(data.ip)
-                            handler.postDelayed({
-                                AtomController.meshNode?.sendHello(data.ip)
-                                // Проверка через 3.5s: peer в AtomController.peers?
-                                handler.postDelayed({
-                                    if (isFinishing || isDestroyed) return@postDelayed
-                                    val peerSeen = AtomController.peers.value.any {
-                                        it.ip == data.ip && System.currentTimeMillis() - it.lastSeenMs < 5_000L
-                                    }
-                                    if (peerSeen) {
-                                        InAppLogger.nfc("NfcReader", "B191: HELLO OK peer seen → transfer")
-                                        try { AtomController.meshNode?.recreateTcpServer() } catch (_: Exception) {}
-                                        handler.postDelayed({ afterConnected(data) }, 500L)
-                                    } else {
-                                        InAppLogger.err("NfcReader", "B191: WNS but HELLO timeout → fallback WPS-PBC")
-                                        try { cm.bindProcessToNetwork(null) } catch (_: Exception) {}
-                                        fallbackWifiConnect(data)
-                                    }
-                                }, 1500L)  // 2000+500+1500 = 4000ms total
-                            }, 2000L)
-                        }, 2000L)
+                        handler.post { afterConnected(data) }
                     }
                     override fun onUnavailable() {
                         if (!finished.compareAndSet(false, true)) return
-                        InAppLogger.err("NfcReader", "B191: WNS onUnavailable (attempt $attempt)")
+                        InAppLogger.err("NfcReader", "B192: WNS onUnavailable (attempt $attempt)")
                         if (attempt < 2) {
                             handler.postDelayed({ tryWns() }, 500L * attempt)
                         } else {
-                            InAppLogger.err("NfcReader", "B191: WNS fail x2 → fallback WPS-PBC")
+                            InAppLogger.err("NfcReader", "B192: WNS fail x2 → fallback WPS-PBC")
                             if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
                         }
                     }
                 }, 20000)
             } catch (e: Exception) {
-                InAppLogger.err("NfcReader", "B191: setup ${e.message}")
+                InAppLogger.err("NfcReader", "B192: setup ${e.message}")
                 if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
             }
         }
@@ -449,23 +427,25 @@ class NfcReaderActivity : AppCompatActivity() {
         afterConnectedCalled = true
         val node = AtomController.meshNode
         if (node == null) { InAppLogger.nfc("NfcReader:ERR", "afterConnected: node null"); finish(); return }
-        InAppLogger.nfc("NfcReader", "afterConnected ip=${data.ip} ssid=${data.ssid}")
+        InAppLogger.nfc("NfcReader", "B192: afterConnected ip=${data.ip} ssid=${data.ssid}")
+        // B192: recreateTcpServer сразу (QR его не делает, но нам нужен listener на p2p0 после WNS)
+        try { node.recreateTcpServer() } catch (e: Exception) { InAppLogger.err("NfcReader", "B192: tcp ${e.message}") }
         node.sendHello(data.ip)
-        InAppLogger.nfc("NfcReader", "sendHello → ${data.ip}")
+        InAppLogger.nfc("NfcReader", "B192: sendHello → ${data.ip}")
         currentHandover = data
-        // B178: lifecycleScope вместо handler.postDelayed — не отменяется onDestroy
         lifecycleScope.launch {
-            delay(2000L)
+            delay(2500L)  // QR wait 2500ms
             if (isFinishing || isDestroyed) {
-                InAppLogger.nfc("NfcReader", "B178: skip afterConnected body (destroyed) — B179 onResume покажет sheet")
+                InAppLogger.nfc("NfcReader", "B192: skip (destroyed)")
                 return@launch
             }
             val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
                 ?: Peer(id = "nfc", name = "NFC", ip = data.ip)
             currentPeer = peer
+            InAppLogger.nfc("NfcReader", "B192: peer=${peer.name} ip=${peer.ip} uris=${pendingUris.size}")
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this@NfcReaderActivity, peer, pendingUris, pendingPaths)
-                InAppLogger.nfc("NfcReader", "sent ${pendingUris.size} files to ${data.ip}")
+                InAppLogger.nfc("NfcReader", "B192: sent ${pendingUris.size} files to ${data.ip}")
                 finish()
             } else {
                 showPostConnectActionSheet()
