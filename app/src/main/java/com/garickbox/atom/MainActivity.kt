@@ -411,7 +411,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (_: Exception) {}
         }
-        walk(treeUri, rootDocId, rootName)
+        walk(treeUri, rootDocId, "")
         return result
     }
 

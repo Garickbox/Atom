@@ -476,12 +476,7 @@ class NfcReaderActivity : AppCompatActivity() {
         val cap = 501
         val result = mutableListOf<Pair<Uri, String>>()
         val rootDocId = try { android.provider.DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return emptyList() }
-        val rootName = try {
-            var n = "folder"
-            val rootUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
-            contentResolver.query(rootUri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cur -> if (cur.moveToFirst()) n = cur.getString(0) ?: "folder" }
-            n
-        } catch (_: Exception) { "folder" }
+        // B181c: НЕ включаем rootName в path — иначе "Download/testfolder/a.txt" даёт двойной Download
         fun walk(parentId: String, path: String) {
             if (result.size >= cap) return
             val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
@@ -501,7 +496,7 @@ class NfcReaderActivity : AppCompatActivity() {
                 }
             } catch (_: Exception) {}
         }
-        walk(rootDocId, rootName)
+        walk(rootDocId, "")
         return result
     }
 }
