@@ -62,6 +62,12 @@ class NfcReaderActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B198: восстановить UI + NfcAdapter (B195 случайно удалил в критическом fix — axiom#248)
+        setContentView(R.layout.activity_nfc_reader)
+        statusText = findViewById(R.id.nfcStatus)
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        if (nfcAdapter == null) { statusText.text = "NFC не поддерживается"; return }
+        if (!nfcAdapter!!.isEnabled) { statusText.text = "Включи NFC в настройках"; return }
         // B195: no resume (FileSender/Receiver handles)
         try { AtomController.nfcFlowActive = false } catch (_: Exception) {}
         // B166: сброс P2P-клиента — иначе второй connect идёт на stale group
@@ -71,6 +77,32 @@ class NfcReaderActivity : AppCompatActivity() {
         try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
         NfcHceService.clear()
         handler.removeCallbacksAndMessages(null)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // B198: reader mode — без него onTag никогда не сработает
+        val opts = Bundle().apply { putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 250) }
+        try {
+            nfcAdapter?.enableReaderMode(
+                this,
+                { tag -> onTag(tag) },
+                NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
+                opts
+            )
+        } catch (e: Exception) {
+            InAppLogger.err("NfcReader", "B198: enableReaderMode ${e.message}")
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try { nfcAdapter?.disableReaderMode(this) } catch (_: Exception) {}
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { nfcAdapter?.disableReaderMode(this) } catch (_: Exception) {}
     }
 
     private fun onTag(tag: Tag) {
