@@ -232,25 +232,57 @@ class NfcReaderActivity : AppCompatActivity() {
     }
 
     private fun connectWifi(data: NfcHandover) {
-        // B164: WNS→P2P SSID → onUnavailable (Android 14), WifiManager.addNetwork → -1 (deprecated).
-        // Единственный рабочий путь на HyperOS — WifiP2pManager.connect после discoverPeers.
-        InAppLogger.nfc("NfcReader", "B164: skip WNS, сразу P2P fallback (ssid=${data.ssid})")
-        runOnUiThread { statusText.text = "P2P поиск..." }
-        // B173a: real check via requestGroupInfo (не time heuristic axiom#161)
-        val wd = AtomController.wifiDirect
-        if (wd == null) { fallbackWifiConnect(data); return }
-        wd.checkGroupAlive { alive ->
-            if (isFinishing || isDestroyed) return@checkGroupAlive
-            if (alive) {
-                InAppLogger.nfc("NfcReader", "B173a: group ALIVE → fast reinvoke")
-                handler.postDelayed({ fallbackWifiConnect(data) }, 100L)
-            } else {
-                InAppLogger.nfc("NfcReader", "B173a: group DEAD → full cleanup")
-                wd.forgetAllGroupsAndThen {
-                    handler.postDelayed({ fallbackWifiConnect(data) }, 300L)
-                }
+        // B189: WNS как у QR (axiom#215) — 2-5s, без BUSY/inversion. Fallback → WPS-PBC.
+        InAppLogger.nfc("NfcReader", "B189: WNS connect ssid=${data.ssid} ip=${data.ip}")
+        runOnUiThread { statusText.text = "Подключаюсь к Wi-Fi…" }
+        if (Build.VERSION.SDK_INT < 29) { fallbackWifiConnect(data); return }
+        var attempt = 0
+        fun tryWns() {
+            if (isFinishing || isDestroyed) return
+            attempt++
+            try {
+                val spec = WifiNetworkSpecifier.Builder()
+                    .setSsid(data.ssid)
+                    .setWpa2Passphrase(data.passphrase)
+                    .build()
+                val req = NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .setNetworkSpecifier(spec)
+                    .build()
+                val cm = getSystemService(ConnectivityManager::class.java)
+                val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+                cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        if (!finished.compareAndSet(false, true)) return
+                        InAppLogger.nfc("NfcReader", "B189: WNS onAvailable $network (attempt $attempt)")
+                        try {
+                            cm.bindProcessToNetwork(network)
+                            boundCm = cm
+                            AtomController.meshNode?.recreateUdpSocket()
+                            AtomController.meshNode?.recreateTcpServer()
+                        } catch (e: Exception) {
+                            InAppLogger.err("NfcReader", "B189: bind/recreate ${e.message}")
+                        }
+                        handler.postDelayed({ afterConnected(data) }, 300L)
+                    }
+                    override fun onUnavailable() {
+                        if (!finished.compareAndSet(false, true)) return
+                        InAppLogger.err("NfcReader", "B189: WNS onUnavailable (attempt $attempt)")
+                        if (attempt < 3) {
+                            handler.postDelayed({ tryWns() }, 500L * attempt)
+                        } else {
+                            InAppLogger.err("NfcReader", "B189: WNS fail x3 → fallback WPS-PBC")
+                            if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
+                        }
+                    }
+                }, 20000)
+            } catch (e: Exception) {
+                InAppLogger.err("NfcReader", "B189: WNS setup ${e.message}")
+                if (attempt < 3) handler.postDelayed({ tryWns() }, 500L * attempt)
+                else fallbackWifiConnect(data)
             }
         }
+        tryWns()
     }
 
     private fun fallbackWifiConnect(data: NfcHandover) {
