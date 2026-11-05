@@ -300,9 +300,7 @@ class FileListActivity : AppCompatActivity() {
                 Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (!row.isDir) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) }, modifier = Modifier.size(40.dp))
-            else if (isChecked || PlaylistManager.items.any { it.relativePath?.startsWith(row.relPath + "/") == true }) {
-                Text("✓", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
-            }
+
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
     }
@@ -342,53 +340,63 @@ class FileListActivity : AppCompatActivity() {
     }
 
     private fun showFolderSheet(row: Row) {
-        val files = countFilesInFolder(row)
+        val (count, size) = folderStats(row)
+        val stats = "$count файлов · ${fmtBytes(size)}"
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("📁 ${row.name}")
-            .setItems(arrayOf("📂 Открыть", "➕ Добавить в плейлист ($files файлов)")) { _, which ->
+            .setTitle("📁 ${row.name}\n$stats")
+            .setItems(arrayOf(
+                "☑️  Выбрать файлы (плоско)",
+                "📁  Добавить папку (со структурой)"
+            )) { _, which ->
                 when (which) {
-                    0 -> onTap(row)
-                    1 -> addFolderToPlaylist(row)
+                    0 -> addFolderToPlaylist(row, withPrefix = false)
+                    1 -> addFolderToPlaylist(row, withPrefix = true)
                 }
             }
             .show()
     }
 
-    private fun countFilesInFolder(row: Row): Int {
-        // B185b: direct → File.listFiles (SAF не работает)
+    private fun folderStats(row: Row): Pair<Int, Long> {
+        // B185c: direct → File.walkTopDown с size
         if (currentMode == "direct") {
-            return try {
-                java.io.File(row.docId).walkTopDown().count { it.isFile }
-            } catch (_: Exception) { 0 }
+            var n = 0; var sz = 0L
+            try {
+                java.io.File(row.docId).walkTopDown().filter { it.isFile }.forEach { n++; sz += it.length() }
+            } catch (_: Exception) {}
+            return n to sz
         }
-        return try {
-            val treeUri = currentTreeUri ?: return 0
-            var n = 0
-            fun walk(parentId: String) {
+        val treeUri = currentTreeUri ?: return 0 to 0L
+        var n = 0; var sz = 0L
+        fun walk(parentId: String) {
+            try {
                 val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
                 contentResolver.query(childrenUri, arrayOf(
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use { c ->
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
                     while (c.moveToNext()) {
                         val id = c.getString(0) ?: continue
                         val mime = c.getString(1) ?: ""
-                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(id) else n++
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(id)
+                        else { n++; sz += if (c.isNull(2)) 0L else c.getLong(2) }
                     }
                 }
-            }
-            walk(row.docId)
-            n
-        } catch (_: Exception) { 0 }
+            } catch (_: Exception) {}
+        }
+        walk(row.docId)
+        return n to sz
     }
 
-    private fun addFolderToPlaylist(row: Row) {
-        // B185b: direct → walkTopDown через File API
+    private fun addFolderToPlaylist(row: Row, withPrefix: Boolean) {
+        val modeLabel = if (withPrefix) "со структурой" else "плоско"
+        // B185c: direct → File API
         if (currentMode == "direct") {
             var directAdded = 0
             try {
                 val base = java.io.File(row.docId)
                 base.walkTopDown().filter { it.isFile }.forEach { f ->
-                    val rel = row.name + "/" + f.relativeTo(base).path.replace("\\", "/")
+                    val relFile = f.relativeTo(base).path.replace("\\", "/")
+                    val rel = if (withPrefix) row.name + "/" + relFile else relFile
                     if (PlaylistManager.add(PlaylistManager.Item(
                         uri = Uri.fromFile(f), name = f.name, sizeBytes = f.length(),
                         relativePath = rel, source = "direct", packageName = null)))
@@ -397,7 +405,7 @@ class FileListActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 InAppLogger.err("FileList", "addFolderDirect: ${e.message}")
             }
-            android.widget.Toast.makeText(this, "Добавлено $directAdded файлов из ${row.name}", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, "Добавлено $directAdded файлов из ${row.name} ($modeLabel)", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         val treeUri = currentTreeUri ?: return
@@ -419,9 +427,10 @@ class FileListActivity : AppCompatActivity() {
                         if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(id, rel)
                         else {
                             val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                            val finalRel = if (withPrefix) row.name + "/" + rel else rel
                             if (PlaylistManager.add(PlaylistManager.Item(
                                 uri = docUri, name = name, sizeBytes = size,
-                                relativePath = row.name + "/" + rel, source = currentMode,
+                                relativePath = finalRel, source = currentMode,
                                 packageName = null)))
                                 added++
                         }
@@ -430,7 +439,7 @@ class FileListActivity : AppCompatActivity() {
             } catch (_: Exception) {}
         }
         walk(row.docId, "")
-        android.widget.Toast.makeText(this, "Добавлено $added файлов из ${row.name}", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(this, "Добавлено $added файлов из ${row.name} ($modeLabel)", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun goBack() {
