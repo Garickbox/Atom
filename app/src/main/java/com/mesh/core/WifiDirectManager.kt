@@ -401,7 +401,7 @@ class WifiDirectManager(private val ctx: Context) {
                         " passphrase=" + pwdMask +
                         " isGO=" + group.isGroupOwner +
                         " freq=" + group.frequency +
-                        " iface=" + group.interface +
+                        " iface=" + (try { group.getInterface() ?: "?" } catch (_: Throwable) { "?" }) +
                         " clients=" + clients)
                 }
                 latch.countDown()
