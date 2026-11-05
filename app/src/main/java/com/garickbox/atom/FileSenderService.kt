@@ -78,6 +78,7 @@ class FileSenderService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    @Volatile private var skipRequested = false  // B202: user skip текущего файла
     private val senderSpeedTracker = SpeedTracker()
     private val pendingAccepts = ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Result<Long>>>()
 
@@ -349,6 +350,15 @@ class FileSenderService : Service() {
                 pausedRemainingRelativePaths = emptyList()
                 runTransfer(ip, id, name, uris, resumeFirstOffset = off, resumeFirstTid = tid, fileIndexOffset = fi - 1, totalFileCount = fc, relativePaths = resumePaths)
             }
+            TransferNotification.ACTION_SKIP -> {
+                InAppLogger.d("FileSenderService", "B202: skip requested")
+                skipRequested = true
+                try {
+                    val cur = AtomController.transferState.value
+                    if (cur is TransferState.Running) com.mesh.core.CompactLog.file(
+                        cur.fileIndex, 0L, 0L, 0, 0, 0, 0.0, "skip")
+                } catch (_: Exception) {}
+            }
             else -> {
                 // null (после ребута системы) или неизвестный action — не держим lock'и
                 InAppLogger.d("FileSenderService", "onStartCommand null/unknown — stopSelf")
@@ -369,6 +379,7 @@ class FileSenderService : Service() {
     ) {
         currentJob?.cancel()
         currentJob = scope.launch {
+            skipRequested = false  // B202: reset
             val node = AtomController.meshNode
             // Defensive: callbacks могли не установиться, если meshNode был null в onCreate.
             // Тогда FILE_ACCEPT придёт в пустоту → 30 retry впустую. Лучше упасть сразу.
@@ -458,6 +469,17 @@ class FileSenderService : Service() {
                     InAppLogger.d("FileSenderService",
                         "file $realIdx/$finalFileCount CANCELLED: $name (pause/user)")
                     return@launch
+                }
+                if (sent == -2L) {
+                    com.mesh.core.CompactLog.file(realIdx, size / 1024,
+                        stAcceptMs, stBusyCnt, 0, stHashMs, 0.0, "skip")
+                    InAppLogger.d("FileSenderService",
+                        "file $realIdx/$finalFileCount SKIPPED by user: $name — next")
+                    TransferHistory.add(this@FileSenderService, TransferHistory.Record(
+                        id = transferId, peerName = peerName, fileName = name,
+                        bytes = 0L, durationMs = 0L, status = "skipped",
+                        timestamp = System.currentTimeMillis(), savedPath = ""))
+                    continue
                 }
                 if (sent < 0) {
                     com.mesh.core.CompactLog.file(realIdx, size / 1024,
@@ -688,7 +710,9 @@ class FileSenderService : Service() {
         var lastErr: String? = null
         for (sendAttempt in 1..3) {
             try {
-                return sendMultiThread(node, peerIp, uri, name, size, finalTid, peerName, contentHash, threadCount, fileIndex, fileCount, acceptedOffset)
+                val mtRes = sendMultiThread(node, peerIp, uri, name, size, finalTid, peerName, contentHash, threadCount, fileIndex, fileCount, acceptedOffset)
+                if (mtRes == -2L) return -2L
+                return mtRes
             } catch (e: kotlinx.coroutines.CancellationException) {
                 InAppLogger.d("FileSenderService", "cancelled by coroutine")
                 throw e
@@ -852,7 +876,7 @@ class FileSenderService : Service() {
                             InAppLogger.d("FileSenderService", "B186: file skip=$skip expected=$start")
                             val buf = ByteArray(512 * 1024)
                             while (localPos < end && currentCoroutineContext().isActive) {
-                                if (failed.get()) break
+                                if (failed.get() || skipRequested) break
                                 val toRead = minOf(buf.size.toLong(), end - localPos).toInt()
                                 val read = ins.read(buf, 0, toRead)
                                 if (read < 0) break
@@ -890,7 +914,7 @@ class FileSenderService : Service() {
                             ins.channel.position(start)
                             val buf = ByteArray(512 * 1024)
                             while (pos < end && currentCoroutineContext().isActive) {
-                                if (failed.get()) break
+                                if (failed.get() || skipRequested) break
                                 val toRead = minOf(buf.size.toLong(), end - pos).toInt()
                                 val read = ins.read(buf, 0, toRead)
                                 if (read < 0) break
@@ -958,6 +982,12 @@ class FileSenderService : Service() {
         stSpeedMbps = avgMbps
         InAppLogger.d("FileSenderService",
             "multi done: $totalSent/$size in ${elapsed}ms = ${"%.1f".format(avgMbps)} MB/s avg (${threadCount} thr)")
+
+        if (skipRequested) {
+            skipRequested = false
+            InAppLogger.d("FileSenderService", "B202: user skip → return -2L")
+            return@coroutineScope -2L
+        }
 
         if (failed.get() || sentThisCall < (size - resumeOffset)) {
             // B11.1: при отмене корутины — CancellationException, не Exception.

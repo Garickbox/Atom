@@ -13,6 +13,7 @@ object TransferNotification {
     const val ACTION_CANCEL = "com.garickbox.atom.CANCEL_TRANSFER"
     const val ACTION_RESUME = "com.garickbox.atom.RESUME_TRANSFER"
     const val ACTION_PAUSE = "com.garickbox.atom.PAUSE_TRANSFER"
+    const val ACTION_SKIP = "com.garickbox.atom.SKIP_TRANSFER"
     const val EXTRA_TRANSFER_ID = "transfer_id"
     const val EXTRA_FILE_NAME = "file_name"
 
@@ -44,6 +45,14 @@ object TransferNotification {
             ctx, transferId.hashCode() + 3, pauseIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val skipIntent = Intent(ctx, FileSenderService::class.java).apply {
+            action = ACTION_SKIP
+            putExtra(EXTRA_TRANSFER_ID, transferId)
+        }
+        val skipPi = PendingIntent.getService(
+            ctx, transferId.hashCode() + 6, skipIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         // B89: tap на уведомление → открыть Атом
         val openIntent = Intent(ctx, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -68,6 +77,7 @@ object TransferNotification {
             .setOnlyAlertOnce(true)
             .setDeleteIntent(cancelPi)
             .addAction(android.R.drawable.ic_media_pause, "Пауза", pausePi)
+            .apply { if (fileCount > 1) addAction(android.R.drawable.ic_media_next, "Пропустить", skipPi) }
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отменить", cancelPi)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .build()

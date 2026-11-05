@@ -448,6 +448,7 @@ class NfcReaderActivity : AppCompatActivity() {
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this@NfcReaderActivity, peer, pendingUris, pendingPaths)
                 InAppLogger.nfc("NfcReader", "B193: sent ${pendingUris.size} files to ${targetIp}")
+                MainActivity.returnToMain(this@NfcReaderActivity)
                 finish()
             } else {
                 showPostConnectActionSheet()
@@ -506,6 +507,7 @@ class NfcReaderActivity : AppCompatActivity() {
         } catch (e: Exception) {
             InAppLogger.nfc("NfcReader:ERR", "B160 send: ${e.message}")
         }
+        MainActivity.returnToMain(this)
         finish()
     }
 
@@ -517,6 +519,7 @@ class NfcReaderActivity : AppCompatActivity() {
         } catch (e: Exception) {
             InAppLogger.nfc("NfcReader:ERR", "B160 send folder: ${e.message}")
         }
+        MainActivity.returnToMain(this)
         finish()
     }
 

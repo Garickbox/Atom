@@ -26,8 +26,19 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_SHORTCUT_FIND = "com.garickbox.atom.SHORTCUT_FIND"
         const val ACTION_SHORTCUT_RECEIVE = "com.garickbox.atom.SHORTCUT_RECEIVE"
         const val ACTION_SHORTCUT_SEND_PEER = "com.garickbox.atom.SHORTCUT_SEND_PEER"
-        @Volatile var pendingPeerForShareTarget: Peer? = null
+    @Volatile var pendingPeerForShareTarget: Peer? = null
+
+    /** B202: returnToMain — после startTransfer перекинуть user на главный (видеть прогресс) */
+    fun returnToMain(ctx: android.content.Context) {
+        try {
+            ctx.startActivity(android.content.Intent(ctx, MainActivity::class.java).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
+        } catch (_: Exception) {}
     }
+}
     private var pendingShortcutFind = false
     private var pickerShownForPeer = false
     // B200: NFC pre-pick — файл ДО NFC (axiom#209)
@@ -835,6 +846,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderTransferPanel(state: TransferState) {
+        b.btnTransferSkip.visibility = android.view.View.GONE
         when (state) {
             is TransferState.Running -> {
                 b.transferPanel.visibility = android.view.View.VISIBLE
@@ -848,6 +860,12 @@ class MainActivity : AppCompatActivity() {
                 b.btnTransferPause.visibility = android.view.View.VISIBLE
                 b.btnTransferPause.setOnClickListener { sendActionToSender(TransferNotification.ACTION_PAUSE) }
                 b.btnTransferResume.visibility = android.view.View.GONE
+                if (!state.isReceiver && state.fileCount > 1) {
+                    b.btnTransferSkip.visibility = android.view.View.VISIBLE
+                    b.btnTransferSkip.setOnClickListener {
+                        sendActionToSender(TransferNotification.ACTION_SKIP)
+                    }
+                }
                 b.btnTransferCancel.visibility = android.view.View.VISIBLE
                 b.btnTransferCancel.setOnClickListener { sendActionToSender(TransferNotification.ACTION_CANCEL) }
                 val speedText = if (state.bytesPerSecond > 0)

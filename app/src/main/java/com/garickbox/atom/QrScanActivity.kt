@@ -283,12 +283,14 @@ class QrScanActivity : AppCompatActivity() {
     private fun sendPickedUris(uris: List<Uri>) {
         val peer = currentConnectedPeer ?: run { finish(); return }
         try { FileSenderService.startTransfer(this, peer, uris, emptyList()) } catch (e: Exception) { InAppLogger.err("QrScan", "send: ${e.message}") }
+        MainActivity.returnToMain(this)
         finish()
     }
 
     private fun sendPickedUrisWithPaths(files: List<Pair<Uri, String>>) {
         val peer = currentConnectedPeer ?: run { finish(); return }
         try { FileSenderService.startTransfer(this, peer, files.map { it.first }, files.map { it.second }) } catch (e: Exception) { InAppLogger.err("QrScan", "send folder: ${e.message}") }
+        MainActivity.returnToMain(this)
         finish()
     }
 
@@ -343,6 +345,7 @@ class QrScanActivity : AppCompatActivity() {
             currentConnectedPeer = peer
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this, peer, pendingUris, pendingRelativePaths)
+                MainActivity.returnToMain(this)
                 finish()
             } else if (pendingActionSheet) {
                 showPostConnectActionSheet()
