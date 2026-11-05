@@ -62,6 +62,12 @@ class NfcReaderActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B188: NFC-flow → stop continuousDiscover (axiom#212)
+        try {
+            AtomController.nfcFlowActive = true
+            AtomController.wifiDirect?.stopContinuousDiscover()
+            com.mesh.core.InAppLogger.nfc("NfcReader", "B188: onCreate stopContinuousDiscover (sender)")
+        } catch (_: Exception) {}
         setContentView(R.layout.activity_nfc_reader)
         statusText = findViewById(R.id.nfcStatus)
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
@@ -127,6 +133,14 @@ class NfcReaderActivity : AppCompatActivity() {
     override fun onPause() { super.onPause(); nfcAdapter?.disableReaderMode(this) }
     override fun onDestroy() {
         super.onDestroy()
+        // B188: resume continuousDiscover if Atom foreground (axiom#212)
+        try {
+            AtomController.nfcFlowActive = false
+            if (AtomController.appForeground) {
+                AtomController.wifiDirect?.startContinuousDiscover()
+                com.mesh.core.InAppLogger.nfc("NfcReader", "B188: onDestroy — resume continuousDiscover")
+            }
+        } catch (_: Exception) {}
         // B166: сброс P2P-клиента — иначе второй connect идёт на stale group
         // (Redmi становится GO, POCO не клиент, роли перепутаны)
         // B166b: НЕ трогаем P2P в onDestroy — FileSenderService ещё использует P2P.
