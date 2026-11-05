@@ -549,6 +549,9 @@ class FileSenderService : Service() {
                 if (AtomController.transferState.value is TransferState.Success) {
                     AtomController.transferState.value = TransferState.Idle
                     InAppLogger.d("FileSenderService", "B216: Success → Idle (3.5s auto-dismiss)")
+                    try { AtomQSTile.requestUpdate(applicationContext) } catch (_: Exception) {}
+                    try { AtomWidgetCompactProvider.refresh(applicationContext, force = true) } catch (_: Exception) {}
+                    try { AtomWidgetUltraProvider.refresh(applicationContext, force = true) } catch (_: Exception) {}
                 }
             }, 3500L)
             kotlinx.coroutines.delay(10_000)

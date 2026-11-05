@@ -172,11 +172,15 @@ class AtomQSTile : TileService() {
                             else "Приём"
                         }
                         fg -> tile.subtitle = "Приём · приложение открыто"
-                        else -> tile.subtitle = "Тап: приём · 2×тап: отправить"
+                        else -> tile.subtitle = "📱 NFC/QR · нажми"
                     }
                     resIcon = R.drawable.ic_qs_tile
                 }
             }
+            try {
+                val sub = tile.subtitle
+                tile.stateDescription = if (sub.isNullOrBlank()) "Атом" else sub
+            } catch (_: Exception) {}
             tile.icon = Icon.createWithResource(this, resIcon)
             tile.updateTile()
         } catch (e: Exception) {
