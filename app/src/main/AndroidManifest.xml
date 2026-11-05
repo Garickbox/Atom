@@ -144,6 +144,11 @@
             android:exported="false"
             android:label="@string/self_test_title" />
 
+        <activity
+            android:name=".FileBrowserActivity"
+            android:exported="false"
+            android:label="📂 Файлы" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

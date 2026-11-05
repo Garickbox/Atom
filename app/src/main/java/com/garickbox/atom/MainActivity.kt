@@ -549,6 +549,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSendPicker() {
         val options = arrayOf(
+            "📂  Файлы (плейлист)",
             "📷  Фото", "🎬  Видео", "📄  Файл", "📁  Папка",
             "🔍  Сканировать QR (отправить)",
             "📱  NFC-касание (отправить)"
@@ -565,6 +566,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 32)
         })
         val acts = arrayOf<() -> Unit>(
+            { startActivity(Intent(this, FileBrowserActivity::class.java)) },
             { pickMedia(ActivityResultContracts.PickVisualMedia.ImageOnly) },
             { pickMedia(ActivityResultContracts.PickVisualMedia.VideoOnly) },
             { openFilePicker() },
