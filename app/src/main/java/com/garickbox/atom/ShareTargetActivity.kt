@@ -15,6 +15,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ShareTargetActivity : AppCompatActivity() {
+    companion object {
+        /** B207.1: backward compat — PickPeerActivity ставит этот extra (игнорируется в Compose flow) */
+        const val EXTRA_FORCE_STEP2 = "force_step2"
+    }
     private var pendingPreflightCallback: (() -> Unit)? = null
 
     private var uris: List<Uri> = emptyList()
@@ -388,7 +392,7 @@ class ShareTargetActivity : AppCompatActivity() {
             .setMessage("Ищу через Wi-Fi Direct")
             .setOnCancelListener { finish() }.show()
         var found = false
-        wd.onPeersChanged = { peers ->
+        wd.onPeersChanged = onPeersChanged@ { peers ->
             if (found) return@onPeersChanged
             val filtered = peers.filter { it.deviceName.isNotBlank() }
             if (filtered.isNotEmpty()) {
