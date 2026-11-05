@@ -179,6 +179,24 @@ object FileReceiver {
             FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
             node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
             accepted = true
+            val wdTid = offer.transferId
+            scope.launch {
+                delay(30_000)
+                val sess = activeSessions[wdTid]
+                if (sess == null || sess.sockets.isEmpty()) {
+                    InAppLogger.err("FileReceiver",
+                        "B201: TCP timeout 30s tid=${wdTid.take(8)} - release busy")
+                    activeSessions.remove(wdTid)
+                    _isBusy.set(false)
+                    val cur = AtomController.transferState.value
+                    if (cur is TransferState.Running && cur.transferId == wdTid) {
+                        AtomController.transferState.value = TransferState.Failed(
+                            wdTid, offer.peerName, offer.name,
+                            "TCP timeout 30s - peer не подключился", offer.fromIp, offer.hash)
+                    }
+                    FileReceiverService.stop(ctx)
+                }
+            }
         } finally {
             if (!accepted) {
                 InAppLogger.d("FileReceiver", "releasing busy — не приняли")

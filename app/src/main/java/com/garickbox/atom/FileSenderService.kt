@@ -381,12 +381,15 @@ class FileSenderService : Service() {
             }
 
             // Probe — только в лог, не блокирует
-            val alive = node.probePeer(peerIp, 500)
-            if (alive) {
-                InAppLogger.d("FileSenderService", "probe OK for $peerIp")
-            } else {
-                InAppLogger.d("FileSenderService", "probe timeout — продолжаем FILE_OFFER")
+            val alive = node.probePeer(peerIp, 2000)
+            if (!alive) {
+                InAppLogger.err("FileSenderService", "B201: probe FAIL $peerIp - abort (no 45s retry)")
+                AtomController.transferState.value = TransferState.Failed(
+                    "prep", peerName, "—", "Peer unreachable — проверь Wi-Fi Direct", peerIp, "")
+                finishWithError(peerName, "Peer unreachable")
+                return@launch
             }
+            InAppLogger.d("FileSenderService", "probe OK for $peerIp")
             AtomController.saveLastPeer(Peer(peerId, peerName, peerIp))
             com.mesh.core.CompactLog.sessionStart(uris.size, resumeFirstOffset > 0)
             InAppLogger.d("FileSenderService",
