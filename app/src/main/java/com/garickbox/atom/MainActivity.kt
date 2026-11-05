@@ -26,19 +26,19 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_SHORTCUT_FIND = "com.garickbox.atom.SHORTCUT_FIND"
         const val ACTION_SHORTCUT_RECEIVE = "com.garickbox.atom.SHORTCUT_RECEIVE"
         const val ACTION_SHORTCUT_SEND_PEER = "com.garickbox.atom.SHORTCUT_SEND_PEER"
-    @Volatile var pendingPeerForShareTarget: Peer? = null
+        @Volatile var pendingPeerForShareTarget: Peer? = null
 
-    /** B202: returnToMain — после startTransfer перекинуть user на главный (видеть прогресс) */
-    fun returnToMain(ctx: android.content.Context) {
-        try {
-            ctx.startActivity(android.content.Intent(ctx, MainActivity::class.java).apply {
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            })
-        } catch (_: Exception) {}
+        /** B202: returnToMain */
+        fun returnToMain(ctx: android.content.Context) {
+            try {
+                ctx.startActivity(android.content.Intent(ctx, MainActivity::class.java).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                })
+            } catch (_: Exception) {}
+        }
     }
-}
     private var pendingShortcutFind = false
     private var pickerShownForPeer = false
     // B200: NFC pre-pick — файл ДО NFC (axiom#209)
