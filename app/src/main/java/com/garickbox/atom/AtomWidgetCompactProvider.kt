@@ -36,7 +36,7 @@ class AtomWidgetCompactProvider : AppWidgetProvider() {
 
         private fun buildRvs(ctx: Context, state: TransferState): RemoteViews {
             val rv = RemoteViews(ctx.packageName, R.layout.widget_atom_compact)
-            rv.setOnClickPendingIntent(R.id.compact_root, openAppPi(ctx))
+            rv.setOnClickPendingIntent(R.id.compact_root, piOpenApp(ctx))
 
             val ringPct = when (state) {
                 is TransferState.Running -> if (state.bytesTotal > 0) (state.bytesSent * 100 / state.bytesTotal).toInt() else 0

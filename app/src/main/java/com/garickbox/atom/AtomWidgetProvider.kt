@@ -17,6 +17,7 @@ import com.mesh.core.InAppLogger
 class AtomWidgetProvider : AppWidgetProvider() {
 
     companion object {
+        const val ACTION_WIDGET_SEND = "com.garickbox.atom.WIDGET_SEND"
         @Volatile private var lastRefresh: Long = 0L
 
         fun refresh(ctx: Context) = refreshInternal(ctx, force = false)
@@ -52,16 +53,16 @@ class AtomWidgetProvider : AppWidgetProvider() {
                 strokeWidth = stroke
                 strokeCap = Paint.Cap.ROUND
             }
-            paint.color = 0x33FFFFFF
+            paint.color = 0x33FFFFFF.toInt()
             c.drawArc(rect, 0f, 360f, false, paint)
-            paint.color = 0xFFFFFFFF
+            paint.color = 0xFFFFFFFF.toInt()
             val sweep = 360f * pct.coerceIn(0, 100) / 100f
             if (sweep > 0f) c.drawArc(rect, -90f, sweep, false, paint)
             if (showPercent) {
                 paint.style = Paint.Style.FILL
                 paint.textAlign = Paint.Align.CENTER
                 paint.textSize = sizePx * 0.24f
-                paint.color = 0xFFFFFFFF
+                paint.color = 0xFFFFFFFF.toInt()
                 paint.isFakeBoldText = true
                 val txt = "$pct%"
                 c.drawText(txt, sizePx / 2f, sizePx / 2f + paint.textSize * 0.35f, paint)
