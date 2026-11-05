@@ -233,7 +233,7 @@ class NfcReaderActivity : AppCompatActivity() {
 
     private fun connectWifi(data: NfcHandover) {
         // B192: NFC = QR (axiom#221). Не проверяем peerSeen — доверяем credentials. WNS → afterConnected.
-        InAppLogger.nfc("NfcReader", "B192: WNS connect ssid=${data.ssid} ip=${data.ip}")
+        InAppLogger.nfc("NfcReader", "B193: WNS connect ssid=${data.ssid} ip=${data.ip}")
         runOnUiThread { statusText.text = "Подключаюсь к Wi-Fi…" }
         if (Build.VERSION.SDK_INT < 29) { fallbackWifiConnect(data); return }
         var attempt = 0
@@ -423,29 +423,53 @@ class NfcReaderActivity : AppCompatActivity() {
         }
     }
 
+    /** B193: реальный gateway после WNS connect (как в QrScanActivity, axiom#223) */
+    private fun getGatewayIp(): String? {
+        return try {
+            val wm = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            @Suppress("DEPRECATION")
+            val dhcp = wm.dhcpInfo
+            if (dhcp.gateway != 0) {
+                val g = dhcp.gateway
+                val ip = "${g and 0xff}.${(g shr 8) and 0xff}.${(g shr 16) and 0xff}.${(g shr 24) and 0xff}"
+                if (ip != "0.0.0.0") return ip
+            }
+            @Suppress("DEPRECATION")
+            val myIp = wm.connectionInfo?.ipAddress ?: 0
+            if (myIp != 0) {
+                val a = myIp and 0xff; val b = (myIp shr 8) and 0xff; val c = (myIp shr 16) and 0xff
+                return "$a.$b.$c.1"
+            }
+            null
+        } catch (e: Exception) {
+            InAppLogger.err("NfcReader", "B193: getGatewayIp ${e.message}")
+            null
+        }
+    }
+
     private fun afterConnected(data: NfcHandover) {
         afterConnectedCalled = true
         val node = AtomController.meshNode
         if (node == null) { InAppLogger.nfc("NfcReader:ERR", "afterConnected: node null"); finish(); return }
-        InAppLogger.nfc("NfcReader", "B192: afterConnected ip=${data.ip} ssid=${data.ssid}")
-        // B192: recreateTcpServer сразу (QR его не делает, но нам нужен listener на p2p0 после WNS)
-        try { node.recreateTcpServer() } catch (e: Exception) { InAppLogger.err("NfcReader", "B192: tcp ${e.message}") }
-        node.sendHello(data.ip)
-        InAppLogger.nfc("NfcReader", "B192: sendHello → ${data.ip}")
+        // B193: как QR (axiom#223) — реальный gateway, не NDEF IP
+        val gateway = getGatewayIp()
+        val targetIp = gateway ?: data.ip
+        InAppLogger.nfc("NfcReader", "B193: targetIp=$targetIp (gateway=$gateway ndef=${data.ip})")
+        node.sendHello(targetIp)
         currentHandover = data
         lifecycleScope.launch {
-            delay(2500L)  // QR wait 2500ms
+            delay(2500L)
             if (isFinishing || isDestroyed) {
-                InAppLogger.nfc("NfcReader", "B192: skip (destroyed)")
+                InAppLogger.nfc("NfcReader", "B193: skip (destroyed)")
                 return@launch
             }
-            val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
-                ?: Peer(id = "nfc", name = "NFC", ip = data.ip)
+            val peer = AtomController.peers.value.firstOrNull { it.ip == targetIp }
+                ?: Peer(id = "nfc", name = "NFC", ip = targetIp)
             currentPeer = peer
-            InAppLogger.nfc("NfcReader", "B192: peer=${peer.name} ip=${peer.ip} uris=${pendingUris.size}")
+            InAppLogger.nfc("NfcReader", "B193: peer=${peer.name} ip=${peer.ip} uris=${pendingUris.size}")
             if (pendingUris.isNotEmpty()) {
                 FileSenderService.startTransfer(this@NfcReaderActivity, peer, pendingUris, pendingPaths)
-                InAppLogger.nfc("NfcReader", "B192: sent ${pendingUris.size} files to ${data.ip}")
+                InAppLogger.nfc("NfcReader", "B193: sent ${pendingUris.size} files to ${targetIp}")
                 finish()
             } else {
                 showPostConnectActionSheet()
