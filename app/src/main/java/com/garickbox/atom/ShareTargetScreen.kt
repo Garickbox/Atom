@@ -59,6 +59,11 @@ fun ShareTargetScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider()
+            } else {
+                Spacer(Modifier.height(8.dp))
+                InfoCard()
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
             }
 
             if (p2pSearching || p2pPeers.isNotEmpty()) {
@@ -83,10 +88,9 @@ fun ShareTargetScreen(
             Spacer(Modifier.height(8.dp))
             SectionLabel("Другие способы")
 
-            ActionRow("📱", "NFC-касание", "приложи к другому телефону", actions.onSendViaNfc)
-            ActionRow("🔍", "Сканировать QR", "отправитель сканирует код", actions.onSendViaQr)
-            ActionRow("📶", "Wi-Fi Direct", "поиск без роутера", actions.onStartP2pSearch)
-            ActionRow("📲", "Показать свой QR", "принять файлы (не отправить)", actions.onShowQr)
+            ActionRow("📱", "NFC-касание", "на другом уже открыто 📥 Принять", actions.onSendViaNfc)
+            ActionRow("🔍", "Сканировать QR", "сканируй QR с экрана получателя", actions.onSendViaQr)
+            ActionRow("📶", "Wi-Fi Direct", "получатель: Атом → 📥 Принять", actions.onStartP2pSearch)
 
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = actions.onCancel, modifier = Modifier.fillMaxWidth()) {
@@ -158,6 +162,28 @@ private fun ago(ts: Long): String {
         d < 60_000 -> "${d / 1000} сек"
         d < 3_600_000 -> "${d / 60_000} мин"
         else -> "${d / 3_600_000} ч"
+    }
+}
+
+@Composable
+private fun InfoCard() {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        )
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("ℹ️", fontSize = 22.sp)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Получатель должен открыть Атом",
+                    fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("→ 📥 Принять (покажет QR и NFC)",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
