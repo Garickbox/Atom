@@ -17,9 +17,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,6 +56,9 @@ class FileListActivity : AppCompatActivity() {
     private var items by mutableStateOf<List<Row>>(emptyList())
     private var stack by mutableStateOf<List<Pair<String, String>>>(emptyList())
     private var reloadTrigger by mutableStateOf(0)
+    private var searchQuery by mutableStateOf("")
+    private var sortMode by mutableStateOf("name")  // name | date | size
+    private var sortMenuExpanded by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +78,17 @@ class FileListActivity : AppCompatActivity() {
     @Composable
     private fun ListUi() {
         LaunchedEffect(reloadTrigger) { items = loadItems() }
+        val filtered = remember(items, searchQuery) {
+            if (searchQuery.isBlank()) items
+            else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        }
+        val sorted = remember(filtered, sortMode) {
+            when (sortMode) {
+                "date" -> filtered
+                "size" -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenByDescending { it.size })
+                else -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenBy { it.name.lowercase() })
+            }
+        }
         val totalSize by remember { derivedStateOf { selected.values.sumOf { it.size } } }
 
         Scaffold(
@@ -78,6 +102,18 @@ class FileListActivity : AppCompatActivity() {
                     },
                     navigationIcon = {
                         IconButton(onClick = { goBack() }) { Text("←", fontSize = 22.sp) }
+                    },
+                    actions = {
+                        Box {
+                            IconButton(onClick = { sortMenuExpanded = true }) {
+                                Icon(Icons.Default.Sort, contentDescription = "Sort")
+                            }
+                            DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                                listOf("name" to "По имени", "date" to "По дате", "size" to "По размеру").forEach { (k, l) ->
+                                    DropdownMenuItem(text = { Text(l) }, onClick = { sortMode = k; sortMenuExpanded = false })
+                                }
+                            }
+                        }
                     }
                 )
             },
@@ -101,8 +137,26 @@ class FileListActivity : AppCompatActivity() {
                 }
             }
         ) { pad ->
-            LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-                items(items) { row -> RowUi(row) }
+            Column(Modifier.fillMaxSize().padding(pad)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("🔍 Поиск по имени…") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+                )
+                LazyColumn(Modifier.weight(1f)) {
+                    items(sorted) { row -> RowUi(row) }
+                }
             }
         }
     }
@@ -114,7 +168,25 @@ class FileListActivity : AppCompatActivity() {
             Modifier.fillMaxWidth().clickable { onTap(row) }.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(if (row.isDir) "📁" else mimeIcon(row.name), fontSize = 22.sp)
+            if (row.isDir) {
+                Text("📁", fontSize = 24.sp, modifier = Modifier.size(40.dp))
+            } else {
+                val mime = when (row.name.substringAfterLast('.', "").lowercase()) {
+                    "jpg","jpeg","png","gif","webp","heic","avif" -> "image"
+                    "mp4","mkv","mov","avi","webm","3gp" -> "video"
+                    else -> ""
+                }
+                if (mime.isNotEmpty()) {
+                    AsyncImage(
+                        model = row.uri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
+                    )
+                } else {
+                    Text(mimeIcon(row.name), fontSize = 24.sp)
+                }
+            }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(row.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     fontWeight = if (row.isDir) FontWeight.Medium else FontWeight.Normal)

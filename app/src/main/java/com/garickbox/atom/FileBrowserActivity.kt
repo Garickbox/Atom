@@ -205,7 +205,20 @@ class FileBrowserActivity : AppCompatActivity() {
     private fun onCategoryTap(cat: Category) {
         InAppLogger.d("FileBrowser", "tap ${cat.id} count=${cat.count}")
         when (cat.id) {
-            "internal" -> launchTreePicker("saf_internal_uri", "📱 Внутренняя", "primary:")
+            "internal" -> {
+                // B184a5: MANAGE_EXTERNAL_STORAGE — прямой /sdcard/ без picker
+                if (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            android.net.Uri.parse("package:$packageName")))
+                    } catch (_: Exception) {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }
+                    android.widget.Toast.makeText(this, "Разреши «Доступ ко всем файлам» → вернись", android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    launchTreePicker("saf_internal_uri", "📱 Внутренняя", "primary:")
+                }
+            }
             "android" -> launchTreePicker("saf_android_uri", "🔒 Android", "primary:Android")
             "images", "video", "audio", "apk", "downloads", "recent" -> {
                 startActivity(Intent(this, FileListActivity::class.java).apply {
