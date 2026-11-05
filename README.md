@@ -43,6 +43,23 @@ Atom — **напрямую**: два устройства в одной сет�
 - Pause / Resume с байта N
 - Multi-file серии до 100 файлов
 
+
+### 📱 NFC — касание вместо QR (0.2-alpha)
+
+**Verified:** 1.2 GB / 3 мин, 10 файлов папкой, 5+ подряд.
+
+1. POCO: FAB → **📱 Показать QR** (HCE armed, экран открыт)
+2. Redmi: FAB → **📱 NFC-касание**
+3. Коснись задними частями (у камеры) 2-3 сек
+4. Sheet: 📷 Фото / 🎬 Видео / 📄 Файл / 📁 Папка → send
+
+**Как работает:** NFC HCE передаёт Wi-Fi Direct credentials (SSID/pwd/IP) через Type 4 Tag (APDU handshake). Клиент подключается к P2P-группе и отправляет файлы.
+
+**Ограничения:**
+- Скорость: 5 GHz — 22 MB/s, 2.4 GHz — 4-5 MB/s. Framework выбирает band случайно (axiom#160).
+- Экран POCO должен быть открыт (HCE foreground-only).
+- Android 8.0+, NFC на обоих.
+
 ### 📶 Сопряжение
 - Wi-Fi Direct (5 GHz prefer на Android 10+)
 - Hotspot + QR
