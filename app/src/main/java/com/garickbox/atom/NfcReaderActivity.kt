@@ -62,82 +62,8 @@ class NfcReaderActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // B188: NFC-flow → stop continuousDiscover (axiom#212)
-        try {
-            AtomController.nfcFlowActive = true
-            AtomController.wifiDirect?.stopContinuousDiscover()
-            com.mesh.core.InAppLogger.nfc("NfcReader", "B188: onCreate stopContinuousDiscover (sender)")
-        } catch (_: Exception) {}
-        setContentView(R.layout.activity_nfc_reader)
-        statusText = findViewById(R.id.nfcStatus)
-        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
-        // B178/recall: восстановить pending после rotate/recreate
-        if (savedInstanceState != null) {
-            val peerId = savedInstanceState.getString("peer_id")
-            val peerName = savedInstanceState.getString("peer_name")
-            val peerIp = savedInstanceState.getString("peer_ip")
-            if (!peerId.isNullOrBlank() && !peerIp.isNullOrBlank()) {
-                currentPeer = Peer(id = peerId, name = peerName ?: "?", ip = peerIp)
-            }
-            val ssid = savedInstanceState.getString("handover_ssid")
-            val pwd = savedInstanceState.getString("handover_pwd")
-            val hIp = savedInstanceState.getString("handover_ip")
-            if (!ssid.isNullOrBlank() && !pwd.isNullOrBlank() && !hIp.isNullOrBlank()) {
-                currentHandover = NfcHandover(ssid, pwd, hIp)
-            }
-            sheetShown = savedInstanceState.getBoolean("sheet_shown", false)
-            afterConnectedCalled = savedInstanceState.getBoolean("after_called", false)
-            InAppLogger.nfc("NfcReader", "B178: restore peer=${currentPeer?.name} sheetShown=$sheetShown afterCalled=$afterConnectedCalled")
-        }
-        if (nfcAdapter == null) { statusText.text = "NFC не поддерживается"; return }
-        if (!nfcAdapter!!.isEnabled) { statusText.text = "Включи NFC в настройках"; return }
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        currentPeer?.let { p ->
-            outState.putString("peer_id", p.id)
-            outState.putString("peer_name", p.name)
-            outState.putString("peer_ip", p.ip)
-        }
-        currentHandover?.let { h ->
-            outState.putString("handover_ssid", h.ssid)
-            outState.putString("handover_pwd", h.passphrase)
-            outState.putString("handover_ip", h.ip)
-        }
-        outState.putBoolean("sheet_shown", sheetShown)
-        outState.putBoolean("after_called", afterConnectedCalled)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        val opts = Bundle().apply { putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 250) }
-        nfcAdapter?.enableReaderMode(
-            this,
-            { tag -> onTag(tag) },
-            NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
-            opts
-        )
-        // B179: fallback — connect был, sheet не показан → показать
-        if (currentPeer != null && !sheetShown && afterConnectedCalled) {
-            InAppLogger.nfc("NfcReader", "B179: onResume fallback — show sheet for ${currentPeer?.name}")
-            lifecycleScope.launch {
-                delay(300L)
-                if (!isFinishing && !isDestroyed && !sheetShown) {
-                    showPostConnectActionSheet()
-                }
-            }
-        }
-    }
-
-    override fun onPause() { super.onPause(); nfcAdapter?.disableReaderMode(this) }
-    override fun onDestroy() {
-        super.onDestroy()
-        // B194: НЕ resume continuousDiscover — FileSenderService ещё использует P2P (axiom#225)
-        try {
-            AtomController.nfcFlowActive = false
-            com.mesh.core.InAppLogger.nfc("NfcReader", "B194: onDestroy — nfcFlowActive=false (no resume)")
-        } catch (_: Exception) {}
+        // B195: no resume (FileSender/Receiver handles)
+        try { AtomController.nfcFlowActive = false } catch (_: Exception) {}
         // B166: сброс P2P-клиента — иначе второй connect идёт на stale group
         // (Redmi становится GO, POCO не клиент, роли перепутаны)
         // B166b: НЕ трогаем P2P в onDestroy — FileSenderService ещё использует P2P.
@@ -264,10 +190,11 @@ class NfcReaderActivity : AppCompatActivity() {
                     override fun onUnavailable() {
                         if (!finished.compareAndSet(false, true)) return
                         InAppLogger.err("NfcReader", "B192: WNS onUnavailable (attempt $attempt)")
-                        if (attempt < 2) {
+                        if (attempt < 5) {
+                            InAppLogger.nfc("NfcReader", "B195: WNS retry ${attempt}/5 in ${500L * attempt}ms")
                             handler.postDelayed({ tryWns() }, 500L * attempt)
                         } else {
-                            InAppLogger.err("NfcReader", "B192: WNS fail x2 → fallback WPS-PBC")
+                            InAppLogger.err("NfcReader", "B195: WNS fail x5 → fallback WPS-PBC")
                             if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
                         }
                     }
@@ -380,10 +307,21 @@ class NfcReaderActivity : AppCompatActivity() {
             done = true
             connectInFlight = false
             restore()
-            if (conn.groupOwnerAddress.isNotBlank()) {
-                try { AtomController.meshNode?.sendHello(conn.groupOwnerAddress) } catch (_: Exception) {}
+            // B195: КОРЕНЬ — после WPS-PBC пересоздать сокеты на p2p0 (QR это делает в onAvailable)
+            try {
+                boundCm?.bindProcessToNetwork(null)
+                AtomController.meshNode?.recreateUdpSocket()
+                AtomController.meshNode?.recreateTcpServer()
+                InAppLogger.nfc("NfcReader", "B195: fallback onConnected — UDP+TCP recreated")
+            } catch (e: Exception) {
+                InAppLogger.err("NfcReader", "B195: recreate ${e.message}")
             }
-            handler.postDelayed({ afterConnected(data) }, 2000L)
+            handler.postDelayed({
+                if (conn.groupOwnerAddress.isNotBlank()) {
+                    try { AtomController.meshNode?.sendHello(conn.groupOwnerAddress) } catch (_: Exception) {}
+                }
+                handler.postDelayed({ afterConnected(data) }, 1500L)
+            }, 500L)
         }
 
         wd.onError = err@{ err ->
