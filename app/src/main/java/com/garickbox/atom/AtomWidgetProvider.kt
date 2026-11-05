@@ -6,10 +6,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.RectF
 import android.view.View
 import android.widget.RemoteViews
 import com.mesh.core.InAppLogger
@@ -44,52 +40,25 @@ class AtomWidgetProvider : AppWidgetProvider() {
             } catch (_: Exception) {}
         }
 
-        /** B210: ring bitmap (Canvas.drawArc → Bitmap) — axiom#288 */
-        fun makeRingBitmap(ctx: Context, pct: Int, sizePx: Int, showPercent: Boolean): Bitmap {
-            val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-            val c = Canvas(bmp)
-            val stroke = sizePx * 0.10f
-            val pad = stroke / 2f
-            val rect = RectF(pad, pad, sizePx - pad, sizePx - pad)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = stroke
-                strokeCap = Paint.Cap.ROUND
-            }
-            paint.color = 0x33FFFFFF.toInt()
-            c.drawArc(rect, 0f, 360f, false, paint)
-            paint.color = 0xFFFFFFFF.toInt()
-            val sweep = 360f * pct.coerceIn(0, 100) / 100f
-            if (sweep > 0f) c.drawArc(rect, -90f, sweep, false, paint)
-            if (showPercent) {
-                paint.style = Paint.Style.FILL
-                paint.textAlign = Paint.Align.CENTER
-                paint.textSize = sizePx * 0.24f
-                paint.color = 0xFFFFFFFF.toInt()
-                paint.isFakeBoldText = true
-                val txt = "$pct%"
-                c.drawText(txt, sizePx / 2f, sizePx / 2f + paint.textSize * 0.35f, paint)
-            }
-            return bmp
-        }
-
         private fun buildRemoteViews(ctx: Context, state: TransferState): RemoteViews {
             val rv = RemoteViews(ctx.packageName, R.layout.widget_atom)
             rv.setOnClickPendingIntent(R.id.top_row, piOpenApp(ctx))
 
-            // ring
             val pct = when (state) {
                 is TransferState.Running -> if (state.bytesTotal > 0) (state.bytesSent * 100 / state.bytesTotal).toInt() else 0
                 else -> 0
             }
-            val showPct = state is TransferState.Running
-            rv.setImageViewBitmap(R.id.ring, makeRingBitmap(ctx, pct, 200, showPct))
-
-            // header buttons: по умолчанию — «📥 Принять» и «📤 Отправить»
+            // defaults: idle — Принять + Отправить
             rv.setTextViewText(R.id.btn_primary, "📥")
             rv.setOnClickPendingIntent(R.id.btn_primary, piToggle(ctx))
+            rv.setViewVisibility(R.id.btn_primary, View.VISIBLE)
             rv.setTextViewText(R.id.btn_secondary, "📤")
             rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
+            rv.setViewVisibility(R.id.btn_secondary, View.VISIBLE)
+            rv.setTextViewText(R.id.file_name, "")
+            rv.setViewVisibility(R.id.file_name, View.GONE)
+            rv.setTextViewText(R.id.metrics, "")
+            rv.setViewVisibility(R.id.metrics, View.GONE)
             rv.setViewVisibility(R.id.progress, View.GONE)
 
             when (state) {
@@ -97,11 +66,12 @@ class AtomWidgetProvider : AppWidgetProvider() {
                     val icon = if (state.isReceiver) "📥" else "📤"
                     val arrow = if (state.isReceiver) "←" else "→"
                     rv.setTextViewText(R.id.title, "$icon $arrow ${state.peerName}")
-                    rv.setTextViewText(R.id.subtitle, "Файл ${state.fileIndex}/${state.fileCount}")
+                    rv.setTextViewText(R.id.subtitle, "Файл ${state.fileIndex}/${state.fileCount} · $pct%")
                     rv.setTextViewText(R.id.file_name, state.fileName)
+                    rv.setViewVisibility(R.id.file_name, View.VISIBLE)
                     val eta = if (state.bytesPerSecond > 0 && state.bytesTotal > state.bytesSent) {
-                        val s = (state.bytesTotal - state.bytesSent) / state.bytesPerSecond
-                        " · ⏱ ${s / 60}:%02d".format(s % 60)
+                        val sec = (state.bytesTotal - state.bytesSent) / state.bytesPerSecond
+                        " · ⏱ ${sec / 60}:%02d".format(sec % 60)
                     } else ""
                     val hz = AtomController.currentP2pFrequencyHz
                     val band = when {
@@ -112,12 +82,12 @@ class AtomWidgetProvider : AppWidgetProvider() {
                     rv.setTextViewText(R.id.metrics,
                         "⚡ ${fmtSpeed(state.bytesPerSecond)}" +
                             (if (band.isNotEmpty()) " · 📶 $band" else "") + eta)
+                    rv.setViewVisibility(R.id.metrics, View.VISIBLE)
                     rv.setProgressBar(R.id.progress, 100, pct, false)
                     rv.setViewVisibility(R.id.progress, View.VISIBLE)
                     if (state.isReceiver) {
                         rv.setTextViewText(R.id.btn_primary, "✕")
                         rv.setOnClickPendingIntent(R.id.btn_primary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
-                        rv.setTextViewText(R.id.btn_secondary, "")
                         rv.setViewVisibility(R.id.btn_secondary, View.GONE)
                     } else {
                         rv.setTextViewText(R.id.btn_primary, "⏸")
@@ -182,14 +152,12 @@ class AtomWidgetProvider : AppWidgetProvider() {
                         val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
                         rv.setTextViewText(R.id.title, "⚛️ Принимаю")
                         rv.setTextViewText(R.id.subtitle,
-                            if (remain > 0) "Осталось ${remain / 60}:%02d".format(remain % 60) else "Активно")
-                        rv.setTextViewText(R.id.metrics, "📥 Жду файлы…")
+                            if (remain > 0) "⏹ Осталось ${remain / 60}:%02d · NFC/QR".format(remain % 60) else "📱 NFC · 🔍 QR")
                     } else {
                         val last = AtomController.lastPeer
+                        val known = if (last != null && last.name.isNotBlank()) " · ${last.name.take(15)}" else ""
                         rv.setTextViewText(R.id.title, "⚛️ Атом")
-                        rv.setTextViewText(R.id.subtitle,
-                            if (last != null && last.name.isNotBlank()) "📱 ${last.name.take(20)}" else "Готов к передаче")
-                        rv.setTextViewText(R.id.metrics, "")
+                        rv.setTextViewText(R.id.subtitle, "📱 NFC · 🔍 QR$known")
                     }
                     rv.setTextViewText(R.id.file_name, "")
                     rv.setTextViewText(R.id.btn_primary, "📥")
