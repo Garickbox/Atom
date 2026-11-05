@@ -150,17 +150,28 @@ object TestApi {
                     }
             } catch (e: Exception) { sb.appendLine("ni err: " + e.message) }
             sb.appendLine()
-            sb.appendLine("═══ /proc/net/arp ═══")
+            sb.appendLine("═══ /proc/self/net/arp ═══")
             try {
-                java.io.File("/proc/net/arp").readLines().take(15).forEach { sb.appendLine(it) }
-            } catch (e: Exception) { sb.appendLine("arp err: " + e.message) }
+                java.io.File("/proc/self/net/arp").readLines().take(15).forEach { sb.appendLine(it) }
+            } catch (e: Exception) {
+                sb.appendLine("arp err: " + e.message)
+                sb.appendLine("(axiom#165: /proc/net/* SELinux restricted; fallback: adb shell ip neigh)")
+            }
             sb.appendLine()
-            sb.appendLine("═══ TCP listeners (47822, 47823) ═══")
+            sb.appendLine("═══ /proc/self/net/tcp (47822=0xBACE, 47823=0xBACF) ═══")
             try {
-                java.io.File("/proc/net/tcp").readLines()
-                    .filter { it.contains(":BACE", true) || it.contains(":BACF", true) || it.contains(":BACE0") }
-                    .take(5).forEach { sb.appendLine(it) }
-            } catch (e: Exception) { sb.appendLine("tcp err: " + e.message) }
+                java.io.File("/proc/self/net/tcp").readLines()
+                    .filter { it.contains(":BACE", true) || it.contains(":BACF", true) }
+                    .take(10).forEach { sb.appendLine(it) }
+            } catch (e: Exception) {
+                sb.appendLine("tcp err: " + e.message)
+            }
+            // ADB-only: ip neigh
+            sb.appendLine()
+            sb.appendLine("═══ HINT: full state через ADB ═══")
+            sb.appendLine("  adb shell ip neigh show")
+            sb.appendLine("  adb shell dumpsys wifi | grep -i p2p")
+            sb.appendLine("  adb shell dumpsys nfc | head -100")
             sb.toString()
         } catch (e: Exception) { "err: " + e.message }
     }
