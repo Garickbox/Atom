@@ -104,6 +104,7 @@ class FileListActivity : AppCompatActivity() {
             }
         }
         var searchExpanded by remember { mutableStateOf(false) }
+        var showPlaylistSheet by remember { mutableStateOf(false) }
         val totalSize by remember { derivedStateOf { PlaylistManager.totalSize } }
         val itemCount by remember { derivedStateOf { PlaylistManager.count } }
 
@@ -154,8 +155,8 @@ class FileListActivity : AppCompatActivity() {
                 ) {
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 4.dp) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Выбрано: $itemCount", fontWeight = FontWeight.Bold)
+                            Column(Modifier.weight(1f).clickable { showPlaylistSheet = true }) {
+                                Text("Выбрано: $itemCount ▲", fontWeight = FontWeight.Bold)
                                 Text(fmtBytes(totalSize), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Button(onClick = { sendSelected() }) { Text("📤 Отправить") }
@@ -189,6 +190,54 @@ class FileListActivity : AppCompatActivity() {
                 }
             }
         }
+        if (showPlaylistSheet) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ModalBottomSheet(
+                onDismissRequest = { showPlaylistSheet = false },
+                sheetState = sheetState
+            ) {
+                PlaylistSheetContent(
+                    onClose = { showPlaylistSheet = false },
+                    onSend = { showPlaylistSheet = false; sendSelected() },
+                    onClear = { PlaylistManager.clear(); showPlaylistSheet = false }
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun PlaylistSheetContent(onClose: () -> Unit, onSend: () -> Unit, onClear: () -> Unit) {
+        val items = PlaylistManager.items
+        val total = PlaylistManager.totalSize
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("📋 Плейлист (${items.size}) · ${fmtBytes(total)}",
+                    fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                IconButton(onClick = onClose) { Text("✕", fontSize = 18.sp) }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            LazyColumn(Modifier.heightIn(max = 400.dp)) {
+                items(items.size) { idx ->
+                    val it = items[idx]
+                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("📄", fontSize = 20.sp)
+                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                            Text(it.name, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val sub = (it.relativePath ?: "").let { p -> if (p.isBlank()) fmtBytes(it.sizeBytes) else "$p · ${fmtBytes(it.sizeBytes)}" }
+                            Text(sub, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = { PlaylistManager.remove(it.uri) }) { Text("✕", fontSize = 18.sp) }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) { Text("🗑 Очистить") }
+                Button(onClick = onSend, modifier = Modifier.weight(1f)) { Text("📤 Отправить (${items.size})") }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 
     @OptIn(ExperimentalFoundationApi::class)
@@ -196,12 +245,14 @@ class FileListActivity : AppCompatActivity() {
     private fun RowUi(row: Row) {
         val isChecked = PlaylistManager.contains(row.uri)
         val ctx = this@FileListActivity
+        val isHidden = row.name.startsWith(".") || row.relPath.split("/").any { it.startsWith(".") && it != "." && it != ".." }
         Row(
             Modifier.fillMaxWidth()
                 .combinedClickable(
                     onClick = { onTap(row) },
                     onLongClick = { if (row.isDir) showFolderSheet(row) }
                 )
+                .androidx.compose.ui.graphics.graphicsLayer { alpha = if (isHidden) 0.5f else 1f }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -303,6 +354,12 @@ class FileListActivity : AppCompatActivity() {
     }
 
     private fun countFilesInFolder(row: Row): Int {
+        // B185b: direct → File.listFiles (SAF не работает)
+        if (currentMode == "direct") {
+            return try {
+                java.io.File(row.docId).walkTopDown().count { it.isFile }
+            } catch (_: Exception) { 0 }
+        }
         return try {
             val treeUri = currentTreeUri ?: return 0
             var n = 0
@@ -324,6 +381,24 @@ class FileListActivity : AppCompatActivity() {
     }
 
     private fun addFolderToPlaylist(row: Row) {
+        // B185b: direct → walkTopDown через File API
+        if (currentMode == "direct") {
+            var directAdded = 0
+            try {
+                val base = java.io.File(row.docId)
+                base.walkTopDown().filter { it.isFile }.forEach { f ->
+                    val rel = row.name + "/" + f.relativeTo(base).path.replace("\\", "/")
+                    if (PlaylistManager.add(PlaylistManager.Item(
+                        uri = Uri.fromFile(f), name = f.name, sizeBytes = f.length(),
+                        relativePath = rel, source = "direct", packageName = null)))
+                        directAdded++
+                }
+            } catch (e: Exception) {
+                InAppLogger.err("FileList", "addFolderDirect: ${e.message}")
+            }
+            android.widget.Toast.makeText(this, "Добавлено $directAdded файлов из ${row.name}", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val treeUri = currentTreeUri ?: return
         var added = 0
         fun walk(parentId: String, path: String) {
@@ -366,6 +441,17 @@ class FileListActivity : AppCompatActivity() {
             // B185a: не очищаем плейлист
             reloadTrigger++
         } else finish()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (PickPeerActivity.sentSuccessfully) {
+            PickPeerActivity.sentSuccessfully = false
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
+            finish()
+        }
     }
 
     override fun onBackPressed() {
@@ -585,19 +671,9 @@ class FileListActivity : AppCompatActivity() {
         if (finalUris.isEmpty()) return
         val uris = finalUris
         val paths = items.map { it.relativePath ?: "" }
-        val intent = Intent(this, ShareTargetActivity::class.java).apply {
-            action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
-            type = "*/*"
-            if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris.first())
-            else putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
-            putStringArrayListExtra("atom_relative_paths", ArrayList(paths))
-            clipData = android.content.ClipData.newRawUri("", uris.first()).apply {
-                for (i in 1 until uris.size) addItem(android.content.ClipData.Item(uris[i]))
-            }
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        InAppLogger.d("FileList", "send ${uris.size} files")
-        startActivity(intent)
+        // B185b: PickPeerActivity вместо ShareTargetActivity (внутренний flow)
+        InAppLogger.d("FileList", "send ${uris.size} files → PickPeer")
+        startActivity(Intent(this, PickPeerActivity::class.java))
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
         // B185a: НЕ finish — после cancel в ShareTarget вернёмся сюда с сохранённым плейлистом
     }

@@ -20,6 +20,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ShareTargetActivity : AppCompatActivity() {
+    companion object {
+        const val EXTRA_FORCE_STEP2 = "force_step2"
+    }
     private var pendingPreflightCallback: (() -> Unit)? = null
 
     override fun onResume() {
@@ -153,7 +156,14 @@ class ShareTargetActivity : AppCompatActivity() {
             showTvFlow()
             return
         }
-        showStep1()
+        if (intent?.getBooleanExtra(EXTRA_FORCE_STEP2, false) == true) {
+            showStep1()
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                dialog?.let { showStep2(it) }
+            }, 250L)
+        } else {
+            showStep1()
+        }
     }
 
     private fun collectUris(intent: Intent?): List<Uri> {

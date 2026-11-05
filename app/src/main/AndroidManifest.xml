@@ -155,6 +155,11 @@
             android:label="📂 Файлы" />
 
         <activity
+            android:name=".PickPeerActivity"
+            android:exported="false"
+            android:label="Куда отправить" />
+
+        <activity
             android:name=".FileListActivity"
             android:exported="false"
             android:label="📁 Содержимое" />
