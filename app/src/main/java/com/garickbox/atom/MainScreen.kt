@@ -350,7 +350,6 @@ private fun UpdateBlock(s: TransferState.UpdatePending) {
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-@Composable
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TransferFab(onClick: () -> Unit, onLongClick: () -> Unit) {
