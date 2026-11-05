@@ -33,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 data class MainActions(
     val onFabClick: () -> Unit,
@@ -50,8 +49,8 @@ data class MainActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(isTv: Boolean, actions: MainActions) {
-    val peers by AtomController.peers.collectAsStateWithLifecycle()
-    val transfer by AtomController.transferState.collectAsStateWithLifecycle()
+    val peers by AtomController.peers.collectAsState()
+    val transfer by AtomController.transferState.collectAsState()
     val live = remember(peers) { peers.filter { System.currentTimeMillis() - it.lastSeenMs < 5 * 60_000L && it.name.isNotBlank() } }
 
     var showEasterEgg by remember { mutableStateOf(false) }
