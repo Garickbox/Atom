@@ -13,6 +13,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -50,7 +52,7 @@ class FileListActivity : AppCompatActivity() {
     private var currentTitle: String = "Файлы"
     private var currentPath: String = ""
 
-    private val selected = mutableStateMapOf<String, Row>()
+    // B185a: selected заменён на PlaylistManager (singleton, живёт между экранами)
     private var items by mutableStateOf<List<Row>>(emptyList())
     private var stack by mutableStateOf<List<Pair<String, String>>>(emptyList())
     private var reloadTrigger by mutableStateOf(0)
@@ -102,7 +104,8 @@ class FileListActivity : AppCompatActivity() {
             }
         }
         var searchExpanded by remember { mutableStateOf(false) }
-        val totalSize by remember { derivedStateOf { selected.values.sumOf { it.size } } }
+        val totalSize by remember { derivedStateOf { PlaylistManager.totalSize } }
+        val itemCount by remember { derivedStateOf { PlaylistManager.count } }
 
         Scaffold(
             topBar = {
@@ -145,14 +148,14 @@ class FileListActivity : AppCompatActivity() {
             },
             bottomBar = {
                 AnimatedVisibility(
-                    visible = selected.isNotEmpty(),
+                    visible = itemCount > 0,
                     enter = slideInVertically(initialOffsetY = { it }) + androidx.compose.animation.fadeIn(),
                     exit = slideOutVertically(targetOffsetY = { it }) + androidx.compose.animation.fadeOut()
                 ) {
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 4.dp) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("Выбрано: ${selected.size}", fontWeight = FontWeight.Bold)
+                                Text("Выбрано: $itemCount", fontWeight = FontWeight.Bold)
                                 Text(fmtBytes(totalSize), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Button(onClick = { sendSelected() }) { Text("📤 Отправить") }
@@ -188,11 +191,18 @@ class FileListActivity : AppCompatActivity() {
         }
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     private fun RowUi(row: Row) {
-        val isChecked = selected.containsKey(row.docId)
+        val isChecked = PlaylistManager.contains(row.uri)
+        val ctx = this@FileListActivity
         Row(
-            Modifier.fillMaxWidth().clickable { onTap(row) }.padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth()
+                .combinedClickable(
+                    onClick = { onTap(row) },
+                    onLongClick = { if (row.isDir) showFolderSheet(row) }
+                )
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             when {
@@ -238,6 +248,9 @@ class FileListActivity : AppCompatActivity() {
                 Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (!row.isDir) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) }, modifier = Modifier.size(40.dp))
+            else if (isChecked || PlaylistManager.items.any { it.relativePath?.startsWith(row.relPath + "/") == true }) {
+                Text("✓", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
+            }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
     }
@@ -260,11 +273,85 @@ class FileListActivity : AppCompatActivity() {
             stack = stack + (currentParentId to currentPath)
             currentParentId = row.docId
             currentPath = row.relPath
-            selected.clear()
+            // B185a: НЕ очищаем плейлист при навигации
             reloadTrigger++
         } else {
-            if (selected.containsKey(row.docId)) selected.remove(row.docId) else selected[row.docId] = row
+            if (PlaylistManager.contains(row.uri)) {
+                PlaylistManager.remove(row.uri)
+            } else {
+                val added = PlaylistManager.add(PlaylistManager.Item(
+                    uri = row.uri, name = row.name, sizeBytes = row.size,
+                    relativePath = row.relPath, source = currentMode, icon = row.icon))
+                if (!added) android.widget.Toast.makeText(this, "Уже в плейлисте или лимит 500", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
+    }
+
+    private fun showFolderSheet(row: Row) {
+        val files = countFilesInFolder(row)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("📁 ${row.name}")
+            .setItems(arrayOf("📂 Открыть", "➕ Добавить в плейлист ($files файлов)")) { _, which ->
+                when (which) {
+                    0 -> onTap(row)
+                    1 -> addFolderToPlaylist(row)
+                }
+            }
+            .show()
+    }
+
+    private fun countFilesInFolder(row: Row): Int {
+        return try {
+            val treeUri = currentTreeUri ?: return 0
+            var n = 0
+            fun walk(parentId: String) {
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+                contentResolver.query(childrenUri, arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getString(0) ?: continue
+                        val mime = c.getString(1) ?: ""
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(id) else n++
+                    }
+                }
+            }
+            walk(row.docId)
+            n
+        } catch (_: Exception) { 0 }
+    }
+
+    private fun addFolderToPlaylist(row: Row) {
+        val treeUri = currentTreeUri ?: return
+        var added = 0
+        fun walk(parentId: String, path: String) {
+            try {
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+                contentResolver.query(childrenUri, arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getString(0) ?: continue
+                        val name = c.getString(1) ?: continue
+                        val mime = c.getString(2) ?: ""
+                        val size = if (c.isNull(3)) 0L else c.getLong(3)
+                        val rel = if (path.isBlank()) name else "$path/$name"
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(id, rel)
+                        else {
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                            if (PlaylistManager.add(PlaylistManager.Item(
+                                uri = docUri, name = name, sizeBytes = size,
+                                relativePath = row.name + "/" + rel, source = currentMode)))
+                                added++
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        walk(row.docId, "")
+        android.widget.Toast.makeText(this, "Добавлено $added файлов из ${row.name}", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun goBack() {
@@ -273,7 +360,7 @@ class FileListActivity : AppCompatActivity() {
             stack = stack.dropLast(1)
             currentParentId = pid
             currentPath = pPath
-            selected.clear()
+            // B185a: не очищаем плейлист
             reloadTrigger++
         } else finish()
     }
@@ -468,8 +555,9 @@ class FileListActivity : AppCompatActivity() {
     }
 
     private fun sendSelected() {
-        if (selected.isEmpty()) return
-        val rows = selected.values.toList()
+        if (PlaylistManager.count == 0) return
+        PlaylistManager.pendingClearOnSuccess = true
+        val rows = PlaylistManager.items.toList()
         // B184f: lazy copy APK (только выбранные, не все 81)
         val finalUris = mutableListOf<Uri>()
         for (r in rows) {
@@ -508,7 +596,7 @@ class FileListActivity : AppCompatActivity() {
         InAppLogger.d("FileList", "send ${uris.size} files")
         startActivity(intent)
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
-        finish()
+        // B185a: НЕ finish — после cancel в ShareTarget вернёмся сюда с сохранённым плейлистом
     }
 
     private fun fmtBytes(b: Long): String {

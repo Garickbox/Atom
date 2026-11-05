@@ -799,6 +799,16 @@ class MainActivity : AppCompatActivity() {
         transferObserverJob = lifecycleScope.launch {
             AtomController.transferState.collect { state ->
                 runOnUiThread { renderTransferPanel(state) }
+                // B185a: clear playlist после Success
+                if (state is TransferState.Success && PlaylistManager.pendingClearOnSuccess) {
+                    val n = PlaylistManager.count
+                    PlaylistManager.clear()
+                    try {
+                        runOnUiThread { android.widget.Toast.makeText(this@MainActivity,
+                            "✅ Отправлено: $n файлов", android.widget.Toast.LENGTH_SHORT).show() }
+                    } catch (_: Exception) {}
+                    InAppLogger.d("MainActivity", "B185a: playlist cleared after Success ($n)")
+                }
             }
         }
     }
