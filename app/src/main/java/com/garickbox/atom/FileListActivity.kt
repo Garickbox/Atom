@@ -228,7 +228,7 @@ class FileListActivity : AppCompatActivity() {
             }
             "recent" -> {
                 uri = MediaStore.Files.getContentUri("external")
-                selection = "${MediaStore.MediaColumns.MEDIA_TYPE} != 0"
+                selection = "${MediaStore.Files.FileColumns.MEDIA_TYPE} != 0"
                 args = null
                 sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 100"
             }

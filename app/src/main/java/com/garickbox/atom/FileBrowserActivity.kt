@@ -8,6 +8,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -140,7 +141,7 @@ class FileBrowserActivity : AppCompatActivity() {
                 .fillMaxWidth()
                 .height(140.dp)
                 .graphicsLayer { scaleX = scale; scaleY = scale }
-                .androidx.compose.foundation.clickable(
+                .clickable(
                     interactionSource = interaction,
                     indication = androidx.compose.material3.ripple(),
                     onClick = onClick
