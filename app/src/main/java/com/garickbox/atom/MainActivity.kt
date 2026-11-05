@@ -30,6 +30,24 @@ class MainActivity : AppCompatActivity() {
     }
     private var pendingShortcutFind = false
     private var pickerShownForPeer = false
+    // B200: NFC pre-pick — файл ДО NFC (axiom#209)
+    private val nfcFilePicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK || result.data == null) return@registerForActivityResult
+        val data = result.data!!
+        val uris = mutableListOf<android.net.Uri>()
+        data.clipData?.let { clip ->
+            for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+        }
+        data.data?.let { uris.add(it) }
+        if (uris.isNotEmpty()) {
+            NfcReaderActivity.pendingUris = uris
+            NfcReaderActivity.pendingPaths = uris.map { null }
+            startActivity(Intent(this, NfcReaderActivity::class.java))
+        }
+    }
+
     private val qrFilePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -574,7 +592,10 @@ class MainActivity : AppCompatActivity() {
             { qrFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) },
-            { NfcReaderActivity.pendingUris = emptyList(); NfcReaderActivity.pendingPaths = emptyList(); startActivity(Intent(this, NfcReaderActivity::class.java)) }
+            // B200: pre-pick ДО NFC (axiom#209)
+            { nfcFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) }
         )
         options.forEachIndexed { i, opt ->
             container.addView(android.widget.TextView(this).apply {
@@ -1029,7 +1050,10 @@ class MainActivity : AppCompatActivity() {
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFilePicker() },
                 { MainActivity.pendingPeerForShareTarget = peer; pickerShownForPeer = true; openFolderPicker() },
                 { sheet.dismiss(); startQrScanWithActionSheet() },
-                { sheet.dismiss(); NfcReaderActivity.pendingUris = emptyList(); NfcReaderActivity.pendingPaths = emptyList(); startActivity(Intent(this, NfcReaderActivity::class.java)) }
+                // B200: pre-pick ДО NFC (axiom#209)
+                { sheet.dismiss(); nfcFilePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) }) }
             )
             opts.forEachIndexed { i, opt ->
                 container.addView(android.widget.TextView(this).apply {
