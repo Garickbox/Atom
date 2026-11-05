@@ -101,6 +101,7 @@ class FileListActivity : AppCompatActivity() {
                 else -> filtered
             }
         }
+        var searchExpanded by remember { mutableStateOf(false) }
         val totalSize by remember { derivedStateOf { selected.values.sumOf { it.size } } }
 
         Scaffold(
@@ -114,6 +115,9 @@ class FileListActivity : AppCompatActivity() {
                     },
                     navigationIcon = { IconButton(onClick = { goBack() }) { Text("←", fontSize = 22.sp) } },
                     actions = {
+                        IconButton(onClick = { searchExpanded = !searchExpanded; if (!searchExpanded) searchQuery = "" }) {
+                            Text("🔍", fontSize = 20.sp)
+                        }
                         if (currentMode == "tree" || currentMode == "direct") {
                             Box {
                                 IconButton(onClick = { sortMenuExpanded = true }) { Text("⇅", fontSize = 22.sp) }
@@ -158,15 +162,25 @@ class FileListActivity : AppCompatActivity() {
             }
         ) { pad ->
             Column(Modifier.fillMaxSize().padding(pad)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                    placeholder = { Text("🔍 Поиск по имени…", fontSize = 14.sp) },
-                    leadingIcon = { Text("🔍", fontSize = 18.sp) },
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
-                )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = searchExpanded,
+                    enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        placeholder = { Text("Поиск по имени…", fontSize = 14.sp) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) { Text("✕", fontSize = 18.sp) }
+                            }
+                        },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                    )
+                }
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 80.dp)) {
                     items(sorted) { row -> RowUi(row) }
                 }
@@ -192,9 +206,10 @@ class FileListActivity : AppCompatActivity() {
                         contentScale = ContentScale.Fit
                     )
                 }
-                row.name.substringAfterLast('.', "").lowercase() in listOf("jpg","jpeg","png","gif","webp","heic","avif","mp4","mkv","mov","avi","webm") -> {
+                // B184f: AVI/MPEG/WMV → иконка (VideoFrameDecoder не умеет)
+                row.name.substringAfterLast('.', "").lowercase() in listOf("jpg","jpeg","png","gif","webp","heic","avif","mp4","mkv","mov","webm","3gp","m4v") -> {
                     val isVideo = row.name.substringAfterLast('.', "").lowercase() in
-                        listOf("mp4","mkv","mov","avi","webm","3gp")
+                        listOf("mp4","mkv","mov","webm","3gp","m4v")
                     val model = if (isVideo) {
                         ImageRequest.Builder(this@FileListActivity)
                             .data(row.uri)
@@ -395,6 +410,7 @@ class FileListActivity : AppCompatActivity() {
 
     private val apkCacheDir by lazy { java.io.File(cacheDir, "apks").apply { mkdirs() } }
 
+    // B184f: loadInstalledApps БЕЗ copy — только метаданные. Copy → лениво в sendSelected()
     private fun loadInstalledApps(): List<Row> {
         val out = mutableListOf<Row>()
         val pm = packageManager
@@ -405,17 +421,18 @@ class FileListActivity : AppCompatActivity() {
                 val icon = pm.getApplicationIcon(app)
                 val apkFile = java.io.File(app.sourceDir)
                 if (!apkFile.exists()) return@forEach
-                // B184d: копируем APK в cache при первой загрузке — иначе file:// нельзя отправить
-                val cacheApk = java.io.File(apkCacheDir, app.packageName + ".apk")
-                if (!cacheApk.exists() || cacheApk.length() != apkFile.length()) {
-                    try { apkFile.copyTo(cacheApk, overwrite = true) }
-                    catch (e: Exception) { InAppLogger.err("FileList", "copy ${app.packageName}: ${e.message}"); return@forEach }
-                }
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    this, "$packageName.fileprovider", cacheApk)
-                out.add(Row(uri, label, false, apkFile.length(), label + ".apk", app.packageName, icon))
+                // uri = EMPTY, docId = packageName → copy будет в sendSelected
+                out.add(Row(
+                    uri = Uri.EMPTY,
+                    name = label,
+                    isDir = false,
+                    size = apkFile.length(),
+                    relPath = label.replace("/", "_") + ".apk",
+                    docId = "pkg:" + app.packageName,
+                    icon = icon
+                ))
             }
-            InAppLogger.d("FileList", "installed_apps: ${out.size} user apps")
+            InAppLogger.d("FileList", "installed_apps: ${out.size} user apps (no copy)")
         } catch (e: Exception) { InAppLogger.err("FileList", "loadInstalledApps: ${e.message}") }
         out.sortBy { it.name.lowercase() }
         return out
@@ -453,7 +470,29 @@ class FileListActivity : AppCompatActivity() {
     private fun sendSelected() {
         if (selected.isEmpty()) return
         val rows = selected.values.toList()
-        val uris = rows.map { it.uri }
+        // B184f: lazy copy APK (только выбранные, не все 81)
+        val finalUris = mutableListOf<Uri>()
+        for (r in rows) {
+            val u = if (currentMode == "installed_apps" && r.docId.startsWith("pkg:")) {
+                val pkg = r.docId.removePrefix("pkg:")
+                try {
+                    val src = java.io.File(packageManager.getApplicationInfo(pkg, 0).sourceDir)
+                    val dst = java.io.File(apkCacheDir, pkg + ".apk")
+                    if (!dst.exists() || dst.length() != src.length()) {
+                        src.copyTo(dst, overwrite = true)
+                    }
+                    androidx.core.content.FileProvider.getUriForFile(
+                        this, "$packageName.fileprovider", dst)
+                } catch (e: Exception) {
+                    InAppLogger.err("FileList", "copy $pkg: ${e.message}")
+                    android.widget.Toast.makeText(this, "Ошибка копирования $pkg", android.widget.Toast.LENGTH_SHORT).show()
+                    continue
+                }
+            } else r.uri
+            if (u != Uri.EMPTY) finalUris.add(u)
+        }
+        if (finalUris.isEmpty()) return
+        val uris = finalUris
         val paths = rows.map { it.relPath }
         val intent = Intent(this, ShareTargetActivity::class.java).apply {
             action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
