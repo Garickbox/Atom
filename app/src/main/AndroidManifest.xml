@@ -149,6 +149,11 @@
             android:exported="false"
             android:label="📂 Файлы" />
 
+        <activity
+            android:name=".FileListActivity"
+            android:exported="false"
+            android:label="📁 Содержимое" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -27,6 +27,46 @@ class FileBrowserActivity : AppCompatActivity() {
     private val videoPicker = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isNotEmpty()) sendToShareTarget(uris, "video/*")
     }
+    private var pendingPrefsKey: String? = null
+    private var pendingTitle: String? = null
+
+    private val treePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) { pendingPrefsKey = null; pendingTitle = null; return@registerForActivityResult }
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {}
+        val key = pendingPrefsKey
+        val title = pendingTitle ?: "Файлы"
+        if (key != null) {
+            getSharedPreferences("atom", MODE_PRIVATE).edit().putString(key, uri.toString()).apply()
+        }
+        startActivity(Intent(this, FileListActivity::class.java).apply {
+            putExtra(FileListActivity.EXTRA_TREE_URI, uri.toString())
+            putExtra(FileListActivity.EXTRA_TITLE, title)
+        })
+        pendingPrefsKey = null
+        pendingTitle = null
+    }
+
+    private fun launchTreePicker(key: String, title: String, initialDocPath: String) {
+        val saved = getSharedPreferences("atom", MODE_PRIVATE).getString(key, null)
+        if (saved != null) {
+            startActivity(Intent(this, FileListActivity::class.java).apply {
+                putExtra(FileListActivity.EXTRA_TREE_URI, saved)
+                putExtra(FileListActivity.EXTRA_TITLE, title)
+            })
+            return
+        }
+        pendingPrefsKey = key
+        pendingTitle = title
+        val initialUri = try {
+            android.provider.DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", initialDocPath)
+        } catch (_: Exception) { null }
+        InAppLogger.d("FileBrowser", "launchTreePicker initial=$initialDocPath uri=$initialUri")
+        treePicker.launch(initialUri)
+    }
+
     private val audioPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode != RESULT_OK || r.data == null) return@registerForActivityResult
         val uris = mutableListOf<Uri>()
@@ -60,6 +100,8 @@ class FileBrowserActivity : AppCompatActivity() {
         cats += Category("audio", "Музыка", "🎵", countMedia(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI))
         cats += Category("apk", "APK", "📦", countApk())
         cats += Category("downloads", "Загрузки", "📥", countDownloads())
+        cats += Category("internal", "Внутренняя память", "📱", 0, "любые папки (SAF)")
+        cats += Category("android_data", "Android (data/obb)", "🔒", 0, "SAF как X-plore")
         cats += Category("recent", "Недавние", "🕒", 0, "Скоро (B184b)")
 
         b.recycler.layoutManager = LinearLayoutManager(this)
@@ -98,6 +140,8 @@ class FileBrowserActivity : AppCompatActivity() {
             "audio" -> audioPicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "audio/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             })
+            "internal" -> launchTreePicker("saf_internal_uri", "📱 Внутренняя память", "primary:")
+            "android_data" -> launchTreePicker("saf_android_uri", "🔒 Android (data/obb)", "primary:Android")
             else -> android.widget.Toast.makeText(this, "📂 ${cat.title} — скоро (B184b)", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
