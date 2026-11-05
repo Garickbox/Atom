@@ -63,6 +63,16 @@ fun MainScreen(isTv: Boolean, actions: MainActions) {
     val transfer by AtomController.transferState.collectAsState()
     val live = remember(peers) { peers.filter { System.currentTimeMillis() - it.lastSeenMs < 5 * 60_000L && it.name.isNotBlank() } }
 
+    // B208.2: auto-dismiss Success через 3.5с → Idle → hero снова видна
+    LaunchedEffect(transfer) {
+        if (transfer is TransferState.Success) {
+            kotlinx.coroutines.delay(3500L)
+            if (AtomController.transferState.value is TransferState.Success) {
+                AtomController.transferState.value = TransferState.Idle
+            }
+        }
+    }
+
     var showEasterEgg by remember { mutableStateOf(false) }
     var peerSheetFor by remember { mutableStateOf<Peer?>(null) }
 
@@ -85,7 +95,7 @@ fun MainScreen(isTv: Boolean, actions: MainActions) {
             }
             if (isTv) {
                 item { TvAcceptPanel(actions.onAcceptTvClick) }
-            } else if (transfer is TransferState.Idle) {
+            } else if (transfer is TransferState.Idle || transfer is TransferState.Success) {
                 item { HeroBlock(actions.onAcceptClick) }
             }
             item {
@@ -370,36 +380,6 @@ private fun PulseEmoji(emoji: String) {
 }
 
 @Composable
-private fun Confetti() {
-    val transition = rememberInfiniteTransition(label = "confetti")
-    val progress by transition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Restart),
-        label = "progress"
-    )
-    Canvas(Modifier.fillMaxWidth().height(80.dp)) {
-        val w = size.width
-        val h = size.height
-        val colors = listOf(
-            Color(0xFFE91E63), Color(0xFFFFC107), Color(0xFF4CAF50),
-            Color(0xFF2196F3), Color(0xFF9C27B0)
-        )
-        for (i in 0 until 30) {
-            val startX = ((i * 73) % w.toInt()).toFloat()
-            val driftX = ((i % 5) - 2) * 40f
-            val x = startX + driftX * progress
-            val y = -10f + progress * h
-            val alpha = (1f - progress).coerceIn(0f, 1f)
-            drawCircle(
-                color = colors[i % colors.size].copy(alpha = alpha),
-                radius = 4f + (i % 3),
-                center = Offset(x, y)
-            )
-        }
-    }
-}
-
-@Composable
 private fun PausedBlock(s: TransferState.Paused, actions: MainActions) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("⏸ Пауза · ${s.peerName}", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
@@ -418,21 +398,12 @@ private fun PausedBlock(s: TransferState.Paused, actions: MainActions) {
 private fun SuccessBlock(s: TransferState.Success) {
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(Unit) {
-        try {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            delay(150)
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        } catch (_: Exception) {}
+        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
     }
-    Box(Modifier.fillMaxWidth()) {
-        Confetti()
-        Column {
-            Text("✅ Готово · ${s.peerName}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Spacer(Modifier.height(4.dp))
-            Text("${s.fileCount} файл(ов) · ${fmtBytes(s.bytesTotal)}", fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    Text("✅ Готово · ${s.peerName}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+    Spacer(Modifier.height(4.dp))
+    Text("${s.fileCount} файл(ов) · ${fmtBytes(s.bytesTotal)}", fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
