@@ -296,8 +296,8 @@ class QrShareActivity : AppCompatActivity() {
             val adapter = nfcManager?.defaultAdapter ?: return
             if (!adapter.isEnabled) return
             val ce = android.nfc.cardemulation.CardEmulation.getInstance(adapter)
-            ce.unsetPreferredService(this)
-            InAppLogger.nfc("NfcHce", "B157: unsetPreferredService")
+            // B187: НЕ снимаем preferred service — HCE работает в фоне (AID F041544F4D уникален)
+            InAppLogger.nfc("NfcHce", "B187: keep preferred service (HCE in background)")
         } catch (e: Exception) {
             InAppLogger.nfc("NfcHce:ERR", "B157: unsetPreferredService: ${e.message}")
         }
@@ -308,13 +308,8 @@ class QrShareActivity : AppCompatActivity() {
         try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
-        if (groupCreated && !usingHotspot) {
-            try {
-                val wm = getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
-                val channel = wm?.initialize(this, Looper.getMainLooper()) {}
-                wm?.removeGroup(channel, null)
-            } catch (_: Exception) {}
-        }
-        InAppLogger.nfc("QrServer", "onDestroy, group cleaned")
+        // B187: НЕ убиваем P2P-группу в onDestroy — она нужна для connect в фоне.
+        // Cleanup — в onCreate следующего QrShare (см. line 33 forgetAllGroups).
+        InAppLogger.nfc("QrServer", "B187: onDestroy, group kept for background connect")
     }
 }
