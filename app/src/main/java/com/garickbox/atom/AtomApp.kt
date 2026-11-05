@@ -6,6 +6,14 @@ import com.mesh.core.InAppLogger
 class AtomApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // B184c: Coil + VideoFrameDecoder для превью видео
+        try {
+            val imageLoader = coil.ImageLoader.Builder(this)
+                .components { add(coil.decode.VideoFrameDecoder.Factory()) }
+                .crossfade(true)
+                .build()
+            coil.Coil.setImageLoader(imageLoader)
+        } catch (e: Exception) { /* coil may fail, not critical */ }
         com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
         InAppLogger.init(this)
         com.mesh.core.CompactLog.init(this)

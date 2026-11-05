@@ -185,7 +185,17 @@ class FileBrowserActivity : AppCompatActivity() {
                     })
                 }
             }
-            "atom" -> launchTreePicker("saf_atom_uri", "⚛️ Папка Atom", "primary:Download/Atom")
+            "atom" -> {
+                if (isStorageManager()) {
+                    startActivity(Intent(this, FileListActivity::class.java).apply {
+                        putExtra(FileListActivity.EXTRA_MODE, "direct")
+                        putExtra(FileListActivity.EXTRA_DIRECT_PATH, "/sdcard/Download/Atom")
+                        putExtra(FileListActivity.EXTRA_TITLE, "⚛️ Папка Atom")
+                    })
+                } else {
+                    launchTreePicker("saf_atom_uri", "⚛️ Папка Atom", "primary:Download/Atom")
+                }
+            }
             "termux" -> launchTreePicker("saf_termux_uri", "📟 Termux", "com.termux.documents:")
             "apk" -> {
                 startActivity(Intent(this, FileListActivity::class.java).apply {
@@ -194,7 +204,17 @@ class FileBrowserActivity : AppCompatActivity() {
                 })
                 overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
             }
-            "downloads" -> launchTreePicker("saf_downloads_uri", "📥 Загрузки", "primary:Download")
+            "downloads" -> {
+                if (isStorageManager()) {
+                    startActivity(Intent(this, FileListActivity::class.java).apply {
+                        putExtra(FileListActivity.EXTRA_MODE, "direct")
+                        putExtra(FileListActivity.EXTRA_DIRECT_PATH, "/sdcard/Download")
+                        putExtra(FileListActivity.EXTRA_TITLE, "📥 Загрузки")
+                    })
+                } else {
+                    launchTreePicker("saf_downloads_uri", "📥 Загрузки", "primary:Download")
+                }
+            }
             "images", "video", "audio" -> {
                 startActivity(Intent(this, FileListActivity::class.java).apply {
                     putExtra(FileListActivity.EXTRA_MODE, cat.id)
@@ -219,10 +239,22 @@ class FileBrowserActivity : AppCompatActivity() {
         }
         pendingPrefsKey = key; pendingTitle = title
         val initialUri = try {
-            if (initialDocPath.startsWith("com.termux.documents:")) {
-                Uri.parse("content://com.termux.documents/")
-            } else {
-                android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", initialDocPath)
+            when {
+                key == "saf_termux_uri" -> {
+                    // B184c: Termux SAF docId = /data/data/com.termux/files/home
+                    android.provider.DocumentsContract.buildDocumentUri(
+                        "com.termux.documents",
+                        "/data/data/com.termux/files/home"
+                    )
+                }
+                initialDocPath.startsWith("com.termux.documents:") -> {
+                    android.provider.DocumentsContract.buildDocumentUri(
+                        "com.termux.documents",
+                        initialDocPath.removePrefix("com.termux.documents:")
+                    )
+                }
+                else -> android.provider.DocumentsContract.buildDocumentUri(
+                    "com.android.externalstorage.documents", initialDocPath)
             }
         } catch (_: Exception) { null }
         InAppLogger.d("FileBrowser", "launchTreePicker initial=$initialDocPath")
@@ -230,4 +262,9 @@ class FileBrowserActivity : AppCompatActivity() {
     }
 
     enum class MediaStoreKind { IMAGES, VIDEO, AUDIO }
+
+    private fun isStorageManager(): Boolean {
+        return android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
+    }
+
 }

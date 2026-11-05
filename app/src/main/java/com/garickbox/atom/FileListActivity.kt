@@ -36,6 +36,7 @@ class FileListActivity : AppCompatActivity() {
         const val EXTRA_TREE_URI = "tree_uri"
         const val EXTRA_TITLE = "title"
         const val EXTRA_MODE = "mode"  // tree | images | video | audio | installed_apps | direct
+        const val EXTRA_DIRECT_PATH = "direct_path"
     }
 
     data class Row(val uri: Uri, val name: String, val isDir: Boolean, val size: Long,
@@ -67,8 +68,12 @@ class FileListActivity : AppCompatActivity() {
             currentParentId = try { DocumentsContract.getTreeDocumentId(currentTreeUri!!) } catch (_: Exception) { finish(); return }
         }
         if (currentMode == "direct") {
-            currentParentId = "/sdcard"
+            currentParentId = intent.getStringExtra(EXTRA_DIRECT_PATH) ?: "/sdcard"
+            currentPath = currentParentId
         }
+        // B184c: reset search + sort mode default
+        searchQuery = ""
+        sortMode = if (currentMode == "tree" || currentMode == "direct") "name" else "date"
         setContent { MaterialTheme { ListUi() } }
     }
 
