@@ -10,6 +10,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlinx.coroutines.delay
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -217,14 +225,25 @@ private fun PulsingDot(active: Boolean) {
 @Composable
 private fun TransferCard(state: TransferState, actions: MainActions) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(4.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            when (state) {
-                is TransferState.Running -> RunningBlock(state, actions)
-                is TransferState.Paused -> PausedBlock(state, actions)
-                is TransferState.Success -> SuccessBlock(state)
-                is TransferState.Failed -> FailedBlock(state, actions)
-                is TransferState.UpdatePending -> UpdateBlock(state)
-                else -> {}
+        Box(
+            Modifier.background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+                        Color.Transparent
+                    )
+                )
+            )
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                when (state) {
+                    is TransferState.Running -> RunningBlock(state, actions)
+                    is TransferState.Paused -> PausedBlock(state, actions)
+                    is TransferState.Success -> SuccessBlock(state)
+                    is TransferState.Failed -> FailedBlock(state, actions)
+                    is TransferState.UpdatePending -> UpdateBlock(state)
+                    else -> {}
+                }
             }
         }
     }
@@ -235,12 +254,13 @@ private fun RunningBlock(s: TransferState.Running, actions: MainActions) {
     val ctx = LocalContext.current
     val pct = if (s.bytesTotal > 0) (s.bytesSent * 100 / s.bytesTotal).toInt() else 0
     val animPct by animateFloatAsState(targetValue = pct.toFloat(), animationSpec = tween(400), label = "pct")
-    val speedColor = when {
+    val targetSpeedColor = when {
         s.bytesPerSecond >= 15L * 1024 * 1024 -> Color(0xFF2E7D32)
         s.bytesPerSecond >= 5L * 1024 * 1024 -> MaterialTheme.colorScheme.primary
         s.bytesPerSecond > 0 -> Color(0xFFF57C00)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val speedColor by animateColorAsState(targetSpeedColor, animationSpec = tween(400), label = "speedColor")
     val eta = remember(s.bytesPerSecond, s.bytesSent, s.bytesTotal) {
         if (s.bytesPerSecond > 0 && s.bytesTotal > s.bytesSent) {
             val sec = (s.bytesTotal - s.bytesSent) / s.bytesPerSecond
@@ -248,8 +268,13 @@ private fun RunningBlock(s: TransferState.Running, actions: MainActions) {
         } else "…"
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(if (s.isReceiver) "📥 ← ${s.peerName}" else "📤 → ${s.peerName}",
-            fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            PulseEmoji(if (s.isReceiver) "📥" else "📤")
+            Spacer(Modifier.width(6.dp))
+            Text("${if (s.isReceiver) "←" else "→"} ${s.peerName}",
+                fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         IconButton(onClick = { actions.onTransferAction(TransferNotification.ACTION_PAUSE) }) { Text("⏸") }
         if (!s.isReceiver && s.fileCount > 1) {
             IconButton(onClick = { actions.onTransferAction(TransferNotification.ACTION_SKIP) }) { Text("⏭") }
@@ -260,7 +285,7 @@ private fun RunningBlock(s: TransferState.Running, actions: MainActions) {
     Text("📦 Файл ${s.fileIndex} из ${s.fileCount} · ${s.fileName}",
         fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     Spacer(Modifier.height(12.dp))
-    ShimmerBar(progress = animPct / 100f)
+    ShimmerBar(progress = animPct / 100f, active = true)
     Spacer(Modifier.height(8.dp))
     Row {
         Text("${fmtBytes(s.bytesSent)} / ${fmtBytes(s.bytesTotal)}", fontSize = 12.sp, modifier = Modifier.weight(1f))
@@ -281,31 +306,94 @@ private fun RunningBlock(s: TransferState.Running, actions: MainActions) {
 }
 
 @Composable
-private fun ShimmerBar(progress: Float) {
-    val transition = rememberInfiniteTransition(label = "sh")
+private fun ShimmerBar(progress: Float, active: Boolean = true) {
+    val transition = rememberInfiniteTransition(label = "shimmer")
     val shift by transition.animateFloat(
         initialValue = -1f, targetValue = 2f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart),
         label = "shift"
     )
+    val p = progress.coerceIn(0f, 1f)
     Box(
-        Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(7.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+        Modifier.fillMaxWidth().height(10.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+            .drawBehind {
+                drawRoundRect(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                    size = size.copy(width = size.width * p),
+                    cornerRadius = CornerRadius(5.dp.toPx()),
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
     ) {
         Box(
-            Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f))
-                .clip(RoundedCornerShape(7.dp))
+            Modifier.fillMaxHeight().fillMaxWidth(p)
+                .clip(RoundedCornerShape(5.dp))
                 .background(
                     Brush.horizontalGradient(
                         0f to MaterialTheme.colorScheme.primary,
-                        0.6f to MaterialTheme.colorScheme.primary,
-                        0.7f to Color.White.copy(alpha = 0.4f),
-                        0.8f to MaterialTheme.colorScheme.primary,
+                        0.5f to MaterialTheme.colorScheme.tertiary,
                         1f to MaterialTheme.colorScheme.primary,
-                        startX = shift * 400f, endX = shift * 400f + 400f
+                        startX = shift * 500f, endX = shift * 500f + 500f
                     )
                 )
         )
+        if (active && p < 1f) {
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.linearGradient(
+                        0f to Color.Transparent,
+                        0.45f to Color.White.copy(alpha = 0.25f),
+                        0.55f to Color.White.copy(alpha = 0.25f),
+                        1f to Color.Transparent,
+                        start = Offset(shift * 600f, 0f),
+                        end = Offset(shift * 600f + 300f, 0f)
+                    )
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulseEmoji(emoji: String) {
+    val transition = rememberInfiniteTransition(label = "pulseEmoji")
+    val scaleV by transition.animateFloat(
+        initialValue = 0.9f, targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Reverse),
+        label = "scale"
+    )
+    Text(emoji, fontSize = 18.sp, modifier = Modifier.scale(scaleV))
+}
+
+@Composable
+private fun Confetti() {
+    val transition = rememberInfiniteTransition(label = "confetti")
+    val progress by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Restart),
+        label = "progress"
+    )
+    Canvas(Modifier.fillMaxWidth().height(80.dp)) {
+        val w = size.width
+        val h = size.height
+        val colors = listOf(
+            Color(0xFFE91E63), Color(0xFFFFC107), Color(0xFF4CAF50),
+            Color(0xFF2196F3), Color(0xFF9C27B0)
+        )
+        for (i in 0 until 30) {
+            val startX = ((i * 73) % w.toInt()).toFloat()
+            val driftX = ((i % 5) - 2) * 40f
+            val x = startX + driftX * progress
+            val y = -10f + progress * h
+            val alpha = (1f - progress).coerceIn(0f, 1f)
+            drawCircle(
+                color = colors[i % colors.size].copy(alpha = alpha),
+                radius = 4f + (i % 3),
+                center = Offset(x, y)
+            )
+        }
     }
 }
 
@@ -326,10 +414,23 @@ private fun PausedBlock(s: TransferState.Paused, actions: MainActions) {
 
 @Composable
 private fun SuccessBlock(s: TransferState.Success) {
-    Text("✅ Готово · ${s.peerName}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-    Spacer(Modifier.height(4.dp))
-    Text("${s.fileCount} файл(ов) · ${fmtBytes(s.bytesTotal)}", fontSize = 13.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(Unit) {
+        try {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(150)
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        } catch (_: Exception) {}
+    }
+    Box(Modifier.fillMaxWidth()) {
+        Confetti()
+        Column {
+            Text("✅ Готово · ${s.peerName}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("${s.fileCount} файл(ов) · ${fmtBytes(s.bytesTotal)}", fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable
