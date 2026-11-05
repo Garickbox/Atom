@@ -140,6 +140,18 @@
                 android:resource="@xml/widget_atom_compact_info" />
         </receiver>
 
+        <receiver
+            android:name=".AtomWidgetUltraProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.garickbox.atom.WIDGET_REFRESH_ULTRA" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_atom_ultra_info" />
+        </receiver>
+
         <service
             android:name=".WidgetReceiveService"
             android:exported="false"

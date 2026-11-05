@@ -39,6 +39,9 @@ class AtomWidgetProvider : AppWidgetProvider() {
             try {
                 AtomWidgetCompactProvider.refresh(ctx, force)
             } catch (_: Exception) {}
+            try {
+                AtomWidgetUltraProvider.refresh(ctx, force)
+            } catch (_: Exception) {}
         }
 
         /** B210: ring bitmap (Canvas.drawArc → Bitmap) — axiom#288 */
