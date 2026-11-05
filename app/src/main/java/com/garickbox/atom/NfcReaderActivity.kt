@@ -255,15 +255,29 @@ class NfcReaderActivity : AppCompatActivity() {
                     override fun onAvailable(network: Network) {
                         if (!finished.compareAndSet(false, true)) return
                         InAppLogger.nfc("NfcReader", "B189: WNS onAvailable $network (attempt $attempt)")
+                        // B190: bind → UDP first → 500ms → TCP → sendHello + delay 1s
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
                             AtomController.meshNode?.recreateUdpSocket()
-                            AtomController.meshNode?.recreateTcpServer()
+                            InAppLogger.nfc("NfcReader", "B190: UDP recreated after bind")
                         } catch (e: Exception) {
-                            InAppLogger.err("NfcReader", "B189: bind/recreate ${e.message}")
+                            InAppLogger.err("NfcReader", "B190: UDP bind ${e.message}")
                         }
-                        handler.postDelayed({ afterConnected(data) }, 300L)
+                        handler.postDelayed({
+                            try {
+                                AtomController.meshNode?.recreateTcpServer()
+                                InAppLogger.nfc("NfcReader", "B190: TCP recreated")
+                            } catch (e: Exception) {
+                                InAppLogger.err("NfcReader", "B190: TCP ${e.message}")
+                            }
+                            // Двойной HELLO: сразу + через 500ms (на случай packet loss)
+                            AtomController.meshNode?.sendHello(data.ip)
+                            handler.postDelayed({
+                                AtomController.meshNode?.sendHello(data.ip)
+                            }, 500L)
+                            handler.postDelayed({ afterConnected(data) }, 1000L)
+                        }, 500L)
                     }
                     override fun onUnavailable() {
                         if (!finished.compareAndSet(false, true)) return

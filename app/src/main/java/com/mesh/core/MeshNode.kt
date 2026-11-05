@@ -109,20 +109,20 @@ class MeshNode(private val ctx: Context) {
      *  Android 10+ не переносит открытые сокеты в новую default-сеть. */
     @Synchronized
     fun recreateTcpServer() {
-        // B163: TCP ServerSocket создан ДО bindProcessToNetwork → слушает wlan0,
-        // но Redmi из DIRECT-сети (p2p0) → нужен новый listener на p2p0.
-        // tcpLoop при закрытии старого поймает exception и возьмёт новый tcpServer.
+        // B190: close old FIRST → delay → bind new (было: bind first → EADDRINUSE)
         try {
             val old = tcpServer
+            tcpServer = null
+            try { old?.close() } catch (_: Exception) {}
+            Thread.sleep(200)  // дать OS освободить порт
             val fresh = ServerSocket().apply {
                 reuseAddress = true
                 bind(InetSocketAddress(PORT))
             }
             tcpServer = fresh
-            try { old?.close() } catch (_: Exception) {}
-            InAppLogger.d("MeshNode", "B163: tcp server recreated (port ${PORT})")
+            InAppLogger.nfc("MeshNode", "B190: tcp server recreated (port ${PORT})")
         } catch (e: Exception) {
-            InAppLogger.err("MeshNode", "B163 recreateTcpServer: ${e.message}")
+            InAppLogger.err("MeshNode", "B190 recreateTcpServer: ${e.message}")
         }
     }
 
