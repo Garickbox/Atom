@@ -146,7 +146,7 @@ class FileBrowserActivity : AppCompatActivity() {
         cats += Category("audio", "Музыка", "🎵", countMedia(MediaStoreKind.AUDIO))
         cats += Category("apk", "Приложения", "📦", countUserApps(pm))
         cats += Category("downloads", "Загрузки", "📥", 0, "папки")
-        if (hasTermux) cats += Category("termux", "Termux", "📟", 0, "$HOME/")
+        if (hasTermux) cats += Category("termux", "Termux", "📟", 0, "~/.termux")
         return cats
     }
 
