@@ -16,7 +16,8 @@ object PlaylistManager {
         val sizeBytes: Long,
         val relativePath: String?,   // для сохранения структуры на приёмнике
         val source: String,          // images|video|audio|atom|termux|saf|direct|app
-        val icon: android.graphics.drawable.Drawable? = null
+        val icon: android.graphics.drawable.Drawable? = null,
+        val packageName: String? = null  // B185a-fix: для installed_apps (uri=EMPTY, копия лениво)
     )
 
     private val _items: SnapshotStateList<Item> = mutableStateListOf()

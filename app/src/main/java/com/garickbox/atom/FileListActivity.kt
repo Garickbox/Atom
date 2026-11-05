@@ -279,9 +279,11 @@ class FileListActivity : AppCompatActivity() {
             if (PlaylistManager.contains(row.uri)) {
                 PlaylistManager.remove(row.uri)
             } else {
+                val pkg = if (currentMode == "installed_apps" && row.docId.startsWith("pkg:")) row.docId.removePrefix("pkg:") else null
                 val added = PlaylistManager.add(PlaylistManager.Item(
                     uri = row.uri, name = row.name, sizeBytes = row.size,
-                    relativePath = row.relPath, source = currentMode, icon = row.icon))
+                    relativePath = row.relPath, source = currentMode, icon = row.icon,
+                    packageName = pkg))
                 if (!added) android.widget.Toast.makeText(this, "Уже в плейлисте или лимит 500", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
@@ -343,7 +345,8 @@ class FileListActivity : AppCompatActivity() {
                             val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
                             if (PlaylistManager.add(PlaylistManager.Item(
                                 uri = docUri, name = name, sizeBytes = size,
-                                relativePath = row.name + "/" + rel, source = currentMode)))
+                                relativePath = row.name + "/" + rel, source = currentMode,
+                                packageName = null)))
                                 added++
                         }
                     }
@@ -557,12 +560,12 @@ class FileListActivity : AppCompatActivity() {
     private fun sendSelected() {
         if (PlaylistManager.count == 0) return
         PlaylistManager.pendingClearOnSuccess = true
-        val rows = PlaylistManager.items.toList()
-        // B184f: lazy copy APK (только выбранные, не все 81)
+        val items = PlaylistManager.items.toList()
+        // B185a-fix: lazy copy APK (только выбранные, не все 81)
         val finalUris = mutableListOf<Uri>()
-        for (r in rows) {
-            val u = if (currentMode == "installed_apps" && r.docId.startsWith("pkg:")) {
-                val pkg = r.docId.removePrefix("pkg:")
+        for (r in items) {
+            val u = if (r.packageName != null) {
+                val pkg = r.packageName
                 try {
                     val src = java.io.File(packageManager.getApplicationInfo(pkg, 0).sourceDir)
                     val dst = java.io.File(apkCacheDir, pkg + ".apk")
@@ -581,7 +584,7 @@ class FileListActivity : AppCompatActivity() {
         }
         if (finalUris.isEmpty()) return
         val uris = finalUris
-        val paths = rows.map { it.relPath }
+        val paths = items.map { it.relativePath ?: "" }
         val intent = Intent(this, ShareTargetActivity::class.java).apply {
             action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
             type = "*/*"
