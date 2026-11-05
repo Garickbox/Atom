@@ -160,10 +160,18 @@ class NfcReaderActivity : AppCompatActivity() {
         runOnUiThread { statusText.text = "Подключаюсь к Wi-Fi…" }
         if (Build.VERSION.SDK_INT < 29) { fallbackWifiConnect(data); return }
         var attempt = 0
+        var pendingCb: ConnectivityManager.NetworkCallback? = null
+        var pendingCm: ConnectivityManager? = null
         fun tryWns() {
             if (isFinishing || isDestroyed) return
             attempt++
             try {
+                // B197 axiom#241: unregister previous NetworkCallback before retry
+                if (pendingCb != null && pendingCm != null) {
+                    try { pendingCm!!.unregisterNetworkCallback(pendingCb!!) } catch (_: Exception) {}
+                    InAppLogger.nfc("NfcReader", "B197: unregister prev cb (attempt $attempt)")
+                }
+                pendingCb = null; pendingCm = null
                 val spec = WifiNetworkSpecifier.Builder()
                     .setSsid(data.ssid)
                     .setWpa2Passphrase(data.passphrase)
@@ -174,7 +182,7 @@ class NfcReaderActivity : AppCompatActivity() {
                     .build()
                 val cm = getSystemService(ConnectivityManager::class.java)
                 val finished = java.util.concurrent.atomic.AtomicBoolean(false)
-                cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
+                val cb = object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
                         if (!finished.compareAndSet(false, true)) return
                         InAppLogger.nfc("NfcReader", "B192: WNS onAvailable $network (attempt $attempt)")
@@ -198,7 +206,10 @@ class NfcReaderActivity : AppCompatActivity() {
                             if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
                         }
                     }
-                }, 20000)
+                }
+                pendingCb = cb
+                pendingCm = cm
+                cm.requestNetwork(req, cb, 20000)
             } catch (e: Exception) {
                 InAppLogger.err("NfcReader", "B192: setup ${e.message}")
                 if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
