@@ -232,8 +232,8 @@ class NfcReaderActivity : AppCompatActivity() {
     }
 
     private fun connectWifi(data: NfcHandover) {
-        // B189: WNS как у QR (axiom#215) — 2-5s, без BUSY/inversion. Fallback → WPS-PBC.
-        InAppLogger.nfc("NfcReader", "B189: WNS connect ssid=${data.ssid} ip=${data.ip}")
+        // B191: WNS + HELLO verification + fallback WPS-PBC
+        InAppLogger.nfc("NfcReader", "B191: WNS connect ssid=${data.ssid} ip=${data.ip}")
         runOnUiThread { statusText.text = "Подключаюсь к Wi-Fi…" }
         if (Build.VERSION.SDK_INT < 29) { fallbackWifiConnect(data); return }
         var attempt = 0
@@ -254,46 +254,52 @@ class NfcReaderActivity : AppCompatActivity() {
                 cm.requestNetwork(req, object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
                         if (!finished.compareAndSet(false, true)) return
-                        InAppLogger.nfc("NfcReader", "B189: WNS onAvailable $network (attempt $attempt)")
-                        // B190: bind → UDP first → 500ms → TCP → sendHello + delay 1s
+                        InAppLogger.nfc("NfcReader", "B191: WNS onAvailable $network (attempt $attempt)")
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
                             AtomController.meshNode?.recreateUdpSocket()
-                            InAppLogger.nfc("NfcReader", "B190: UDP recreated after bind")
                         } catch (e: Exception) {
-                            InAppLogger.err("NfcReader", "B190: UDP bind ${e.message}")
+                            InAppLogger.err("NfcReader", "B191: bind ${e.message}")
                         }
+                        // B191: ждём 2000ms до первого HELLO (route setup), потом серия HELLO
                         handler.postDelayed({
-                            try {
-                                AtomController.meshNode?.recreateTcpServer()
-                                InAppLogger.nfc("NfcReader", "B190: TCP recreated")
-                            } catch (e: Exception) {
-                                InAppLogger.err("NfcReader", "B190: TCP ${e.message}")
-                            }
-                            // Двойной HELLO: сразу + через 500ms (на случай packet loss)
                             AtomController.meshNode?.sendHello(data.ip)
                             handler.postDelayed({
                                 AtomController.meshNode?.sendHello(data.ip)
-                            }, 500L)
-                            handler.postDelayed({ afterConnected(data) }, 1000L)
-                        }, 500L)
+                                // Проверка через 3.5s: peer в AtomController.peers?
+                                handler.postDelayed({
+                                    if (isFinishing || isDestroyed) return@postDelayed
+                                    val peerSeen = AtomController.peers.value.any {
+                                        it.ip == data.ip && System.currentTimeMillis() - it.lastSeenMs < 5_000L
+                                    }
+                                    if (peerSeen) {
+                                        InAppLogger.nfc("NfcReader", "B191: HELLO OK peer seen → transfer")
+                                        try { AtomController.meshNode?.recreateTcpServer() } catch (_: Exception) {}
+                                        handler.postDelayed({ afterConnected(data) }, 500L)
+                                    } else {
+                                        InAppLogger.err("NfcReader", "B191: WNS but HELLO timeout → fallback WPS-PBC")
+                                        try { cm.bindProcessToNetwork(null) } catch (_: Exception) {}
+                                        fallbackWifiConnect(data)
+                                    }
+                                }, 1500L)  // 2000+500+1500 = 4000ms total
+                            }, 2000L)
+                        }, 2000L)
                     }
                     override fun onUnavailable() {
                         if (!finished.compareAndSet(false, true)) return
-                        InAppLogger.err("NfcReader", "B189: WNS onUnavailable (attempt $attempt)")
-                        if (attempt < 3) {
+                        InAppLogger.err("NfcReader", "B191: WNS onUnavailable (attempt $attempt)")
+                        if (attempt < 2) {
                             handler.postDelayed({ tryWns() }, 500L * attempt)
                         } else {
-                            InAppLogger.err("NfcReader", "B189: WNS fail x3 → fallback WPS-PBC")
+                            InAppLogger.err("NfcReader", "B191: WNS fail x2 → fallback WPS-PBC")
                             if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
                         }
                     }
                 }, 20000)
             } catch (e: Exception) {
-                InAppLogger.err("NfcReader", "B189: WNS setup ${e.message}")
-                if (attempt < 3) handler.postDelayed({ tryWns() }, 500L * attempt)
-                else fallbackWifiConnect(data)
+                InAppLogger.err("NfcReader", "B191: setup ${e.message}")
+                if (!isFinishing && !isDestroyed) fallbackWifiConnect(data)
             }
         }
         tryWns()
