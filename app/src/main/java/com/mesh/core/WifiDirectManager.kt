@@ -392,10 +392,18 @@ class WifiDirectManager(private val ctx: Context) {
         val result = StringBuilder()
         try {
             manager?.requestGroupInfo(ch) { group ->
-                if (group == null) result.append("group=null")
-                else result.append("networkName=${group.networkName} passphrase=${group.passphrase?.let { "***" }} " +
-                    "isGO=${group.isGroupOwner} freq=${group.frequency} iface=${group.interface} " +
-                    "clients=${group.clientList?.joinToString(",") { it.deviceAddress + "/" + it.deviceName }}")
+                if (group == null) {
+                    result.append("group=null")
+                } else {
+                    val pwdMask = if (group.passphrase.isNullOrBlank()) "" else "***"
+                    val clients = group.clientList?.joinToString(",") { it.deviceAddress + "/" + it.deviceName } ?: ""
+                    result.append("networkName=" + group.networkName +
+                        " passphrase=" + pwdMask +
+                        " isGO=" + group.isGroupOwner +
+                        " freq=" + group.frequency +
+                        " iface=" + group.interface +
+                        " clients=" + clients)
+                }
                 latch.countDown()
             } ?: result.append("manager null")
         } catch (e: Exception) {
@@ -415,9 +423,13 @@ class WifiDirectManager(private val ctx: Context) {
                 val peers = peerList?.deviceList?.toList() ?: emptyList()
                 if (peers.isEmpty()) result.append("peers=[]")
                 else {
-                    result.append("peers=${peers.size}: ")
-                    result.append(peers.joinToString(" | ") {
-                        "${it.deviceName}/${it.deviceAddress}/status=${it.status}/primary=${it.primaryDeviceType}"
+                    result.append("peers=" + peers.size + ": ")
+                    result.append(peers.joinToString(" | ") { p ->
+                        val nm = p.deviceName ?: "?"
+                        val mac = p.deviceAddress ?: "?"
+                        val st = p.status.toString()
+                        val pt = try { p.primaryDeviceType ?: "?" } catch (_: Exception) { "?" }
+                        nm + "/" + mac + "/status=" + st + "/primary=" + pt
                     })
                 }
                 latch.countDown()
