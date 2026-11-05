@@ -189,7 +189,7 @@ class PickPeerActivity : AppCompatActivity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(intent)
-            sentSuccessfully = true
+            // B185b-fix2: НЕ ставим sentSuccessfully — user ещё не отправил, идёт в discovery
             finish()
         } catch (e: Exception) { InAppLogger.err("PickPeer", "sendViaWifiDirect: ${e.message}") }
     }

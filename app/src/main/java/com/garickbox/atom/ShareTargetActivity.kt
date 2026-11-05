@@ -157,9 +157,10 @@ class ShareTargetActivity : AppCompatActivity() {
             return
         }
         if (intent?.getBooleanExtra(EXTRA_FORCE_STEP2, false) == true) {
+            // B185b-fix2: сразу Wi-Fi Direct discovery (без «Как найти получателя?»)
             showStep1()
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                dialog?.let { showStep2(it) }
+                dialog?.let { startWifiDirectFlow(it) }
             }, 250L)
         } else {
             showStep1()
