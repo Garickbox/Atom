@@ -411,7 +411,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (_: Exception) {}
         }
-        walk(treeUri, rootDocId, "")
+        walk(treeUri, rootDocId, if (android.provider.DocumentsContract.getTreeDocumentId(treeUri).substringAfter(":").trim('/').contains("/")) android.provider.DocumentsContract.getTreeDocumentId(treeUri).substringAfter(":").trim('/').substringAfterLast('/') else "")
         return result
     }
 

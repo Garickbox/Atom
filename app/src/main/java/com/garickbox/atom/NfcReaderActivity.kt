@@ -476,7 +476,10 @@ class NfcReaderActivity : AppCompatActivity() {
         val cap = 501
         val result = mutableListOf<Pair<Uri, String>>()
         val rootDocId = try { android.provider.DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return emptyList() }
-        // B181c: НЕ включаем rootName в path — иначе "Download/testfolder/a.txt" даёт двойной Download
+        // B181d: сохранить имя выбранной папки (S01), но skip системный root (Download → "")
+        // "primary:Download/S01" → "S01",  "primary:Download" → ""
+        val docPathFromId = rootDocId.substringAfter(":", rootDocId).trim('/')
+        val selectedFolderName = if (docPathFromId.contains("/")) docPathFromId.substringAfterLast('/') else ""
         fun walk(parentId: String, path: String) {
             if (result.size >= cap) return
             val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
@@ -490,13 +493,14 @@ class NfcReaderActivity : AppCompatActivity() {
                         val id = cur.getString(0) ?: continue
                         val name = cur.getString(1) ?: continue
                         val mime = cur.getString(2) ?: ""
-                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) walk(id, "$path/$name")
-                        else result.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id) to "$path/$name")
+                        val newPath = if (path.isBlank()) name else "$path/$name"
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) walk(id, newPath)
+                        else result.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, id) to newPath)
                     }
                 }
             } catch (_: Exception) {}
         }
-        walk(rootDocId, "")
+        walk(rootDocId, selectedFolderName)
         return result
     }
 }
