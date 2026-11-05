@@ -12,8 +12,6 @@ import com.mesh.core.InAppLogger
 class AtomQSTile : TileService() {
 
     companion object {
-        private const val DOUBLE_TAP_MS = 500L
-
         fun requestUpdate(ctx: Context) {
             try {
                 TileService.requestListeningState(
@@ -25,9 +23,7 @@ class AtomQSTile : TileService() {
         }
     }
 
-    private var lastTapAt: Long = 0L
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var pendingToggle: Runnable? = null
 
     override fun onStartListening() {
         super.onStartListening()
@@ -89,27 +85,8 @@ class AtomQSTile : TileService() {
             } catch (_: Exception) {}
             return
         }
-        val now = System.currentTimeMillis()
-        val isDoubleTap = (now - lastTapAt) < DOUBLE_TAP_MS
-        lastTapAt = now
-
-        if (isDoubleTap) {
-            // Двойной тап = file picker
-            pendingToggle?.let { handler.removeCallbacks(it) }
-            pendingToggle = null
-            InAppLogger.d("AtomQSTile", "double-tap → file picker")
-            openFilePicker()
-            return
-        }
-
-        // Одиночный тап = toggle, но ждём DOUBLE_TAP_MS чтобы убедиться, что не двойной
-        pendingToggle?.let { handler.removeCallbacks(it) }
-        pendingToggle = Runnable {
-            InAppLogger.d("AtomQSTile", "single-tap confirmed → toggle")
-            toggleReceive()
-            pendingToggle = null
-        }
-        handler.postDelayed(pendingToggle!!, DOUBLE_TAP_MS)
+        // B211: single tap = сразу toggle FGS (axiom#204 — без двойного тапа)
+        toggleReceive()
     }
 
     private fun toggleReceive() {
@@ -122,27 +99,6 @@ class AtomQSTile : TileService() {
             InAppLogger.d("AtomQSTile", "toggle error: " + e.message)
         }
         handler.postDelayed({ updateTile() }, 500L)
-    }
-
-    private fun openFilePicker() {
-        try {
-            val pi = android.app.PendingIntent.getActivity(
-                this, 9001,
-                Intent(this, MainActivity::class.java).apply {
-                    action = AtomWidgetProvider.ACTION_WIDGET_SEND
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    )
-                },
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                    android.app.PendingIntent.FLAG_IMMUTABLE
-            )
-            startActivityAndCollapse(pi)
-        } catch (e: Exception) {
-            InAppLogger.d("AtomQSTile", "openFilePicker error: " + e.message)
-        }
     }
 
     private fun fmtBytes(b: Long): String {

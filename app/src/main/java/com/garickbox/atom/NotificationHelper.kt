@@ -10,6 +10,7 @@ object NotificationHelper {
     const val CHANNEL_TRANSFER = "transfer"
     const val CHANNEL_GENERAL = "general"
     const val CHANNEL_WIDGET = "widget"
+    const val CHANNEL_ERRORS = "errors"  // B209: heads-up для Failed
 
     fun createChannels(ctx: Context) {
         if (Build.VERSION.SDK_INT < 26) return
@@ -26,6 +27,12 @@ object NotificationHelper {
             NotificationChannel(CHANNEL_WIDGET, "Виджет", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Тихие уведомления виджета Атома"
                 setShowBadge(false)
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ERRORS, "Ошибки передачи", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Прерывание, mismatch, unreachable"
+                setShowBadge(true)
             }
         )
     }

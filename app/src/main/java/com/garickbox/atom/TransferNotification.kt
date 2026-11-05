@@ -17,6 +17,15 @@ object TransferNotification {
     const val EXTRA_TRANSFER_ID = "transfer_id"
     const val EXTRA_FILE_NAME = "file_name"
 
+    /** B209: safe version для lockscreen (без имён файлов) */
+    private fun buildSafeNotif(ctx: Context, title: String): Notification =
+        NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle(title)
+            .setContentText("Открой Атом чтобы увидеть детали")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
     fun buildRunning(
         ctx: Context,
         transferId: String,
@@ -68,6 +77,8 @@ object TransferNotification {
                 "📤 Отправка → $peerName" +
                 if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
             )
+            .setGroup("atom_transfer")
+            .setPublicVersion(buildSafeNotif(ctx, "📤 Передача файлов"))
             .setContentText(buildString {
                 append("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)}")
                 if (bytesPerSecond > 0) append("  ·  ${formatSpeed(bytesPerSecond)}")
@@ -144,6 +155,8 @@ object TransferNotification {
                 "⏸ Пауза → $peerName" +
                 if (fileCount > 0) " · файл $fileIndex/$fileCount" else ""
             )
+            .setGroup("atom_transfer")
+            .setPublicVersion(buildSafeNotif(ctx, "⏸ Передача на паузе"))
             .setContentText("$fileName ${formatBytes(bytesSent)} из ${formatBytes(bytesTotal)} · $pct%")
             .setProgress(100, pct, false)
             .setOngoing(true)
@@ -177,9 +190,12 @@ object TransferNotification {
             ctx, transferId.hashCode() + 2, cancelIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_TRANSFER)
+        return NotificationCompat.Builder(ctx, NotificationHelper.CHANNEL_ERRORS)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentIntent(openAppPi(ctx, transferId.hashCode() + 21))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setGroup("atom_transfer")
             .setContentTitle("⚠️ Передача прервана")
             .setContentText("$fileName — $reason")
             .setOngoing(false)
