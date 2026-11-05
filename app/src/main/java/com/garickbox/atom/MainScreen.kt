@@ -14,6 +14,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -349,16 +351,22 @@ private fun UpdateBlock(s: TransferState.UpdatePending) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun TransferFab(onClick: () -> Unit, onLongClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     Box(
         Modifier.size(56.dp).clip(CircleShape)
             .background(MaterialTheme.colorScheme.primary)
-            .clickable(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() }),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            ),
         contentAlignment = Alignment.Center
     ) { Text("📂", fontSize = 24.sp) }
-    // Note: combinedClickable better; упрощено — долгий тап срабатывает как «click с haptic», 
-    // потому что Material FAB не даёт onLongPress напрямую. Полноценно — через pointerInput (B204b).
 }
 
 @Composable

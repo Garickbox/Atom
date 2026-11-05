@@ -366,12 +366,14 @@ class ShareTargetActivity : AppCompatActivity() {
                 if (peer != null) {
                     AtomController.saveKnownP2pPeer(mac, peer.name)
                     FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris, urisRelativePaths)
+                    MainActivity.returnToMain(this@ShareTargetActivity)
                     finish()
                 } else {
                     val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
                     if (targetIp != null) {
                         val fakePeer = Peer(id = "p2p", name = name, ip = targetIp)
                         FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris, urisRelativePaths)
+                        MainActivity.returnToMain(this@ShareTargetActivity)
                         finish()
                     } else {
                         Toast.makeText(this@ShareTargetActivity, "Не получили IP", Toast.LENGTH_LONG).show()
@@ -578,6 +580,7 @@ class ShareTargetActivity : AppCompatActivity() {
                 if (peer != null) {
                     InAppLogger.d("ShareTarget", "TV peer resolved: ${peer.name} @ ${peer.ip}")
                     FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris, urisRelativePaths)
+                    MainActivity.returnToMain(this@ShareTargetActivity)
                     finish()
                 } else {
                     val targetIp = if (!conn.isGroupOwner) conn.groupOwnerAddress else null
@@ -722,6 +725,7 @@ class ShareTargetActivity : AppCompatActivity() {
                     Toast.makeText(this@ShareTargetActivity,
                         "Wi-Fi Direct → ${peer.name}", Toast.LENGTH_SHORT).show()
                     FileSenderService.startTransfer(this@ShareTargetActivity, peer, uris, urisRelativePaths)
+                    MainActivity.returnToMain(this@ShareTargetActivity)
                     finish()
                 } else {
                     InAppLogger.d("ShareTarget", "p2p peer not in list, falling back to ping")
@@ -733,6 +737,7 @@ class ShareTargetActivity : AppCompatActivity() {
                         Toast.makeText(this@ShareTargetActivity,
                             "Wi-Fi Direct → $name", Toast.LENGTH_SHORT).show()
                         FileSenderService.startTransfer(this@ShareTargetActivity, fakePeer, uris, urisRelativePaths)
+                        MainActivity.returnToMain(this@ShareTargetActivity)
                         finish()
                     } else {
                         Toast.makeText(this@ShareTargetActivity,
