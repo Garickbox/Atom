@@ -205,13 +205,9 @@ class FileBrowserActivity : AppCompatActivity() {
     private fun onCategoryTap(cat: Category) {
         InAppLogger.d("FileBrowser", "tap ${cat.id} count=${cat.count}")
         when (cat.id) {
-            "images" -> imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            "video" -> videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-            "audio" -> audioPicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE); type = "audio/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) })
             "internal" -> launchTreePicker("saf_internal_uri", "📱 Внутренняя", "primary:")
             "android" -> launchTreePicker("saf_android_uri", "🔒 Android", "primary:Android")
-            "apk", "downloads", "recent" -> {
+            "images", "video", "audio", "apk", "downloads", "recent" -> {
                 startActivity(Intent(this, FileListActivity::class.java).apply {
                     putExtra(FileListActivity.EXTRA_MODE, cat.id)
                     putExtra(FileListActivity.EXTRA_TITLE, cat.title)

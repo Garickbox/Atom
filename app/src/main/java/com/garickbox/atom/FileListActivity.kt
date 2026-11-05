@@ -232,6 +232,21 @@ class FileListActivity : AppCompatActivity() {
                 args = null
                 sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 100"
             }
+            "images" -> {
+                uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                selection = null; args = null
+                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            }
+            "video" -> {
+                uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                selection = null; args = null
+                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            }
+            "audio" -> {
+                uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                selection = null; args = null
+                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            }
             else -> return emptyList()
         }
         try {
