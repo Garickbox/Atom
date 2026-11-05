@@ -29,6 +29,12 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // B188: NFC-flow → stop continuousDiscover (axiom#212 — BUSY framework)
+        try {
+            AtomController.nfcFlowActive = true
+            AtomController.wifiDirect?.stopContinuousDiscover()
+            InAppLogger.nfc("QrServer", "B188: onCreate stopContinuousDiscover (receiver)")
+        } catch (_: Exception) {}
         // B166a: каждое открытие QrShare — с чистого P2P
         try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
         // B102b: TV — снять portrait lock + overscan 48/27dp
@@ -308,6 +314,14 @@ class QrShareActivity : AppCompatActivity() {
         try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
+        // B188: resume continuousDiscover if Atom foreground (axiom#212)
+        try {
+            AtomController.nfcFlowActive = false
+            if (AtomController.appForeground) {
+                AtomController.wifiDirect?.startContinuousDiscover()
+                InAppLogger.nfc("QrServer", "B188: onDestroy — resume continuousDiscover")
+            }
+        } catch (_: Exception) {}
         // B187: НЕ убиваем P2P-группу в onDestroy — она нужна для connect в фоне.
         // Cleanup — в onCreate следующего QrShare (см. line 33 forgetAllGroups).
         InAppLogger.nfc("QrServer", "B187: onDestroy, group kept for background connect")

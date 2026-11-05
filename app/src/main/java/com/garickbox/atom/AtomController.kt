@@ -39,6 +39,7 @@ object AtomController {
     var lastPeer: Peer? = null
     @Volatile var appForeground: Boolean = false
     @Volatile var currentP2pFrequencyHz: Int = 0  // B121: 0=unknown, 2412/5180 MHz после connect
+    @Volatile var nfcFlowActive: Boolean = false   // B188: NFC-flow → skip continuousDiscover (axiom#212)
     var onKnownPeersUpdated: ((List<KnownP2pPeer>) -> Unit)? = null
 
     val meshNode: MeshNode? get() = _meshNode
@@ -305,6 +306,10 @@ object AtomController {
     private fun startContinuousP2P() {
         if (transferActive) {
             com.mesh.core.InAppLogger.d("AtomController", "skip continuous — transfer active")
+            return
+        }
+        if (nfcFlowActive) {
+            com.mesh.core.InAppLogger.nfc("AtomController", "B188: skip continuousDiscover — NFC flow active")
             return
         }
         InAppLogger.d("AtomController", "app foreground → start continuous P2P discover")
