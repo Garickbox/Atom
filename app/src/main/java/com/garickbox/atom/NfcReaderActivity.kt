@@ -18,6 +18,9 @@ import android.os.Looper
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.mesh.core.InAppLogger
 
 class NfcReaderActivity : AppCompatActivity() {
@@ -31,6 +34,8 @@ class NfcReaderActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var currentPeer: Peer? = null
     private var currentHandover: NfcHandover? = null
+    @Volatile private var sheetShown = false
+    @Volatile private var afterConnectedCalled = false
 
     private val mediaPicker = registerForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
@@ -60,8 +65,42 @@ class NfcReaderActivity : AppCompatActivity() {
         setContentView(R.layout.activity_nfc_reader)
         statusText = findViewById(R.id.nfcStatus)
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        // B178/recall: восстановить pending после rotate/recreate
+        if (savedInstanceState != null) {
+            val peerId = savedInstanceState.getString("peer_id")
+            val peerName = savedInstanceState.getString("peer_name")
+            val peerIp = savedInstanceState.getString("peer_ip")
+            if (!peerId.isNullOrBlank() && !peerIp.isNullOrBlank()) {
+                currentPeer = Peer(id = peerId, name = peerName ?: "?", ip = peerIp)
+            }
+            val ssid = savedInstanceState.getString("handover_ssid")
+            val pwd = savedInstanceState.getString("handover_pwd")
+            val hIp = savedInstanceState.getString("handover_ip")
+            if (!ssid.isNullOrBlank() && !pwd.isNullOrBlank() && !hIp.isNullOrBlank()) {
+                currentHandover = NfcHandover(ssid, pwd, hIp)
+            }
+            sheetShown = savedInstanceState.getBoolean("sheet_shown", false)
+            afterConnectedCalled = savedInstanceState.getBoolean("after_called", false)
+            InAppLogger.nfc("NfcReader", "B178: restore peer=${currentPeer?.name} sheetShown=$sheetShown afterCalled=$afterConnectedCalled")
+        }
         if (nfcAdapter == null) { statusText.text = "NFC не поддерживается"; return }
         if (!nfcAdapter!!.isEnabled) { statusText.text = "Включи NFC в настройках"; return }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        currentPeer?.let { p ->
+            outState.putString("peer_id", p.id)
+            outState.putString("peer_name", p.name)
+            outState.putString("peer_ip", p.ip)
+        }
+        currentHandover?.let { h ->
+            outState.putString("handover_ssid", h.ssid)
+            outState.putString("handover_pwd", h.passphrase)
+            outState.putString("handover_ip", h.ip)
+        }
+        outState.putBoolean("sheet_shown", sheetShown)
+        outState.putBoolean("after_called", afterConnectedCalled)
     }
 
     override fun onResume() {
@@ -73,6 +112,16 @@ class NfcReaderActivity : AppCompatActivity() {
             NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
             opts
         )
+        // B179: fallback — connect был, sheet не показан → показать
+        if (currentPeer != null && !sheetShown && afterConnectedCalled) {
+            InAppLogger.nfc("NfcReader", "B179: onResume fallback — show sheet for ${currentPeer?.name}")
+            lifecycleScope.launch {
+                delay(300L)
+                if (!isFinishing && !isDestroyed && !sheetShown) {
+                    showPostConnectActionSheet()
+                }
+            }
+        }
     }
 
     override fun onPause() { super.onPause(); nfcAdapter?.disableReaderMode(this) }
@@ -331,33 +380,39 @@ class NfcReaderActivity : AppCompatActivity() {
     }
 
     private fun afterConnected(data: NfcHandover) {
+        afterConnectedCalled = true
         val node = AtomController.meshNode
         if (node == null) { InAppLogger.nfc("NfcReader:ERR", "afterConnected: node null"); finish(); return }
         InAppLogger.nfc("NfcReader", "afterConnected ip=${data.ip} ssid=${data.ssid}")
         node.sendHello(data.ip)
         InAppLogger.nfc("NfcReader", "sendHello → ${data.ip}")
         currentHandover = data
-        handler.postDelayed({
+        // B178: lifecycleScope вместо handler.postDelayed — не отменяется onDestroy
+        lifecycleScope.launch {
+            delay(2000L)
+            if (isFinishing || isDestroyed) {
+                InAppLogger.nfc("NfcReader", "B178: skip afterConnected body (destroyed) — B179 onResume покажет sheet")
+                return@launch
+            }
             val peer = AtomController.peers.value.firstOrNull { it.ip == data.ip }
                 ?: Peer(id = "nfc", name = "NFC", ip = data.ip)
             currentPeer = peer
-            // B169: Activity может быть destroyed (user back / transfer finish) — не показываем sheet
-            if (isFinishing || isDestroyed) {
-                InAppLogger.nfc("NfcReader", "B169: skip sheet — activity finishing/destroyed")
-                return@postDelayed
-            }
             if (pendingUris.isNotEmpty()) {
-                FileSenderService.startTransfer(this, peer, pendingUris, pendingPaths)
+                FileSenderService.startTransfer(this@NfcReaderActivity, peer, pendingUris, pendingPaths)
                 InAppLogger.nfc("NfcReader", "sent ${pendingUris.size} files to ${data.ip}")
                 finish()
             } else {
-                // B160: файл не выбран на старте NFC (FAB sheet) → показать выбор
                 showPostConnectActionSheet()
             }
-        }, 2000L)
+        }
     }
 
     private fun showPostConnectActionSheet() {
+        if (sheetShown) {
+            InAppLogger.nfc("NfcReader", "B178: sheet already shown, skip")
+            return
+        }
+        sheetShown = true
         try {
             val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
             val c = android.widget.LinearLayout(this).apply {
