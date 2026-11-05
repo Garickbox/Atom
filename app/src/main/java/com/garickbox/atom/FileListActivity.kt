@@ -25,7 +25,6 @@ import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,7 +105,7 @@ class FileListActivity : AppCompatActivity() {
                     actions = {
                         Box {
                             IconButton(onClick = { sortMenuExpanded = true }) {
-                                Icon(Icons.Default.Sort, contentDescription = "Sort")
+                                Text("⇅", fontSize = 22.sp)
                             }
                             DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
                                 listOf("name" to "По имени", "date" to "По дате", "size" to "По размеру").forEach { (k, l) ->
