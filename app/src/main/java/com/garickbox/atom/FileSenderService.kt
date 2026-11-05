@@ -544,6 +544,13 @@ class FileSenderService : Service() {
             com.mesh.core.CompactLog.sessionEnd(filesOk, uris.size - filesOk, duration, avgMbps)
             InAppLogger.d("FileSenderService",
                 "═══ transfer DONE: $filesOk/${uris.size} files, ${duration}ms, avg ${"%.1f".format(avgMbps)} MB/s")
+            // B216 axiom#301: auto-dismiss Success → Idle через 3.5с (работает без MainActivity)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (AtomController.transferState.value is TransferState.Success) {
+                    AtomController.transferState.value = TransferState.Idle
+                    InAppLogger.d("FileSenderService", "B216: Success → Idle (3.5s auto-dismiss)")
+                }
+            }, 3500L)
             kotlinx.coroutines.delay(10_000)
             stopSelf()
         }

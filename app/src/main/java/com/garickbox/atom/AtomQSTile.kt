@@ -35,6 +35,8 @@ class AtomQSTile : TileService() {
 
     override fun onClick() {
         super.onClick()
+        val _st = AtomController.transferState.value
+        InAppLogger.err("AtomQSTile", "B216: onClick state=${_st.javaClass.simpleName} fgs=${WidgetReceiveService.isActive}")
         // B20.4: fg-only (Атом открыт, FGS нет) → тап запускает FGS
         if (!WidgetReceiveService.isActive && AtomController.appForeground) {
             InAppLogger.d("AtomQSTile", "click → pin FGS (app open)")
@@ -96,7 +98,7 @@ class AtomQSTile : TileService() {
             }
             ContextCompat.startForegroundService(this, i)
         } catch (e: Exception) {
-            InAppLogger.d("AtomQSTile", "toggle error: " + e.message)
+            InAppLogger.err("AtomQSTile", "B216 toggle error: ${e.javaClass.simpleName}: ${e.message}")
         }
         handler.postDelayed({ updateTile() }, 500L)
     }
