@@ -75,6 +75,10 @@ object TestApi {
                     "/badge" -> cmdBadge(ctx, params["action"] ?: "get", params["n"]?.toIntOrNull() ?: 0)
                     "/nfc" -> cmdNfc(ctx)
                     "/nfc-log" -> cmdNfcLog(ctx)
+                    "/p2p-group" -> cmdP2pGroup(ctx)
+                    "/p2p-peers" -> cmdP2pPeers(ctx)
+                    "/p2p-connection" -> cmdP2pConnection(ctx)
+                    "/net-stat" -> cmdNetStat(ctx)
                     "/verbose" -> cmdVerbose(params["on"])
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
@@ -115,6 +119,50 @@ object TestApi {
             try { out?.close() } catch (_: Exception) {}
             try { client.close() } catch (_: Exception) {}
         }
+    }
+
+    private fun cmdP2pGroup(ctx: Context): String {
+        return try { AtomController.wifiDirect?.dumpGroupInfo() ?: "wifiDirect=null" }
+            catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdP2pPeers(ctx: Context): String {
+        return try { AtomController.wifiDirect?.dumpPeers() ?: "wifiDirect=null" }
+            catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdP2pConnection(ctx: Context): String {
+        return try { AtomController.wifiDirect?.dumpConnection() ?: "wifiDirect=null" }
+            catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdNetStat(ctx: Context): String {
+        return try {
+            val sb = StringBuilder()
+            sb.appendLine("═══ NetworkInterfaces ═══")
+            try {
+                java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+                    .filter { it.isUp }
+                    .forEach { ni ->
+                        sb.append(ni.name + " up=" + ni.isUp)
+                        val addrs = ni.inetAddresses.asSequence().map { it.hostAddress }.toList()
+                        sb.appendLine(" addrs=" + addrs.joinToString(","))
+                    }
+            } catch (e: Exception) { sb.appendLine("ni err: " + e.message) }
+            sb.appendLine()
+            sb.appendLine("═══ /proc/net/arp ═══")
+            try {
+                java.io.File("/proc/net/arp").readLines().take(15).forEach { sb.appendLine(it) }
+            } catch (e: Exception) { sb.appendLine("arp err: " + e.message) }
+            sb.appendLine()
+            sb.appendLine("═══ TCP listeners (47822, 47823) ═══")
+            try {
+                java.io.File("/proc/net/tcp").readLines()
+                    .filter { it.contains(":BACE", true) || it.contains(":BACF", true) || it.contains(":BACE0") }
+                    .take(5).forEach { sb.appendLine(it) }
+            } catch (e: Exception) { sb.appendLine("tcp err: " + e.message) }
+            sb.toString()
+        } catch (e: Exception) { "err: " + e.message }
     }
 
     private fun cmdNfcLog(ctx: Context): String {

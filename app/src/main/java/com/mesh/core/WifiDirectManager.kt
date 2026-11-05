@@ -384,6 +384,70 @@ class WifiDirectManager(private val ctx: Context) {
      * B16: явное «забыть группу» — стирает persistent profile.
      * Вызывать только из кнопки «Отключиться / Забыть устройство», НЕ из flow.
      */
+    // ═══ B174b: dump P2P state для /p2p-* endpoints ═══
+    @SuppressLint("MissingPermission")
+    fun dumpGroupInfo(timeoutMs: Long = 2000L): String {
+        val ch = channel ?: return "no channel"
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result = StringBuilder()
+        try {
+            manager?.requestGroupInfo(ch) { group ->
+                if (group == null) result.append("group=null")
+                else result.append("networkName=${group.networkName} passphrase=${group.passphrase?.let { "***" }} " +
+                    "isGO=${group.isGroupOwner} freq=${group.frequency} iface=${group.interface} " +
+                    "clients=${group.clientList?.joinToString(",") { it.deviceAddress + "/" + it.deviceName }}")
+                latch.countDown()
+            } ?: result.append("manager null")
+        } catch (e: Exception) {
+            result.append("err: ${e.message}")
+        }
+        latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return result.toString().ifBlank { "timeout (${timeoutMs}ms)" }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun dumpPeers(timeoutMs: Long = 2000L): String {
+        val ch = channel ?: return "no channel"
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result = StringBuilder()
+        try {
+            manager?.requestPeers(ch) { peerList ->
+                val peers = peerList?.deviceList?.toList() ?: emptyList()
+                if (peers.isEmpty()) result.append("peers=[]")
+                else {
+                    result.append("peers=${peers.size}: ")
+                    result.append(peers.joinToString(" | ") {
+                        "${it.deviceName}/${it.deviceAddress}/status=${it.status}/primary=${it.primaryDeviceType}"
+                    })
+                }
+                latch.countDown()
+            } ?: result.append("manager null")
+        } catch (e: Exception) {
+            result.append("err: ${e.message}")
+        }
+        latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return result.toString().ifBlank { "timeout (${timeoutMs}ms)" }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun dumpConnection(timeoutMs: Long = 2000L): String {
+        val ch = channel ?: return "no channel"
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result = StringBuilder()
+        try {
+            manager?.requestConnectionInfo(ch) { info ->
+                if (info == null) result.append("info=null")
+                else result.append("groupFormed=${info.groupFormed} isGO=${info.isGroupOwner} " +
+                    "goIp=${info.groupOwnerAddress?.hostAddress}")
+                latch.countDown()
+            } ?: result.append("manager null")
+        } catch (e: Exception) {
+            result.append("err: ${e.message}")
+        }
+        latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return result.toString().ifBlank { "timeout (${timeoutMs}ms)" }
+    }
+
     @SuppressLint("MissingPermission")
     fun forgetAllGroups() {
         lastGroupValid = false
