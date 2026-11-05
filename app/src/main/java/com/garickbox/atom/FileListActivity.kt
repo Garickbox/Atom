@@ -2,6 +2,7 @@ package com.garickbox.atom
 
 import android.content.ContentUris
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -15,35 +16,29 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.mesh.core.InAppLogger
 
 class FileListActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_TREE_URI = "tree_uri"
         const val EXTRA_TITLE = "title"
-        const val EXTRA_MODE = "mode"  // tree | apk | downloads | recent
+        const val EXTRA_MODE = "mode"  // tree | images | video | audio | installed_apps | direct
     }
 
     data class Row(val uri: Uri, val name: String, val isDir: Boolean, val size: Long,
-                   val relPath: String, val docId: String)
+                   val relPath: String, val docId: String, val icon: android.graphics.drawable.Drawable? = null)
 
     private var currentMode: String = "tree"
     private var currentTreeUri: Uri? = null
@@ -56,7 +51,7 @@ class FileListActivity : AppCompatActivity() {
     private var stack by mutableStateOf<List<Pair<String, String>>>(emptyList())
     private var reloadTrigger by mutableStateOf(0)
     private var searchQuery by mutableStateOf("")
-    private var sortMode by mutableStateOf("name")  // name | date | size
+    private var sortMode by mutableStateOf("name")
     private var sortMenuExpanded by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +64,9 @@ class FileListActivity : AppCompatActivity() {
             if (treeStr.isNullOrBlank()) { finish(); return }
             currentTreeUri = Uri.parse(treeStr)
             currentParentId = try { DocumentsContract.getTreeDocumentId(currentTreeUri!!) } catch (_: Exception) { finish(); return }
+        }
+        if (currentMode == "direct") {
+            currentParentId = "/sdcard"
         }
         setContent { MaterialTheme { ListUi() } }
     }
@@ -99,17 +97,15 @@ class FileListActivity : AppCompatActivity() {
                             if (currentPath.isNotBlank()) Text(currentPath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     },
-                    navigationIcon = {
-                        IconButton(onClick = { goBack() }) { Text("←", fontSize = 22.sp) }
-                    },
+                    navigationIcon = { IconButton(onClick = { goBack() }) { Text("←", fontSize = 22.sp) } },
                     actions = {
-                        Box {
-                            IconButton(onClick = { sortMenuExpanded = true }) {
-                                Text("⇅", fontSize = 22.sp)
-                            }
-                            DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
-                                listOf("name" to "По имени", "date" to "По дате", "size" to "По размеру").forEach { (k, l) ->
-                                    DropdownMenuItem(text = { Text(l) }, onClick = { sortMode = k; sortMenuExpanded = false })
+                        if (currentMode == "tree" || currentMode == "direct") {
+                            Box {
+                                IconButton(onClick = { sortMenuExpanded = true }) { Text("⇅", fontSize = 22.sp) }
+                                DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                                    listOf("name" to "По имени", "date" to "По дате", "size" to "По размеру").forEach { (k, l) ->
+                                        DropdownMenuItem(text = { Text(l) }, onClick = { sortMode = k; sortMenuExpanded = false })
+                                    }
                                 }
                             }
                         }
@@ -128,9 +124,7 @@ class FileListActivity : AppCompatActivity() {
                                 Text("Выбрано: ${selected.size}", fontWeight = FontWeight.Bold)
                                 Text(fmtBytes(totalSize), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Button(onClick = { sendSelected() }) {
-                                Text("📤 Отправить")
-                            }
+                            Button(onClick = { sendSelected() }) { Text("📤 Отправить") }
                         }
                     }
                 }
@@ -140,20 +134,13 @@ class FileListActivity : AppCompatActivity() {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("🔍 Поиск по имени…") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
-                            }
-                        }
-                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    placeholder = { Text("🔍 Поиск по имени…", fontSize = 14.sp) },
+                    leadingIcon = { Text("🔍", fontSize = 18.sp) },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
                 )
-                LazyColumn(Modifier.weight(1f)) {
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 80.dp)) {
                     items(sorted) { row -> RowUi(row) }
                 }
             }
@@ -164,37 +151,37 @@ class FileListActivity : AppCompatActivity() {
     private fun RowUi(row: Row) {
         val isChecked = selected.containsKey(row.docId)
         Row(
-            Modifier.fillMaxWidth().clickable { onTap(row) }.padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().clickable { onTap(row) }.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (row.isDir) {
-                Text("📁", fontSize = 24.sp, modifier = Modifier.size(40.dp))
-            } else {
-                val mime = when (row.name.substringAfterLast('.', "").lowercase()) {
-                    "jpg","jpeg","png","gif","webp","heic","avif" -> "image"
-                    "mp4","mkv","mov","avi","webm","3gp" -> "video"
-                    else -> ""
+            when {
+                row.isDir -> Text("📁", fontSize = 22.sp, modifier = Modifier.size(32.dp))
+                row.icon != null -> {
+                    val bmp = remember(row.uri) { row.icon.toBitmap().asImageBitmap() }
+                    androidx.compose.foundation.Image(
+                        bitmap = bmp,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
+                        contentScale = ContentScale.Fit
+                    )
                 }
-                if (mime.isNotEmpty()) {
+                row.name.substringAfterLast('.', "").lowercase() in listOf("jpg","jpeg","png","gif","webp","heic","avif","mp4","mkv","mov","avi","webm") -> {
                     AsyncImage(
                         model = row.uri,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
+                        modifier = Modifier.size(36.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
                     )
-                } else {
-                    Text(mimeIcon(row.name), fontSize = 24.sp)
                 }
+                else -> Text(mimeIcon(row.name), fontSize = 22.sp, modifier = Modifier.size(32.dp))
             }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(row.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    fontWeight = if (row.isDir) FontWeight.Medium else FontWeight.Normal)
-                Text(if (row.isDir) "папка" else fmtBytes(row.size), fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(row.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontWeight = if (row.isDir) FontWeight.Medium else FontWeight.Normal)
+                Text(if (row.isDir) "папка" else fmtBytes(row.size), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (!row.isDir) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) })
+            if (!row.isDir) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) }, modifier = Modifier.size(40.dp))
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
     }
 
     private fun mimeIcon(name: String): String {
@@ -241,9 +228,11 @@ class FileListActivity : AppCompatActivity() {
         return try {
             when (currentMode) {
                 "tree" -> loadTree()
-                "apk" -> loadMediaStore("apk")
-                "downloads" -> loadMediaStore("downloads")
-                "recent" -> loadMediaStore("recent")
+                "direct" -> loadDirect(currentParentId)
+                "installed_apps" -> loadInstalledApps()
+                "images" -> loadMediaStore("images")
+                "video" -> loadMediaStore("video")
+                "audio" -> loadMediaStore("audio")
                 else -> emptyList()
             }
         } catch (e: Exception) {
@@ -278,54 +267,52 @@ class FileListActivity : AppCompatActivity() {
         return out
     }
 
-    private fun loadMediaStore(mode: String): List<Row> {
-        if (android.os.Build.VERSION.SDK_INT < 29 && (mode == "apk" || mode == "downloads")) return emptyList()
+    private fun loadDirect(parentPath: String): List<Row> {
         val out = mutableListOf<Row>()
-        val uri: Uri
-        val selection: String?
-        val args: Array<String>?
-        val sort: String
-        when (mode) {
-            "apk" -> {
-                uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-                args = arrayOf("%.apk")
-                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+        try {
+            val dir = java.io.File(parentPath)
+            dir.listFiles()?.forEach { f ->
+                val uri = Uri.fromFile(f)
+                val rel = f.absolutePath
+                out.add(Row(uri, f.name, f.isDirectory, if (f.isFile) f.length() else 0L, rel, f.absolutePath))
             }
-            "downloads" -> {
-                uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                selection = null; args = null
-                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+        } catch (e: Exception) { InAppLogger.err("FileList", "loadDirect: ${e.message}") }
+        out.sortWith(compareByDescending<Row> { it.isDir }.thenBy { it.name.lowercase() })
+        return out
+    }
+
+    private fun loadInstalledApps(): List<Row> {
+        val out = mutableListOf<Row>()
+        val pm = packageManager
+        try {
+            pm.getInstalledApplications(PackageManager.GET_META_DATA).forEach { app ->
+                if ((app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) return@forEach
+                val label = pm.getApplicationLabel(app).toString()
+                val icon = pm.getApplicationIcon(app)
+                val apkPath = app.sourceDir
+                val uri = Uri.fromFile(java.io.File(apkPath))
+                out.add(Row(uri, label, false, java.io.File(apkPath).length(), label, app.packageName, icon))
             }
-            "recent" -> {
-                uri = MediaStore.Files.getContentUri("external")
-                selection = "${MediaStore.Files.FileColumns.MEDIA_TYPE} != 0"
-                args = null
-                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 100"
-            }
-            "images" -> {
-                uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                selection = null; args = null
-                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-            }
-            "video" -> {
-                uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                selection = null; args = null
-                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-            }
-            "audio" -> {
-                uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-                selection = null; args = null
-                sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-            }
+        } catch (e: Exception) { InAppLogger.err("FileList", "loadInstalledApps: ${e.message}") }
+        out.sortBy { it.name.lowercase() }
+        return out
+    }
+
+    private fun loadMediaStore(mode: String): List<Row> {
+        val out = mutableListOf<Row>()
+        val uri = when (mode) {
+            "images" -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            "video" -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            "audio" -> MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
             else -> return emptyList()
         }
+        val sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
         try {
             contentResolver.query(uri, arrayOf(
                 MediaStore.MediaColumns._ID,
                 MediaStore.MediaColumns.DISPLAY_NAME,
                 MediaStore.MediaColumns.SIZE,
-                MediaStore.MediaColumns.RELATIVE_PATH), selection, args, sort)?.use { c ->
+                MediaStore.MediaColumns.RELATIVE_PATH), null, null, sort)?.use { c ->
                 while (c.moveToNext()) {
                     val id = c.getLong(0)
                     val name = c.getString(1) ?: continue

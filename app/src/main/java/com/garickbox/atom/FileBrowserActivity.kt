@@ -1,26 +1,21 @@
 package com.garickbox.atom
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,25 +27,12 @@ class FileBrowserActivity : AppCompatActivity() {
 
     data class Category(val id: String, val title: String, val icon: String, val count: Int, val subtitle: String = "")
 
-    private val imagePicker = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
-        if (uris.isNotEmpty()) sendToShareTarget(uris, "image/*", emptyList())
-    }
-    private val videoPicker = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
-        if (uris.isNotEmpty()) sendToShareTarget(uris, "video/*", emptyList())
-    }
-    private val audioPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode != RESULT_OK || r.data == null) return@registerForActivityResult
-        val uris = mutableListOf<Uri>()
-        r.data?.clipData?.let { c -> for (i in 0 until c.itemCount) uris.add(c.getItemAt(i).uri) }
-        r.data?.data?.let { uris.add(it) }
-        if (uris.isNotEmpty()) sendToShareTarget(uris, "audio/*", emptyList())
-    }
-
     private var pendingPrefsKey: String? = null
     private var pendingTitle: String? = null
+    private var pendingInitialUri: String? = null
 
-    private val treePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) { pendingPrefsKey = null; pendingTitle = null; return@registerForActivityResult }
+    private val treePicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) { pendingPrefsKey = null; pendingTitle = null; pendingInitialUri = null; return@registerForActivityResult }
         try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
         val key = pendingPrefsKey
         val title = pendingTitle ?: "Файлы"
@@ -61,7 +43,7 @@ class FileBrowserActivity : AppCompatActivity() {
             putExtra(FileListActivity.EXTRA_MODE, "tree")
         })
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
-        pendingPrefsKey = null; pendingTitle = null
+        pendingPrefsKey = null; pendingTitle = null; pendingInitialUri = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -110,103 +92,84 @@ class FileBrowserActivity : AppCompatActivity() {
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Text("☰", fontSize = 24.sp)
-                            }
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) { Text("☰", fontSize = 24.sp) }
                         }
                     )
                 }
             ) { pad ->
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                LazyColumn(
+                    contentPadding = PaddingValues(8.dp),
                     modifier = Modifier.fillMaxSize().padding(pad)
                 ) {
-                    items(cats) { cat -> CategoryCard(cat) { onCategoryTap(cat) } }
+                    items(cats) { cat ->
+                        CategoryRow(cat) { onCategoryTap(cat) }
+                    }
                 }
             }
         }
     }
 
     @Composable
-    private fun CategoryCard(cat: Category, onClick: () -> Unit) {
-        val interaction = remember { MutableInteractionSource() }
-        val pressed by interaction.collectIsPressedAsState()
-        val scale by animateFloatAsState(if (pressed) 0.94f else 1f, label = "card-scale")
-
-        Card(
-            modifier = Modifier
+    private fun CategoryRow(cat: Category, onClick: () -> Unit) {
+        Row(
+            Modifier
                 .fillMaxWidth()
-                .height(140.dp)
-                .graphicsLayer { scaleX = scale; scaleY = scale }
-                .clickable(
-                    interactionSource = interaction,
-                    indication = androidx.compose.material3.ripple(),
-                    onClick = onClick
-                ),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                    Text(cat.icon, fontSize = 40.sp)
-                    if (cat.count > 0) {
-                        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(10.dp)) {
-                            Text(cat.count.toString(), Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-                Column {
-                    Text(cat.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (cat.subtitle.isNotBlank()) {
-                        Text(cat.subtitle, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+            Text(cat.icon, fontSize = 26.sp, modifier = Modifier.size(36.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(cat.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (cat.subtitle.isNotBlank()) {
+                    Text(cat.subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            if (cat.count > 0) {
+                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(10.dp)) {
+                    Text(cat.count.toString(), Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
     }
 
-    private fun loadCategories(): List<Category> = listOf(
-        Category("internal", "Внутренняя", "📱", 0, "любые папки (SAF)"),
-        Category("images", "Фото", "🖼", countMedia(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI)),
-        Category("video", "Видео", "🎬", countMedia(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI)),
-        Category("audio", "Музыка", "🎵", countMedia(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)),
-        Category("apk", "APK", "📦", countApk()),
-        Category("downloads", "Загрузки", "📥", countDownloads()),
-        Category("android", "Android/data", "🔒", 0, "SAF · как X-plore"),
-        Category("recent", "Недавние", "🕒", 0, "100 последних")
-    )
+    private fun loadCategories(): List<Category> {
+        val pm = packageManager
+        val hasTermux = try { pm.getPackageInfo("com.termux", 0); true } catch (_: Exception) { false }
+        val cats = mutableListOf<Category>()
+        cats += Category("internal", "Внутренняя память", "📱", 0, "любые папки")
+        cats += Category("atom", "Папка Atom", "⚛️", 0, "Download/Atom")
+        cats += Category("images", "Фото", "🖼", countMedia(MediaStoreKind.IMAGES))
+        cats += Category("video", "Видео", "🎬", countMedia(MediaStoreKind.VIDEO))
+        cats += Category("audio", "Музыка", "🎵", countMedia(MediaStoreKind.AUDIO))
+        cats += Category("apk", "Приложения", "📦", countUserApps(pm))
+        cats += Category("downloads", "Загрузки", "📥", 0, "папки")
+        if (hasTermux) cats += Category("termux", "Termux", "📟", 0, "$HOME/")
+        return cats
+    }
 
-    private fun countMedia(uri: Uri): Int = try {
-        contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)?.use { it.count } ?: 0
-    } catch (_: Exception) { 0 }
+    private fun countMedia(kind: MediaStoreKind): Int {
+        val uri = when (kind) {
+            MediaStoreKind.IMAGES -> android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            MediaStoreKind.VIDEO -> android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            MediaStoreKind.AUDIO -> android.provider.MediaStore.Audio.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        }
+        return try { contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)?.use { it.count } ?: 0 }
+        catch (_: Exception) { 0 }
+    }
 
-    private fun countApk(): Int {
-        if (android.os.Build.VERSION.SDK_INT < 29) return 0
+    private fun countUserApps(pm: PackageManager): Int {
         return try {
-            contentResolver.query(
-                android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(android.provider.MediaStore.MediaColumns._ID),
-                "${android.provider.MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
-                arrayOf("%.apk"), null)?.use { it.count } ?: 0
+            pm.getInstalledApplications(PackageManager.GET_META_DATA).count { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
         } catch (_: Exception) { 0 }
-    }
-
-    private fun countDownloads(): Int {
-        if (android.os.Build.VERSION.SDK_INT < 29) return 0
-        return countMedia(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI)
     }
 
     private fun onCategoryTap(cat: Category) {
         InAppLogger.d("FileBrowser", "tap ${cat.id} count=${cat.count}")
         when (cat.id) {
             "internal" -> {
-                // B184a5: MANAGE_EXTERNAL_STORAGE — прямой /sdcard/ без picker
                 if (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
                     try {
                         startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -216,11 +179,23 @@ class FileBrowserActivity : AppCompatActivity() {
                     }
                     android.widget.Toast.makeText(this, "Разреши «Доступ ко всем файлам» → вернись", android.widget.Toast.LENGTH_LONG).show()
                 } else {
-                    launchTreePicker("saf_internal_uri", "📱 Внутренняя", "primary:")
+                    startActivity(Intent(this, FileListActivity::class.java).apply {
+                        putExtra(FileListActivity.EXTRA_MODE, "direct")
+                        putExtra(FileListActivity.EXTRA_TITLE, "📱 Внутренняя")
+                    })
                 }
             }
-            "android" -> launchTreePicker("saf_android_uri", "🔒 Android", "primary:Android")
-            "images", "video", "audio", "apk", "downloads", "recent" -> {
+            "atom" -> launchTreePicker("saf_atom_uri", "⚛️ Папка Atom", "primary:Download/Atom")
+            "termux" -> launchTreePicker("saf_termux_uri", "📟 Termux", "com.termux.documents:")
+            "apk" -> {
+                startActivity(Intent(this, FileListActivity::class.java).apply {
+                    putExtra(FileListActivity.EXTRA_MODE, "installed_apps")
+                    putExtra(FileListActivity.EXTRA_TITLE, "📦 Приложения")
+                })
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+            }
+            "downloads" -> launchTreePicker("saf_downloads_uri", "📥 Загрузки", "primary:Download")
+            "images", "video", "audio" -> {
                 startActivity(Intent(this, FileListActivity::class.java).apply {
                     putExtra(FileListActivity.EXTRA_MODE, cat.id)
                     putExtra(FileListActivity.EXTRA_TITLE, cat.title)
@@ -244,25 +219,15 @@ class FileBrowserActivity : AppCompatActivity() {
         }
         pendingPrefsKey = key; pendingTitle = title
         val initialUri = try {
-            android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", initialDocPath)
+            if (initialDocPath.startsWith("com.termux.documents:")) {
+                Uri.parse("content://com.termux.documents/")
+            } else {
+                android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", initialDocPath)
+            }
         } catch (_: Exception) { null }
         InAppLogger.d("FileBrowser", "launchTreePicker initial=$initialDocPath")
         treePicker.launch(initialUri)
     }
 
-    private fun sendToShareTarget(uris: List<Uri>, mime: String, paths: List<String>) {
-        val intent = Intent(this, ShareTargetActivity::class.java).apply {
-            action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
-            type = mime
-            if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris.first())
-            else putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
-            if (paths.isNotEmpty()) putStringArrayListExtra("atom_relative_paths", ArrayList(paths))
-            clipData = android.content.ClipData.newRawUri("", uris.first()).apply {
-                for (i in 1 until uris.size) addItem(android.content.ClipData.Item(uris[i]))
-            }
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(intent)
-        finish()
-    }
+    enum class MediaStoreKind { IMAGES, VIDEO, AUDIO }
 }
