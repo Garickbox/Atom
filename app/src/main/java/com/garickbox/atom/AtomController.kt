@@ -153,7 +153,7 @@ object AtomController {
         try {
             scope.launch {
                 transferState.collect {
-                    try { AtomWidgetProvider.refresh(ctx.applicationContext) } catch (_: Exception) {}
+                    try { AtomWidgetCompactProvider.refresh(ctx.applicationContext) } catch (_: Exception) {}
                     try { AtomQSTile.requestUpdate(ctx.applicationContext) } catch (_: Exception) {}
                 }
             }

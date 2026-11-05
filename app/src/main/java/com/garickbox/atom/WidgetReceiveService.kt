@@ -43,7 +43,7 @@ class WidgetReceiveService : Service() {
     private val tickerRunnable = object : Runnable {
         override fun run() {
             if (!isActive) return
-            try { AtomWidgetProvider.refreshNow(this@WidgetReceiveService) } catch (_: Exception) {}
+            try { AtomWidgetCompactProvider.refreshNow(this@WidgetReceiveService) } catch (_: Exception) {}
             try { AtomQSTile.requestUpdate(this@WidgetReceiveService) } catch (_: Exception) {}
             tickerHandler.postDelayed(this, 1000L)
         }
@@ -94,7 +94,7 @@ class WidgetReceiveService : Service() {
                 wakeLock = PowerLocks.acquireWake(this, "atom-widget-recv-wake")
                 InAppLogger.d("WidgetReceive", "ON until " + activeUntil)
                 scheduleAutoStop()
-                AtomWidgetProvider.refreshNow(this)
+                AtomWidgetCompactProvider.refreshNow(this)
                 try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
                 tickerHandler.removeCallbacks(tickerRunnable)
                 tickerHandler.post(tickerRunnable)
@@ -129,7 +129,7 @@ class WidgetReceiveService : Service() {
                         InAppLogger.d("WidgetReceive",
                             "autoStop: transfer active (r=$receiving s=$sending), extend 60s")
                         activeUntil = System.currentTimeMillis() + 60_000L
-                        try { AtomWidgetProvider.refreshNow(this) } catch (_: Exception) {}
+                        try { AtomWidgetCompactProvider.refreshNow(this) } catch (_: Exception) {}
                         try { AtomQSTile.requestUpdate(this) } catch (_: Exception) {}
                         continue
                     }
@@ -158,7 +158,7 @@ class WidgetReceiveService : Service() {
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)
         InAppLogger.d("WidgetReceive", "OFF")
-        try { AtomWidgetProvider.refreshNow(this) } catch (_: Exception) {}
+        try { AtomWidgetCompactProvider.refreshNow(this) } catch (_: Exception) {}
         super.onDestroy()
     }
 

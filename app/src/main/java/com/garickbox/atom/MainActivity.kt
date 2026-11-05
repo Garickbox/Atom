@@ -17,6 +17,7 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_SHORTCUT_FIND = "com.garickbox.atom.SHORTCUT_FIND"
         const val ACTION_SHORTCUT_RECEIVE = "com.garickbox.atom.SHORTCUT_RECEIVE"
         const val ACTION_SHORTCUT_SEND_PEER = "com.garickbox.atom.SHORTCUT_SEND_PEER"
+        const val ACTION_WIDGET_SEND = "com.garickbox.atom.WIDGET_SEND"
         @Volatile var pendingPeerForShareTarget: Peer? = null
 
         /** B202: returnToMain — после startTransfer перекинуть user на главный */
@@ -88,7 +89,7 @@ class MainActivity : AppCompatActivity() {
             pendingShortcutFind = false
         } else {
             when (intent?.action) {
-                AtomWidgetProvider.ACTION_WIDGET_SEND -> pendingWidgetSend = true
+                ACTION_WIDGET_SEND -> pendingWidgetSend = true
                 "com.garickbox.atom.WIDGET_INSTALL" -> {
                     val apkUri = intent?.getStringExtra("apk_uri") ?: ""
                     if (apkUri.isNotBlank()) {
@@ -270,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         if (isFinishing || isDestroyed) return
         when (intent.action) {
-            AtomWidgetProvider.ACTION_WIDGET_SEND -> processWidgetSend()
+            ACTION_WIDGET_SEND -> processWidgetSend()
             "com.garickbox.atom.WIDGET_INSTALL" -> {
                 val apkUri = intent.getStringExtra("apk_uri") ?: ""
                 if (apkUri.isNotBlank()) {

@@ -117,18 +117,6 @@
         </receiver>
 
         <receiver
-            android:name=".AtomWidgetProvider"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.garickbox.atom.WIDGET_REFRESH" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_atom_info" />
-        </receiver>
-
-        <receiver
             android:name=".AtomWidgetCompactProvider"
             android:exported="true">
             <intent-filter>

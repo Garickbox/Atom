@@ -17,7 +17,38 @@ import com.mesh.core.InAppLogger
 class AtomWidgetCompactProvider : AppWidgetProvider() {
 
     companion object {
+        const val ACTION_WIDGET_SEND = "com.garickbox.atom.WIDGET_SEND"
         @Volatile private var lastRefresh: Long = 0L
+
+        fun refreshNow(ctx: android.content.Context) = refresh(ctx, force = true)
+
+        /** B215: ring bitmap (перенесено из AtomWidgetProvider) — axiom#297 */
+        fun makeRingBitmap(ctx: android.content.Context, pct: Int, sizePx: Int, showPercent: Boolean): android.graphics.Bitmap {
+            val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+            val c = android.graphics.Canvas(bmp)
+            val stroke = sizePx * 0.10f
+            val pad = stroke / 2f
+            val rect = android.graphics.RectF(pad, pad, sizePx - pad, sizePx - pad)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = stroke
+                strokeCap = android.graphics.Paint.Cap.ROUND
+            }
+            paint.color = 0x33FFFFFF.toInt()
+            c.drawArc(rect, 0f, 360f, false, paint)
+            paint.color = 0xFFFFFFFF.toInt()
+            val sweep = 360f * pct.coerceIn(0, 100) / 100f
+            if (sweep > 0f) c.drawArc(rect, -90f, sweep, false, paint)
+            if (showPercent) {
+                paint.style = android.graphics.Paint.Style.FILL
+                paint.textAlign = android.graphics.Paint.Align.CENTER
+                paint.textSize = sizePx * 0.24f
+                paint.color = 0xFFFFFFFF.toInt()
+                paint.isFakeBoldText = true
+                c.drawText("$pct%", sizePx / 2f, sizePx / 2f + paint.textSize * 0.35f, paint)
+            }
+            return bmp
+        }
 
         fun refresh(ctx: Context, force: Boolean = false) {
             try {
@@ -42,7 +73,7 @@ class AtomWidgetCompactProvider : AppWidgetProvider() {
                 is TransferState.Running -> if (state.bytesTotal > 0) (state.bytesSent * 100 / state.bytesTotal).toInt() else 0
                 else -> 0
             }
-            val ringBmp = AtomWidgetProvider.makeRingBitmap(ctx, ringPct, 200, showPercent = state is TransferState.Running)
+            val ringBmp = makeRingBitmap(ctx, ringPct, 200, showPercent = state is TransferState.Running)
             rv.setImageViewBitmap(R.id.ring, ringBmp)
 
             when (state) {

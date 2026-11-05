@@ -251,7 +251,7 @@ object TestApi {
             "main" -> R.layout.activity_main
             "qr" -> R.layout.activity_qr_share
             "qr_scan" -> R.layout.activity_qr_scan
-            "widget" -> R.layout.widget_atom
+            "widget" -> R.layout.widget_atom_compact
             else -> return "unknown: " + layout
         }
         // B140: MaterialCardView не инфлейтится в ContextThemeWrapper standalone.
