@@ -314,13 +314,15 @@ private fun ShimmerBar(progress: Float, active: Boolean = true) {
         label = "shift"
     )
     val p = progress.coerceIn(0f, 1f)
+    val glowColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+    val trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
     Box(
         Modifier.fillMaxWidth().height(10.dp)
             .clip(RoundedCornerShape(5.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+            .background(trackColor)
             .drawBehind {
                 drawRoundRect(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                    color = glowColor,
                     size = size.copy(width = size.width * p),
                     cornerRadius = CornerRadius(5.dp.toPx()),
                     style = Stroke(width = 2.dp.toPx())
