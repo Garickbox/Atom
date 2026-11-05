@@ -210,6 +210,8 @@ class FileReceiverService : Service() {
         lastNotifKey = ""
         lastNotifAt = 0L
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+        // B194: resume continuousDiscover после приёма (axiom#225)
+        try { AtomController.resumeContinuousIfIdle() } catch (_: Exception) {}
         instance = null
         PowerLocks.releaseWifi(wifiLock)
         PowerLocks.release(wakeLock)

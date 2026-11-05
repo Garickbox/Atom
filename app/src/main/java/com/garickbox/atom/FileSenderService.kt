@@ -1076,6 +1076,8 @@ private fun displayName(uri: Uri): String? {
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         // B173b: явный teardown P2P после transfer (axiom#161 — не гадать, сбрасывать)
         try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
+        // B194: resume continuousDiscover только когда P2P свободен (axiom#225)
+        try { AtomController.resumeContinuousIfIdle() } catch (_: Exception) {}
         try {
             if (!AtomController.transferActive) {
                 QrScanActivity.unbind()

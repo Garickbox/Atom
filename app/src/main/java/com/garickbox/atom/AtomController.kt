@@ -303,6 +303,19 @@ object AtomController {
         }
     }
 
+    /** B194: resume continuousDiscover ТОЛЬКО если idle (axiom#225) */
+    fun resumeContinuousIfIdle() {
+        if (appForeground && !transferActive && !nfcFlowActive) {
+            try {
+                wifiDirect?.startContinuousDiscover()
+                com.mesh.core.InAppLogger.nfc("AtomController", "B194: resume continuousDiscover (idle)")
+            } catch (_: Exception) {}
+        } else {
+            com.mesh.core.InAppLogger.nfc("AtomController",
+                "B194: skip resume (fg=$appForeground active=$transferActive nfc=$nfcFlowActive)")
+        }
+    }
+
     private fun startContinuousP2P() {
         if (transferActive) {
             com.mesh.core.InAppLogger.d("AtomController", "skip continuous — transfer active")

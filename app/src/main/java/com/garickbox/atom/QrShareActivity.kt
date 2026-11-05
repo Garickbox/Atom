@@ -314,13 +314,10 @@ class QrShareActivity : AppCompatActivity() {
         try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
-        // B188: resume continuousDiscover if Atom foreground (axiom#212)
+        // B194: НЕ resume — FileReceiverService ещё использует P2P (axiom#225)
         try {
             AtomController.nfcFlowActive = false
-            if (AtomController.appForeground) {
-                AtomController.wifiDirect?.startContinuousDiscover()
-                InAppLogger.nfc("QrServer", "B188: onDestroy — resume continuousDiscover")
-            }
+            InAppLogger.nfc("QrServer", "B194: onDestroy — nfcFlowActive=false (no resume)")
         } catch (_: Exception) {}
         // B187: НЕ убиваем P2P-группу в onDestroy — она нужна для connect в фоне.
         // Cleanup — в onCreate следующего QrShare (см. line 33 forgetAllGroups).
