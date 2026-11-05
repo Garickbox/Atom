@@ -40,6 +40,13 @@ class NameSetupActivity : AppCompatActivity() {
     }
 
     private fun defaultDeviceName(): String {
+        // B182: marketname first (POCO X5 5G), не Build.MODEL (22111317PG)
+        try {
+            val p = Runtime.getRuntime().exec(arrayOf("getprop", "ro.product.marketname"))
+            val m = p.inputStream.bufferedReader().readText().trim()
+            p.waitFor()
+            if (m.isNotBlank()) return m
+        } catch (_: Exception) {}
         try {
             val globalName = Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
             if (!globalName.isNullOrBlank()) return globalName

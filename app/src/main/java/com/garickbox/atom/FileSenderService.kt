@@ -949,14 +949,45 @@ class FileSenderService : Service() {
     }
 
 private fun displayName(uri: Uri): String? {
+        // B181: 3 уровня + MediaStore by ID
+        // 1. OpenableColumns.DISPLAY_NAME (folder picker, SAF)
         try {
-            contentResolver.query(uri, null, null, null, null)?.use { c: Cursor ->
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c: Cursor ->
                 if (c.moveToFirst()) {
-                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) return c.getString(idx)
+                    val name = c.getString(0)
+                    if (!name.isNullOrBlank() && name.contains(".")) return name
                 }
             }
         } catch (_: Exception) {}
+        // 2. MediaStore.MediaColumns.DISPLAY_NAME (PhotoPicker иногда)
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { c: Cursor ->
+                if (c.moveToFirst()) {
+                    val name = c.getString(0)
+                    if (!name.isNullOrBlank() && name.contains(".")) return name
+                }
+            }
+        } catch (_: Exception) {}
+        // 3. Fallback: query MediaStore by ID (uri.lastPathSegment = numeric ID)
+        try {
+            val id = uri.lastPathSegment?.toLongOrNull()
+            if (id != null && id > 0) {
+                contentResolver.query(
+                    android.provider.MediaStore.Files.getContentUri("external"),
+                    arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME),
+                    "_id = ?", arrayOf(id.toString()), null
+                )?.use { c: Cursor ->
+                    if (c.moveToFirst()) {
+                        val name = c.getString(0)
+                        if (!name.isNullOrBlank()) {
+                            InAppLogger.nfc("FileSender", "B181: name from MediaStore by ID=$id -> $name")
+                            return name
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        // 4. Last resort — ID (better than null)
         return uri.lastPathSegment
     }
 

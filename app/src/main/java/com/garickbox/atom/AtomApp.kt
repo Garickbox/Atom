@@ -11,9 +11,18 @@ class AtomApp : Application() {
         com.mesh.core.CompactLog.init(this)
         NotificationHelper.createChannels(this)
         AtomController.init(this)
-        if (AtomController.myName.isBlank()) {
-            AtomController.saveMyName("Atom-" + AtomController.myId.take(4))
-            InAppLogger.d("AtomApp", "B137: fallback name Atom-XXXX")
+        // B182: auto-migrate fallback Atom-XXXX → marketname (POCO X5 5G)
+        if (AtomController.myName.isBlank() || AtomController.myName.startsWith("Atom-")) {
+            val marketName = try {
+                val p = Runtime.getRuntime().exec(arrayOf("getprop", "ro.product.marketname"))
+                val name = p.inputStream.bufferedReader().readText().trim()
+                p.waitFor()
+                if (name.isNotBlank()) name else null
+            } catch (_: Exception) { null }
+            val fallback = if (marketName != null) marketName
+                else (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).trim()
+            AtomController.saveMyName(fallback)
+            InAppLogger.d("AtomApp", "B182: name -> $fallback (was '${AtomController.myName}')")
         }
         AtomController.onKnownPeersUpdated = { peers ->
             try { ShortcutPublisher.update(this, peers) } catch (_: Exception) {}
