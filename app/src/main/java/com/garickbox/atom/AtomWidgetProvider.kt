@@ -6,6 +6,10 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.view.View
 import android.widget.RemoteViews
 import com.mesh.core.InAppLogger
@@ -13,18 +17,6 @@ import com.mesh.core.InAppLogger
 class AtomWidgetProvider : AppWidgetProvider() {
 
     companion object {
-        const val ACTION_WIDGET_SEND = "com.garickbox.atom.WIDGET_SEND"
-
-        // Emoji через Character.toChars — ASCII в исходнике, emoji в рантайме
-        private val EMOJI_SEND: String = String(Character.toChars(0x1F4E4))  // send arrow
-        private val EMOJI_RECV: String = String(Character.toChars(0x1F4E5))  // recv arrow
-        private val ARROW: String = String(Character.toChars(0x2192))       // ->
-        private val ATOM: String = String(Character.toChars(0x269B))        // atom
-        private val VS16: String = String(Character.toChars(0xFE0F))        // emoji style
-        private val PAUSE: String = String(Character.toChars(0x23F8))       // pause
-        private val PLAY: String = String(Character.toChars(0x25B6))        // play
-        private val XMARK: String = String(Character.toChars(0x2715))       // x
-
         @Volatile private var lastRefresh: Long = 0L
 
         fun refresh(ctx: Context) = refreshInternal(ctx, force = false)
@@ -33,140 +25,190 @@ class AtomWidgetProvider : AppWidgetProvider() {
         private fun refreshInternal(ctx: Context, force: Boolean) {
             try {
                 val now = System.currentTimeMillis()
-                // B94: 500ms вместо 1000ms — multi-thread обновляет прогресс чаще
                 if (!force && now - lastRefresh < 500L) return
                 lastRefresh = now
                 val mgr = AppWidgetManager.getInstance(ctx)
                 val ids = mgr.getAppWidgetIds(ComponentName(ctx, AtomWidgetProvider::class.java))
-                if (ids.isEmpty()) return
-                val state = AtomController.transferState.value
-                val rv = buildRemoteViews(ctx, state)
-                mgr.updateAppWidget(ids, rv)
+                if (ids.isNotEmpty()) {
+                    mgr.updateAppWidget(ids, buildRemoteViews(ctx, AtomController.transferState.value))
+                }
             } catch (e: Exception) {
                 InAppLogger.d("Widget", "refresh error: " + e.message)
             }
+            try {
+                AtomWidgetCompactProvider.refresh(ctx, force)
+            } catch (_: Exception) {}
+        }
+
+        /** B210: ring bitmap (Canvas.drawArc → Bitmap) — axiom#288 */
+        fun makeRingBitmap(ctx: Context, pct: Int, sizePx: Int, showPercent: Boolean): Bitmap {
+            val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val c = Canvas(bmp)
+            val stroke = sizePx * 0.10f
+            val pad = stroke / 2f
+            val rect = RectF(pad, pad, sizePx - pad, sizePx - pad)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = stroke
+                strokeCap = Paint.Cap.ROUND
+            }
+            paint.color = 0x33FFFFFF
+            c.drawArc(rect, 0f, 360f, false, paint)
+            paint.color = 0xFFFFFFFF
+            val sweep = 360f * pct.coerceIn(0, 100) / 100f
+            if (sweep > 0f) c.drawArc(rect, -90f, sweep, false, paint)
+            if (showPercent) {
+                paint.style = Paint.Style.FILL
+                paint.textAlign = Paint.Align.CENTER
+                paint.textSize = sizePx * 0.24f
+                paint.color = 0xFFFFFFFF
+                paint.isFakeBoldText = true
+                val txt = "$pct%"
+                c.drawText(txt, sizePx / 2f, sizePx / 2f + paint.textSize * 0.35f, paint)
+            }
+            return bmp
         }
 
         private fun buildRemoteViews(ctx: Context, state: TransferState): RemoteViews {
             val rv = RemoteViews(ctx.packageName, R.layout.widget_atom)
+            rv.setOnClickPendingIntent(R.id.top_row, piOpenApp(ctx))
+
+            // ring
+            val pct = when (state) {
+                is TransferState.Running -> if (state.bytesTotal > 0) (state.bytesSent * 100 / state.bytesTotal).toInt() else 0
+                else -> 0
+            }
+            val showPct = state is TransferState.Running
+            rv.setImageViewBitmap(R.id.ring, makeRingBitmap(ctx, pct, 200, showPct))
+
+            // header buttons: по умолчанию — «📥 Принять» и «📤 Отправить»
+            rv.setTextViewText(R.id.btn_primary, "📥")
+            rv.setOnClickPendingIntent(R.id.btn_primary, piToggle(ctx))
+            rv.setTextViewText(R.id.btn_secondary, "📤")
+            rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
+            rv.setViewVisibility(R.id.progress, View.GONE)
 
             when (state) {
                 is TransferState.Running -> {
-                    // B115: 📥/📤 по направлению, ← вместо → при приёме
-                    val icon = if (state.isReceiver) EMOJI_RECV else EMOJI_SEND
-                    val arrowStr = if (state.isReceiver) "←" else ARROW
-                    val title = icon + " " + arrowStr + " " + state.peerName +
-                        if (state.fileCount > 0) " · файл " + state.fileIndex + "/" + state.fileCount else ""
-                    rv.setTextViewText(R.id.title, title)
-                    val pct = if (state.bytesTotal > 0) ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
-                    rv.setTextViewText(R.id.subtitle, pct.toString() + "% · " + fmtSpeed(state.bytesPerSecond))
+                    val icon = if (state.isReceiver) "📥" else "📤"
+                    val arrow = if (state.isReceiver) "←" else "→"
+                    rv.setTextViewText(R.id.title, "$icon $arrow ${state.peerName}")
+                    rv.setTextViewText(R.id.subtitle, "Файл ${state.fileIndex}/${state.fileCount}")
+                    rv.setTextViewText(R.id.file_name, state.fileName)
+                    val eta = if (state.bytesPerSecond > 0 && state.bytesTotal > state.bytesSent) {
+                        val s = (state.bytesTotal - state.bytesSent) / state.bytesPerSecond
+                        " · ⏱ ${s / 60}:%02d".format(s % 60)
+                    } else ""
+                    val hz = AtomController.currentP2pFrequencyHz
+                    val band = when {
+                        hz >= 5000 -> "5GHz"
+                        hz >= 2400 -> "2.4GHz"
+                        else -> ""
+                    }
+                    rv.setTextViewText(R.id.metrics,
+                        "⚡ ${fmtSpeed(state.bytesPerSecond)}" +
+                            (if (band.isNotEmpty()) " · 📶 $band" else "") + eta)
                     rv.setProgressBar(R.id.progress, 100, pct, false)
                     rv.setViewVisibility(R.id.progress, View.VISIBLE)
-                    rv.setTextViewText(R.id.btn_primary, PAUSE + " Пауза")
-                    rv.setOnClickPendingIntent(R.id.btn_primary, piService(ctx, 8001, TransferNotification.ACTION_PAUSE))
-                    rv.setTextViewText(R.id.btn_secondary, XMARK + " Отменить")
-                    rv.setOnClickPendingIntent(R.id.btn_secondary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
+                    if (state.isReceiver) {
+                        rv.setTextViewText(R.id.btn_primary, "✕")
+                        rv.setOnClickPendingIntent(R.id.btn_primary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
+                        rv.setTextViewText(R.id.btn_secondary, "")
+                        rv.setViewVisibility(R.id.btn_secondary, View.GONE)
+                    } else {
+                        rv.setTextViewText(R.id.btn_primary, "⏸")
+                        rv.setOnClickPendingIntent(R.id.btn_primary, piService(ctx, 8001, TransferNotification.ACTION_PAUSE))
+                        if (state.fileCount > 1) {
+                            rv.setTextViewText(R.id.btn_secondary, "⏭")
+                            rv.setOnClickPendingIntent(R.id.btn_secondary, piService(ctx, 8008, TransferNotification.ACTION_SKIP))
+                            rv.setViewVisibility(R.id.btn_secondary, View.VISIBLE)
+                        } else {
+                            rv.setViewVisibility(R.id.btn_secondary, View.GONE)
+                        }
+                    }
                 }
                 is TransferState.Paused -> {
-                    rv.setTextViewText(R.id.title, PAUSE + " Пауза · " + state.fileName)
-                    val pct = if (state.bytesTotal > 0) ((state.bytesSent * 100) / state.bytesTotal).toInt() else 0
-                    rv.setTextViewText(R.id.subtitle, pct.toString() + "% · " + fmtBytes(state.bytesSent) + "/" + fmtBytes(state.bytesTotal))
+                    rv.setTextViewText(R.id.title, "⏸ Пауза · ${state.peerName}")
+                    rv.setTextViewText(R.id.subtitle, "Файл ${state.fileIndex}/${state.fileCount}")
+                    rv.setTextViewText(R.id.file_name, state.fileName)
+                    rv.setTextViewText(R.id.metrics,
+                        "${fmtBytes(state.bytesSent)} / ${fmtBytes(state.bytesTotal)}")
                     rv.setProgressBar(R.id.progress, 100, pct, false)
                     rv.setViewVisibility(R.id.progress, View.VISIBLE)
-                    rv.setTextViewText(R.id.btn_primary, PLAY + " Продолжить")
+                    rv.setTextViewText(R.id.btn_primary, "▶")
                     rv.setOnClickPendingIntent(R.id.btn_primary, piService(ctx, 8002, TransferNotification.ACTION_RESUME))
-                    rv.setTextViewText(R.id.btn_secondary, XMARK + " Отменить")
+                    rv.setTextViewText(R.id.btn_secondary, "✕")
                     rv.setOnClickPendingIntent(R.id.btn_secondary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
-                }
-                is TransferState.Failed -> {
-                    rv.setTextViewText(R.id.title, XMARK + " Ошибка")
-                    rv.setTextViewText(R.id.subtitle, state.reason.take(35))
-                    rv.setViewVisibility(R.id.progress, View.GONE)
-                    // B118: Retry (открывает Атом с picker) + Закрыть
-                    rv.setTextViewText(R.id.btn_primary, "🔄 Повторить")
-                    rv.setOnClickPendingIntent(R.id.btn_primary, piWidgetSend(ctx))
-                    rv.setTextViewText(R.id.btn_secondary, XMARK + " Закрыть")
-                    rv.setOnClickPendingIntent(R.id.btn_secondary,
-                        piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
+                    rv.setViewVisibility(R.id.btn_secondary, View.VISIBLE)
                 }
                 is TransferState.Success -> {
-                    // B118: Success показывается 5 сек (timer в runTransfer), потом Idle
-                    rv.setTextViewText(R.id.title, "✅ Готово")
-                    val files = if (state.fileCount > 0) "${state.fileCount} файл" else "Передача"
-                    val bytes = fmtBytes(state.bytesTotal)
-                    rv.setTextViewText(R.id.subtitle, "$files · $bytes · ${state.peerName.take(12)}")
-                    rv.setViewVisibility(R.id.progress, View.GONE)
-                    rv.setTextViewText(R.id.btn_primary, EMOJI_RECV + " Принимать")
-                    rv.setOnClickPendingIntent(R.id.btn_primary, piServiceToggle(ctx))
-                    rv.setTextViewText(R.id.btn_secondary, EMOJI_SEND + " Отправить")
-                    rv.setOnClickPendingIntent(R.id.btn_secondary, piWidgetSend(ctx))
+                    rv.setTextViewText(R.id.title, "✅ Готово · ${state.peerName}")
+                    rv.setTextViewText(R.id.subtitle, "${state.fileCount} файл · ${fmtBytes(state.bytesTotal)}")
+                    rv.setTextViewText(R.id.file_name, "")
+                    rv.setTextViewText(R.id.metrics, "")
+                    rv.setTextViewText(R.id.btn_primary, "📥")
+                    rv.setOnClickPendingIntent(R.id.btn_primary, piToggle(ctx))
+                    rv.setTextViewText(R.id.btn_secondary, "📤")
+                    rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
+                    rv.setViewVisibility(R.id.btn_secondary, View.VISIBLE)
+                }
+                is TransferState.Failed -> {
+                    rv.setTextViewText(R.id.title, "⚠️ Ошибка · ${state.peerName}")
+                    rv.setTextViewText(R.id.subtitle, state.reason.take(40))
+                    rv.setTextViewText(R.id.file_name, state.fileName)
+                    rv.setTextViewText(R.id.metrics, "")
+                    rv.setTextViewText(R.id.btn_primary, "✕")
+                    rv.setOnClickPendingIntent(R.id.btn_primary, piService(ctx, 8003, TransferNotification.ACTION_CANCEL))
+                    rv.setTextViewText(R.id.btn_secondary, "")
+                    rv.setViewVisibility(R.id.btn_secondary, View.GONE)
                 }
                 is TransferState.UpdatePending -> {
-                    rv.setTextViewText(R.id.title, "⬆️ Обновление Атома")
-                    rv.setTextViewText(R.id.subtitle,
-                        "build-${state.versionCode} · тап установить")
-                    rv.setViewVisibility(R.id.progress, View.GONE)
-                    rv.setTextViewText(R.id.btn_primary, "⬆️ Установить")
+                    rv.setTextViewText(R.id.title, "⬆️ build-${state.versionCode}")
+                    rv.setTextViewText(R.id.subtitle, "Тап для установки")
+                    rv.setTextViewText(R.id.file_name, state.fileName)
+                    rv.setTextViewText(R.id.metrics, "")
+                    rv.setTextViewText(R.id.btn_primary, "⬆️")
                     rv.setOnClickPendingIntent(R.id.btn_primary, piUpdateInstall(ctx, state.apkUri))
-                    rv.setTextViewText(R.id.btn_secondary, XMARK + " Позже")
-                    rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
+                    rv.setTextViewText(R.id.btn_secondary, "")
+                    rv.setViewVisibility(R.id.btn_secondary, View.GONE)
                 }
                 else -> {
-                    val recvOn = WidgetReceiveService.isActive
-                    val title = if (recvOn) ATOM + VS16 + " Принимаю"
-                                else ATOM + VS16 + " Атом · готов"
-                    rv.setTextViewText(R.id.title, title)
-                    val sub = if (recvOn) {
+                    val recv = WidgetReceiveService.isActive
+                    if (recv) {
                         val remain = (WidgetReceiveService.activeUntil - System.currentTimeMillis()) / 1000L
-                        "Осталось " + (remain / 60) + ":" + "%02d".format(remain % 60)
+                        rv.setTextViewText(R.id.title, "⚛️ Принимаю")
+                        rv.setTextViewText(R.id.subtitle,
+                            if (remain > 0) "Осталось ${remain / 60}:%02d".format(remain % 60) else "Активно")
+                        rv.setTextViewText(R.id.metrics, "📥 Жду файлы…")
                     } else {
-                        // B118: peer name + history count в Idle
-                        val lastPeer = AtomController.lastPeer
-                        if (lastPeer != null && lastPeer.name.isNotBlank()) {
-                            "📱 ${lastPeer.name.take(14)}"
-                        } else "Готов к передаче"
+                        val last = AtomController.lastPeer
+                        rv.setTextViewText(R.id.title, "⚛️ Атом")
+                        rv.setTextViewText(R.id.subtitle,
+                            if (last != null && last.name.isNotBlank()) "📱 ${last.name.take(20)}" else "Готов к передаче")
+                        rv.setTextViewText(R.id.metrics, "")
                     }
-                    rv.setTextViewText(R.id.subtitle, sub)
-                    rv.setViewVisibility(R.id.progress, View.GONE)
-                    rv.setTextViewText(R.id.btn_primary, if (recvOn) EMOJI_RECV + " Активно" else EMOJI_RECV + " Принимать")
-                    rv.setOnClickPendingIntent(R.id.btn_primary, piServiceToggle(ctx))
-                    rv.setTextViewText(R.id.btn_secondary, EMOJI_SEND + " Отправить")
-                    rv.setOnClickPendingIntent(R.id.btn_secondary, piWidgetSend(ctx))
+                    rv.setTextViewText(R.id.file_name, "")
+                    rv.setTextViewText(R.id.btn_primary, "📥")
+                    rv.setOnClickPendingIntent(R.id.btn_primary, piToggle(ctx))
+                    rv.setTextViewText(R.id.btn_secondary, "📤")
+                    rv.setOnClickPendingIntent(R.id.btn_secondary, piOpenApp(ctx))
+                    rv.setViewVisibility(R.id.btn_secondary, View.VISIBLE)
                 }
             }
-
-            rv.setOnClickPendingIntent(R.id.top_row, piOpenApp(ctx))
             return rv
         }
 
-        private fun piService(ctx: Context, reqCode: Int, action: String): PendingIntent {
+        private fun piService(ctx: Context, code: Int, action: String): PendingIntent {
             val i = Intent(ctx, FileSenderService::class.java).apply { this.action = action }
-            // B11.4: getForegroundService — иначе при убитом процессе startService
-            // заблокирован на Android 8+ (Background Service Restriction).
-            return PendingIntent.getForegroundService(ctx, reqCode, i,
+            return PendingIntent.getForegroundService(ctx, code, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
-
-        private fun piServiceToggle(ctx: Context): PendingIntent {
-            val i = Intent(ctx, WidgetReceiveService::class.java).apply {
-                action = WidgetReceiveService.ACTION_TOGGLE
-            }
-            // B11.4: getForegroundService — критично для убитого процесса
+        private fun piToggle(ctx: Context): PendingIntent {
+            val i = Intent(ctx, WidgetReceiveService::class.java).apply { action = WidgetReceiveService.ACTION_TOGGLE }
             return PendingIntent.getForegroundService(ctx, 8004, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
-
-        private fun piWidgetSend(ctx: Context): PendingIntent {
-            val i = Intent(ctx, MainActivity::class.java).apply {
-                action = ACTION_WIDGET_SEND
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            }
-            return PendingIntent.getActivity(ctx, 8005, i,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        }
-
         private fun piUpdateInstall(ctx: Context, apkUri: String): PendingIntent {
-            // B118: tap «Установить» → MainActivity с ACTION_WIDGET_INSTALL
             val i = Intent(ctx, MainActivity::class.java).apply {
                 action = "com.garickbox.atom.WIDGET_INSTALL"
                 putExtra("apk_uri", apkUri)
@@ -175,7 +217,6 @@ class AtomWidgetProvider : AppWidgetProvider() {
             return PendingIntent.getActivity(ctx, 8007, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
-
         private fun piOpenApp(ctx: Context): PendingIntent {
             val i = Intent(ctx, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -183,33 +224,25 @@ class AtomWidgetProvider : AppWidgetProvider() {
             return PendingIntent.getActivity(ctx, 8006, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
-
         private fun fmtBytes(b: Long): String {
-            if (b < 1024) return b.toString() + " Б"
+            if (b < 1024) return "$b Б"
             if (b < 1024 * 1024) return "%.1f КБ".format(b / 1024.0)
             if (b < 1024 * 1024 * 1024) return "%.1f МБ".format(b / 1024.0 / 1024.0)
             return "%.1f ГБ".format(b / 1024.0 / 1024.0 / 1024.0)
         }
-
         private fun fmtSpeed(bps: Long): String {
-            if (bps <= 0) return "—"
+            if (bps <= 0) return "…"
             return "%.1f МБ/с".format(bps / 1024.0 / 1024.0)
         }
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        try {
-            val rv = buildRemoteViews(context, AtomController.transferState.value)
-            appWidgetManager.updateAppWidget(appWidgetIds, rv)
-        } catch (e: Exception) {
-            InAppLogger.d("Widget", "onUpdate error: " + e.message)
-        }
+        try { appWidgetManager.updateAppWidget(appWidgetIds, buildRemoteViews(context, AtomController.transferState.value)) }
+        catch (_: Exception) {}
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == "com.garickbox.atom.WIDGET_REFRESH") {
-            refreshNow(context)
-        }
+        if (intent.action == "com.garickbox.atom.WIDGET_REFRESH") refreshNow(context)
     }
 }
