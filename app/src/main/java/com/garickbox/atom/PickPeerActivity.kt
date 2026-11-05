@@ -183,7 +183,7 @@ class PickPeerActivity : AppCompatActivity() {
                 else putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
                 putStringArrayListExtra("atom_relative_paths", ArrayList(paths))
                 putExtra(ShareTargetActivity.EXTRA_FORCE_STEP2, true)
-                clipData = android.content.ClipData.create("", android.content.ClipData.Item(uris.first())).apply {
+                clipData = android.content.ClipData.newRawUri("", uris.first()).apply {
                     for (i in 1 until uris.size) addItem(android.content.ClipData.Item(uris[i]))
                 }
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

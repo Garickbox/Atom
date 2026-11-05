@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -252,7 +253,7 @@ class FileListActivity : AppCompatActivity() {
                     onClick = { onTap(row) },
                     onLongClick = { if (row.isDir) showFolderSheet(row) }
                 )
-                .androidx.compose.ui.graphics.graphicsLayer { alpha = if (isHidden) 0.5f else 1f }
+                .alpha(if (isHidden) 0.5f else 1f)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
