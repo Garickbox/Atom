@@ -242,8 +242,8 @@ class FileBrowserActivity : AppCompatActivity() {
         val initialUri = try {
             when {
                 key == "saf_termux_uri" -> {
-                    // B184c: Termux SAF docId = /data/data/com.termux/files/home
-                    android.provider.DocumentsContract.buildDocumentUri(
+                    // B184e: Termux SAF — нужен TREE URI, не document URI
+                    android.provider.DocumentsContract.buildTreeDocumentUri(
                         "com.termux.documents",
                         "/data/data/com.termux/files/home"
                     )

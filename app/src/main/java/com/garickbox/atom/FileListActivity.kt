@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.decode.VideoFrameDecoder
 import com.mesh.core.InAppLogger
 
 class FileListActivity : AppCompatActivity() {
@@ -81,16 +83,22 @@ class FileListActivity : AppCompatActivity() {
     @Composable
     private fun ListUi() {
         LaunchedEffect(reloadTrigger) { items = loadItems() }
-        val filtered = remember(items, searchQuery) {
-            if (searchQuery.isBlank()) items
-            else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        val searchResults by remember(items, searchQuery, currentMode, currentParentId) {
+            derivedStateOf {
+                if (searchQuery.isBlank()) emptyList()
+                else performRecursiveSearch(searchQuery)
+            }
+        }
+        val filtered = remember(items, searchQuery, searchResults) {
+            if (searchQuery.isBlank()) items else searchResults
         }
         val sorted = remember(filtered, sortMode) {
             when (sortMode) {
                 "date" -> filtered
                 "size" -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenByDescending { it.size })
+                "name" -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenBy { it.name.lowercase() })
                 "name_desc" -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenByDescending { it.name.lowercase() })
-                else -> filtered.sortedWith(compareByDescending<Row> { it.isDir }.thenBy { it.name.lowercase() })
+                else -> filtered
             }
         }
         val totalSize by remember { derivedStateOf { selected.values.sumOf { it.size } } }
@@ -110,16 +118,21 @@ class FileListActivity : AppCompatActivity() {
                             Box {
                                 IconButton(onClick = { sortMenuExpanded = true }) { Text("⇅", fontSize = 22.sp) }
                                 DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
-                                    listOf(
-                                        "name" to "По имени А→Я",
-                                        "name_desc" to "По имени Я→А",
-                                        "date" to "По дате",
-                                        "size" to "По размеру"
-                                    ).forEach { (k, l) ->
-                                        DropdownMenuItem(
-                                            text = { Text(l) },
-                                            onClick = { sortMode = k; sortMenuExpanded = false })
-                                    }
+                                    val nameLabel = if (sortMode == "name" || sortMode == "name_desc") {
+                                        if (sortMode == "name") "По имени (А→Я)" else "По имени (Я→А)"
+                                    } else "По имени"
+                                    DropdownMenuItem(
+                                        text = { Text(nameLabel) },
+                                        onClick = {
+                                            sortMode = if (sortMode == "name") "name_desc" else "name"
+                                            sortMenuExpanded = false
+                                        })
+                                    DropdownMenuItem(
+                                        text = { Text("По дате") },
+                                        onClick = { sortMode = "date"; sortMenuExpanded = false })
+                                    DropdownMenuItem(
+                                        text = { Text("По размеру") },
+                                        onClick = { sortMode = "size"; sortMenuExpanded = false })
                                 }
                             }
                         }
@@ -180,8 +193,18 @@ class FileListActivity : AppCompatActivity() {
                     )
                 }
                 row.name.substringAfterLast('.', "").lowercase() in listOf("jpg","jpeg","png","gif","webp","heic","avif","mp4","mkv","mov","avi","webm") -> {
+                    val isVideo = row.name.substringAfterLast('.', "").lowercase() in
+                        listOf("mp4","mkv","mov","avi","webm","3gp")
+                    val model = if (isVideo) {
+                        ImageRequest.Builder(this@FileListActivity)
+                            .data(row.uri)
+                            .decoderFactory { result, options, _ ->
+                                VideoFrameDecoder(result.source, options)
+                            }
+                            .build()
+                    } else row.uri
                     AsyncImage(
-                        model = row.uri,
+                        model = model,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(36.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
@@ -242,6 +265,75 @@ class FileListActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (stack.isNotEmpty()) goBack() else super.onBackPressed()
+    }
+
+    private fun performRecursiveSearch(query: String): List<Row> {
+        val q = query.lowercase()
+        val out = mutableListOf<Row>()
+        when (currentMode) {
+            "tree" -> {
+                val treeUri = currentTreeUri ?: return emptyList()
+                val rootDocId = try { DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return emptyList() }
+                fun walk(parentId: String, path: String) {
+                    try {
+                        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+                        contentResolver.query(childrenUri, arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE,
+                            DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
+                            while (c.moveToNext()) {
+                                val id = c.getString(0) ?: continue
+                                val name = c.getString(1) ?: continue
+                                val mime = c.getString(2) ?: ""
+                                val size = if (c.isNull(3)) 0L else c.getLong(3)
+                                val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                                val rel = if (path.isBlank()) name else "$path/$name"
+                                if (name.lowercase().contains(q)) {
+                                    val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                                    out.add(Row(docUri, name, isDir, size, rel, id))
+                                }
+                                if (isDir && out.size < 500) walk(id, rel)
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+                walk(rootDocId, "")
+            }
+            "direct" -> {
+                val base = java.io.File(currentParentId)
+                base.walkTopDown().take(2000).forEach { f ->
+                    if (f.name.lowercase().contains(q)) {
+                        out.add(Row(Uri.fromFile(f), f.name, f.isDirectory, if (f.isFile) f.length() else 0L, f.absolutePath, f.absolutePath))
+                    }
+                }
+            }
+            "images", "video", "audio" -> {
+                val uri = when (currentMode) {
+                    "images" -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    "video" -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    else -> MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                }
+                val sel = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+                contentResolver.query(uri, arrayOf(
+                    MediaStore.MediaColumns._ID,
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.SIZE,
+                    MediaStore.MediaColumns.RELATIVE_PATH), sel, arrayOf("%$query%"), null)?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getLong(0)
+                        val name = c.getString(1) ?: continue
+                        val size = if (c.isNull(2)) 0L else c.getLong(2)
+                        val relPath = if (c.isNull(3)) "" else (c.getString(3) ?: "")
+                        val fileUri = ContentUris.withAppendedId(uri, id)
+                        val relFile = if (relPath.isBlank()) name else relPath.trimEnd('/') + "/" + name
+                        out.add(Row(fileUri, name, false, size, relFile, id.toString()))
+                    }
+                }
+            }
+            "installed_apps" -> items.filter { it.name.lowercase().contains(q) }
+        }
+        return out
     }
 
     private fun loadItems(): List<Row> {
