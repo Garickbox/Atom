@@ -3,6 +3,7 @@ package com.garickbox.atom
 import android.content.Context
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
+import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Bundle
 import android.os.Handler
@@ -20,7 +21,6 @@ class QrShareActivity : AppCompatActivity() {
     private var hotspotRetryCount = 0
     private var usingHotspot = false
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
-    @Volatile private var wasWifiEnabled: Boolean = false  // B220: restore home WiFi после QR
 
     private lateinit var qrImage: ImageView
     private lateinit var statusText: TextView
@@ -65,26 +65,7 @@ class QrShareActivity : AppCompatActivity() {
         }
         if (TvHelper.isTv(this)) closeBtn?.requestFocus()
 
-        // B220 axiom#323: home WiFi на HyperOS = anchor 2.4GHz → createGroup 2.4.
-        // Disable home WiFi → framework выбирает 5GHz. axiom#325: foreground Activity OK.
-        @Suppress("DEPRECATION")
-        try {
-            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            wasWifiEnabled = wifi?.isWifiEnabled == true
-            if (wasWifiEnabled) {
-                val ok = wifi?.setWifiEnabled(false) ?: false
-                InAppLogger.nfc("QrServer", "B220: home WiFi disabled=$ok")
-                if (!ok) {
-                    statusText.text = "⚠️ HyperOS блокирует auto-WiFi\nВыключи WiFi вручную для 5GHz"
-                }
-                handler.postDelayed({ if (!isFinishing && !isDestroyed) startP2pGroup() }, 800L)
-            } else {
-                startP2pGroup()
-            }
-        } catch (e: Exception) {
-            InAppLogger.err("QrServer", "B220: WiFi disable err ${e.message}")
-            startP2pGroup()
-        }
+        startP2pGroup()
     }
 
     private fun startP2pGroup() {
@@ -128,18 +109,46 @@ class QrShareActivity : AppCompatActivity() {
     }
 
     private fun doCreateGroup(wm: WifiP2pManager, channel: WifiP2pManager.Channel, timeout: Runnable) {
+        // B221 axiom#331: 5GHz via WifiP2pConfig.Builder (public API 29+), fallback plain
+        val legacy = object : WifiP2pManager.ActionListener {
+            override fun onSuccess() {
+                InAppLogger.nfc("QrServer", "createGroup OK (plain), requestGroupInfo retry")
+                tryRequestGroupInfo(wm, channel, timeout, 0)
+            }
+            override fun onFailure(reason: Int) {
+                handler.removeCallbacks(timeout)
+                InAppLogger.nfc("QrServer", "createGroup FAIL: $reason -> hotspot")
+                startHotspot()
+            }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                val config = WifiP2pConfig.Builder()
+                    .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                    .build()
+                InAppLogger.nfc("QrServer", "B221: createGroup(5GHz config)")
+                wm.createGroup(channel, config, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {
+                        InAppLogger.nfc("QrServer", "B221: createGroup 5GHz OK")
+                        tryRequestGroupInfo(wm, channel, timeout, 0)
+                    }
+                    override fun onFailure(reason: Int) {
+                        InAppLogger.nfc("QrServer", "B221: 5GHz fail reason=$reason -> plain")
+                        try { wm.createGroup(channel, legacy) }
+                        catch (e: Exception) {
+                            handler.removeCallbacks(timeout)
+                            InAppLogger.nfc("QrServer", "B221 plain exc: ${e.message}")
+                            startHotspot()
+                        }
+                    }
+                })
+                return
+            } catch (e: Exception) {
+                InAppLogger.err("QrServer", "B221: 5GHz throw: ${e.message} -> plain")
+            }
+        }
         try {
-            wm.createGroup(channel, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    InAppLogger.nfc("QrServer", "createGroup OK, requestGroupInfo retry")
-                    tryRequestGroupInfo(wm, channel, timeout, 0)
-                }
-                override fun onFailure(reason: Int) {
-                    handler.removeCallbacks(timeout)
-                    InAppLogger.nfc("QrServer", "createGroup FAIL: $reason → hotspot")
-                    startHotspot()
-                }
-            })
+            wm.createGroup(channel, legacy)
         } catch (e: Exception) {
             handler.removeCallbacks(timeout)
             InAppLogger.nfc("QrServer", "createGroup exception: ${e.message}")
@@ -335,18 +344,6 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // B220 axiom#325: восстановить home WiFi (был выключен для 5GHz)
-        @Suppress("DEPRECATION")
-        try {
-            if (wasWifiEnabled) {
-                val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                val ok = wifi?.setWifiEnabled(true) ?: false
-                InAppLogger.nfc("QrServer", "B220: home WiFi restored=$ok")
-                wifi?.reconnect()
-            }
-        } catch (e: Exception) {
-            InAppLogger.err("QrServer", "B220: WiFi restore err ${e.message}")
-        }
         try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
