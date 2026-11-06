@@ -74,7 +74,7 @@ class NfcReaderActivity : AppCompatActivity() {
         // (Redmi становится GO, POCO не клиент, роли перепутаны)
         // B166b: НЕ трогаем P2P в onDestroy — FileSenderService ещё использует P2P.
         // B166a forgetAllGroups → RST TCP во время transfer. Cleanup — в connectWifi (перед new connect).
-        try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
+        // B236 axiom#240: boundCm=null в onCreate всегда (только из WNS onAvailable) → dead code убран.
         NfcHceService.clear()
         handler.removeCallbacksAndMessages(null)
     }

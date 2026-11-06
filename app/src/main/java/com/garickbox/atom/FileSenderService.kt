@@ -674,9 +674,21 @@ class FileSenderService : Service() {
             val reason = if (lastReason == "busy")
                 "Получатель занят (30 сек) — попробуйте позже"
                 else "Получатель не отвечает"
-            AtomController.transferState.value = TransferState.Failed(
-                transferId, peerName, name, reason, peerIp, contentHash
-            )
+            // B236 axiom#66: не перезаписывать Idle/Paused/Success (юзер reset)
+            val curF = AtomController.transferState.value
+            val skipF = when (curF) {
+                is TransferState.Running -> curF.transferId != transferId
+                is TransferState.Idle, is TransferState.Paused,
+                is TransferState.Success, is TransferState.UpdatePending -> true
+                else -> false
+            }
+            if (skipF) {
+                InAppLogger.d("FileSenderService", "B236: skip Failed, state=" + curF.javaClass.simpleName)
+            } else {
+                AtomController.transferState.value = TransferState.Failed(
+                    transferId, peerName, name, reason, peerIp, contentHash
+                )
+            }
             TransferNotification.update(this, NOTIF_ID,
                 TransferNotification.buildFailed(this, transferId, peerName, name, reason))
             return -1
@@ -791,9 +803,21 @@ class FileSenderService : Service() {
             }
         }
         // все 3 попытки исчерпаны
-        AtomController.transferState.value = TransferState.Failed(
-            transferId, peerName, name, lastErr ?: "ошибка", peerIp, contentHash
-        )
+        // B236 axiom#66: не перезаписывать Idle/Paused/Success (юзер reset)
+        val curF2 = AtomController.transferState.value
+        val skipF2 = when (curF2) {
+            is TransferState.Running -> curF2.transferId != transferId
+            is TransferState.Idle, is TransferState.Paused,
+            is TransferState.Success, is TransferState.UpdatePending -> true
+            else -> false
+        }
+        if (!skipF2) {
+            AtomController.transferState.value = TransferState.Failed(
+                transferId, peerName, name, lastErr ?: "ошибка", peerIp, contentHash
+            )
+        } else {
+            InAppLogger.d("FileSenderService", "B236: skip Failed (retries), state=" + curF2.javaClass.simpleName)
+        }
         TransferNotification.update(this, NOTIF_ID,
             TransferNotification.buildFailed(this, transferId, peerName, name,
                 lastErr ?: "соединение"))
