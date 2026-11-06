@@ -330,9 +330,9 @@ class MeshNode(private val ctx: Context) {
         InAppLogger.d("MeshNode", "tcp START → $ip (timeout=${connectTimeoutMs}ms)")
         val s = Socket()
         try {
-            s.sendBufferSize = 4 * 1024 * 1024
-            s.receiveBufferSize = 4 * 1024 * 1024
-            s.tcpNoDelay = false
+            s.sendBufferSize = 8 * 1024 * 1024
+            s.receiveBufferSize = 8 * 1024 * 1024
+            s.tcpNoDelay = true  // B225 axiom#382: bulk transfer, disable Nagle
         } catch (e: Exception) {
             InAppLogger.d("MeshNode", "socket opts error: ${e.message}")
         }

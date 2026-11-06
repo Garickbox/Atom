@@ -246,7 +246,9 @@ object FileReceiver {
         var staleTcp = false  // B117: stale TCP сброс busy запрещён
         var tidForLog: String = "?"
         try {
-            socket.receiveBufferSize = 4 * 1024 * 1024
+            socket.receiveBufferSize = 8 * 1024 * 1024
+            socket.sendBufferSize = 8 * 1024 * 1024
+            socket.tcpNoDelay = true  // B225 axiom#382: receiver-side symmetry (axiom#98)
             val dis = DataInputStream(BufferedInputStream(socket.getInputStream(), 512 * 1024))
 
             // Header — B112 axiom#46: validate len BEFORE readN (OOM protection)
