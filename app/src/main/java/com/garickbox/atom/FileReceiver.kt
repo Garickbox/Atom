@@ -497,8 +497,10 @@ object FileReceiver {
         session.watchdogStarted = true
         scope.launch {
             while (true) {
-                delay(30_000)  // проверять каждые 30 сек
+                delay(30_000)
+                // B234 axiom#445: сессия завершена → выходим БЕЗ ERR (axiom#119)
                 if (session.finished.get() >= session.threadCount) return@launch
+                if (activeSessions[session.tid] == null) return@launch
                 val idleSec = (System.currentTimeMillis() - session.lastProgressAt) / 1000
                 InAppLogger.d("FileReceiver",
                     "watchdog tick: ${session.tid.take(8)} idle=${idleSec}s")

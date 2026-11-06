@@ -39,8 +39,9 @@ class FileReceiverService : Service() {
             receiverSpeedTracker.onProgress(written)
             val bps = receiverSpeedTracker.bytesPerSecond()
             val cur = AtomController.transferState.value
-            val fi = (cur as? TransferState.Running)?.fileIndex ?: 0
-            val fc = (cur as? TransferState.Running)?.fileCount ?: 0
+            // B234 axiom#444: fallback на атомарные счётчики сессии (cur может быть Idle после finalize)
+            val fi = (cur as? TransferState.Running)?.fileIndex?.takeIf { it > 0 } ?: currentFileIndex
+            val fc = (cur as? TransferState.Running)?.fileCount?.takeIf { it > 0 } ?: currentFileCount
             instance?.updateNotif(fileName, written, total, bps, fi, fc)
             // B75#11 + B117: TCP может прийти до onStartCommand → currentTransferId пуст.
             // Fallback: берём tid из текущего Running state (сохранён FileReceiver.onOffer).
@@ -95,6 +96,8 @@ class FileReceiverService : Service() {
         private val receiverSpeedTracker = SpeedTracker()
         private var currentPeerName: String = "?"
         private var currentTransferId: String = ""
+        @Volatile private var currentFileIndex: Int = 0
+        @Volatile private var currentFileCount: Int = 0
     }
 
     private var wifiLock: WifiManager.WifiLock? = null
