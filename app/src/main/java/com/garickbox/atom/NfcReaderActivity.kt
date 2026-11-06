@@ -103,6 +103,9 @@ class NfcReaderActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { nfcAdapter?.disableReaderMode(this) } catch (_: Exception) {}
+        // B218 axiom#321: если WPS-PBC fallback → вернуть wlan0
+        try { boundCm?.bindProcessToNetwork(null) } catch (_: Exception) {}
+        try { AtomController.meshNode?.recreateUdpSocket() } catch (_: Exception) {}
     }
 
     private fun onTag(tag: Tag) {

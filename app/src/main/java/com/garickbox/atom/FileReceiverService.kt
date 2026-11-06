@@ -210,6 +210,19 @@ class FileReceiverService : Service() {
         lastNotifKey = ""
         lastNotifAt = 0L
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+        // B218 axiom#321: receiver тоже teardown P2P + вернуть wlan0
+        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
+
+        // B218 axiom#321: peer возвращается на wlan0 (3 шага после forgetAllGroups)
+        try {
+            val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            cm?.bindProcessToNetwork(null)
+        } catch (_: Exception) {}
+        try {
+            val wm = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            wm?.reconnect()
+        } catch (_: Exception) {}
+        try { AtomController.meshNode?.recreateUdpSocket() } catch (_: Exception) {}
         // B194: resume continuousDiscover после приёма (axiom#225)
         try { AtomController.resumeContinuousIfIdle() } catch (_: Exception) {}
         instance = null

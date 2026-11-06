@@ -1119,6 +1119,17 @@ private fun displayName(uri: Uri): String? {
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
         // B173b: явный teardown P2P после transfer (axiom#161 — не гадать, сбрасывать)
         try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
+
+        // B218 axiom#321: peer возвращается на wlan0 (3 шага после forgetAllGroups)
+        try {
+            val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            cm?.bindProcessToNetwork(null)
+        } catch (_: Exception) {}
+        try {
+            val wm = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            wm?.reconnect()
+        } catch (_: Exception) {}
+        try { AtomController.meshNode?.recreateUdpSocket() } catch (_: Exception) {}
         // B194: resume continuousDiscover только когда P2P свободен (axiom#225)
         try { AtomController.resumeContinuousIfIdle() } catch (_: Exception) {}
         try {
