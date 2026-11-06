@@ -1144,19 +1144,19 @@ private fun displayName(uri: Uri): String? {
         try { TransferNotification.cancel(this, NOTIF_ID) } catch (_: Exception) {}
         // B112: снимаем счётчик ДО проверки — иначе transferActive видит сам себя
         try { AtomController.setTransferActive(false) } catch (_: Exception) {}
-        // B173b: явный teardown P2P после transfer (axiom#161 — не гадать, сбрасывать)
-        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
-
-        // B218 axiom#321: peer возвращается на wlan0 (3 шага после forgetAllGroups)
+        // B238 axiom#473: bind(null) + recreateUdp ДО forgetAllGroups
+        // (было: forgetAllGroups → UDP на dead p2p0 → 100-500ms ENETUNREACH после transfer)
         try {
             val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
             cm?.bindProcessToNetwork(null)
         } catch (_: Exception) {}
+        try { AtomController.meshNode?.recreateUdpSocket() } catch (_: Exception) {}
+        // B173b: явный teardown P2P после transfer
+        try { AtomController.wifiDirect?.forgetAllGroups() } catch (_: Exception) {}
         try {
             val wm = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
             wm?.reconnect()
         } catch (_: Exception) {}
-        try { AtomController.meshNode?.recreateUdpSocket() } catch (_: Exception) {}
         // B194: resume continuousDiscover только когда P2P свободен (axiom#225)
         try { AtomController.resumeContinuousIfIdle() } catch (_: Exception) {}
         try {

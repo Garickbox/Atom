@@ -52,17 +52,22 @@ class FileReceiverService : Service() {
                 (AtomController.transferState.value as? TransferState.Running)?.transferId ?: ""
             }
             if (activeTid.isNotBlank()) {
-                AtomController.transferState.value = TransferState.Running(
-                    transferId = activeTid,
-                    peerName = currentPeerName,
-                    fileName = fileName,
-                    bytesSent = written,
-                    bytesTotal = total,
-                    bytesPerSecond = bps,
-                    isReceiver = true,
-                    fileIndex = fi,
-                    fileCount = fc
-                )
+                // B238 axiom#472: throttle Running — 4 thread давали 60+/sec → UI lag
+                val now = System.currentTimeMillis()
+                if (now - lastStateAt > 500L) {
+                    lastStateAt = now
+                    AtomController.transferState.value = TransferState.Running(
+                        transferId = activeTid,
+                        peerName = currentPeerName,
+                        fileName = fileName,
+                        bytesSent = written,
+                        bytesTotal = total,
+                        bytesPerSecond = bps,
+                        isReceiver = true,
+                        fileIndex = fi,
+                        fileCount = fc
+                    )
+                }
             }
         }
 
@@ -103,6 +108,7 @@ class FileReceiverService : Service() {
         private var currentTransferId: String = ""
         @Volatile private var currentFileIndex: Int = 0
         @Volatile private var currentFileCount: Int = 0
+        @Volatile private var lastStateAt: Long = 0L
     }
 
     private var wifiLock: WifiManager.WifiLock? = null
