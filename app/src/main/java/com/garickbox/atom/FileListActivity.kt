@@ -299,7 +299,7 @@ class FileListActivity : AppCompatActivity() {
                 }
                 Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (!row.isDir) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) }, modifier = Modifier.size(40.dp))
+            if (!row.isDir && !TvHelper.isTv(this@FileListActivity)) Checkbox(checked = isChecked, onCheckedChange = { onTap(row) }, modifier = Modifier.size(40.dp))
 
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))

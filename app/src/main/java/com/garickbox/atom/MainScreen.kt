@@ -54,6 +54,7 @@ data class MainActions(
     val onTransferAction: (String) -> Unit,
     val onMenuAction: (String) -> Unit,
     val onAcceptTvClick: () -> Unit,
+    val onTvSettingsClick: () -> Unit,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,7 +95,13 @@ fun MainScreen(isTv: Boolean, actions: MainActions) {
                 item { TransferCard(transfer, actions) }
             }
             if (isTv) {
-                item { TvAcceptPanel(actions.onAcceptTvClick) }
+                item {
+                    TvAcceptPanel(
+                        onAcceptClick = actions.onAcceptTvClick,
+                        onSendClick = actions.onFabClick,
+                        onSettingsClick = actions.onTvSettingsClick
+                    )
+                }
             } else if (transfer is TransferState.Idle || transfer is TransferState.Success) {
                 item { HeroBlock(actions.onAcceptClick) }
             }
@@ -172,13 +179,25 @@ private fun HeroBlock(onAcceptClick: () -> Unit) {
 }
 
 @Composable
-private fun TvAcceptPanel(onClick: () -> Unit) {
+private fun TvAcceptPanel(
+    onAcceptClick: () -> Unit,
+    onSendClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("📺 Готов к приёму", style = MaterialTheme.typography.titleLarge)
+        Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("📺 Атом · TV", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onAcceptClick, modifier = Modifier.fillMaxWidth().height(64.dp)) {
+                Text("📥  Принять 10 мин", fontSize = 18.sp)
+            }
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(64.dp)) {
-                Text("📥  Принять 10 мин  (QR + NFC)", fontSize = 18.sp)
+            Button(onClick = onSendClick, modifier = Modifier.fillMaxWidth().height(64.dp)) {
+                Text("📂  Отправить файлы", fontSize = 18.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onSettingsClick, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("⚙️  Настройки", fontSize = 16.sp)
             }
         }
     }

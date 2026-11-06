@@ -161,7 +161,11 @@ class MainActivity : AppCompatActivity() {
                 "about" -> AboutDialog.show(this)
             }
         },
-        onAcceptTvClick = { toggleTvReceive() }
+        onAcceptTvClick = { toggleTvReceive() },
+        onTvSettingsClick = {
+            try { com.mesh.core.InAppLogger.user("tap:TV Settings") } catch (_: Exception) {}
+            try { startActivity(Intent(this, SettingsActivity::class.java)) } catch (_: Exception) {}
+        }
     )
 
     private fun runOnboarding() {
