@@ -175,7 +175,8 @@ object FileReceiver {
             // B237 axiom#467: onIncomingTcp ДО sendAccept — иначе sender сразу connect,
             // TCP идёт в пустоту → retry × 2-4 (attempt 4 в логе file 6/8)
             node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
-            FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
+            FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId,
+                offer.fileIndex, offer.fileCount)  // B239 axiom#468
             accepted = true
 
             // B113: transferActive ++ только через FileReceiverService.onCreate (устраняет +1 leak)

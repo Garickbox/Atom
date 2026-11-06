@@ -55,7 +55,9 @@ class MeshNode(private val ctx: Context) {
         val peerName: String,
         val fromIp: String,
         val resumeOffset: Long = 0L,
-        val relativePath: String? = null   // B15
+        val relativePath: String? = null,   // B15
+        val fileIndex: Int = 0,             // B239 axiom#468
+        val fileCount: Int = 0
     )
 
     // ═══════════════════════════════════════════════════════════
@@ -109,20 +111,27 @@ class MeshNode(private val ctx: Context) {
      *  Android 10+ не переносит открытые сокеты в новую default-сеть. */
     @Synchronized
     fun recreateTcpServer() {
-        // B190: close old FIRST → delay → bind new (было: bind first → EADDRINUSE)
+        // B239 axiom#475: НЕ Thread.sleep на caller-thread (main → ANR 200ms).
+        // Close old СРАЗУ (освободит порт синхронно), async bind через 200ms в scope.
         try {
             val old = tcpServer
             tcpServer = null
             try { old?.close() } catch (_: Exception) {}
-            Thread.sleep(200)  // дать OS освободить порт
-            val fresh = ServerSocket().apply {
-                reuseAddress = true
-                bind(InetSocketAddress(PORT))
+            scope.launch {
+                try {
+                    kotlinx.coroutines.delay(200)  // дать OS освободить порт
+                    val fresh = ServerSocket().apply {
+                        reuseAddress = true
+                        bind(InetSocketAddress(PORT))
+                    }
+                    tcpServer = fresh
+                    InAppLogger.nfc("MeshNode", "B239: tcp server recreated (port ${PORT})")
+                } catch (e: Exception) {
+                    InAppLogger.err("MeshNode", "B239 recreateTcpServer async: ${e.message}")
+                }
             }
-            tcpServer = fresh
-            InAppLogger.nfc("MeshNode", "B190: tcp server recreated (port ${PORT})")
         } catch (e: Exception) {
-            InAppLogger.err("MeshNode", "B190 recreateTcpServer: ${e.message}")
+            InAppLogger.err("MeshNode", "B239 recreateTcpServer: ${e.message}")
         }
     }
 
@@ -215,7 +224,9 @@ class MeshNode(private val ctx: Context) {
                     peerName = packet.payload.optString("peer_name"),
                     fromIp = fromIp,
                     resumeOffset = packet.payload.optLong("resume_offset", 0L),
-                    relativePath = packet.payload.optString("relative_path", "").ifBlank { null }
+                    relativePath = packet.payload.optString("relative_path", "").ifBlank { null },
+                    fileIndex = packet.payload.optInt("file_index", 0),
+                    fileCount = packet.payload.optInt("file_count", 0)
                 )
                 onFileOffer?.invoke(offer)
             }

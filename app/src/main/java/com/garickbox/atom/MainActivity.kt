@@ -87,6 +87,7 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             pendingWidgetSend = false
             pendingShortcutFind = false
+            permissionAsked = savedInstanceState.getBoolean("permission_asked", false)  // B239 axiom#477
         } else {
             when (intent?.action) {
                 ACTION_WIDGET_SEND -> pendingWidgetSend = true
@@ -309,6 +310,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putBoolean("permission_asked", permissionAsked)  // B239 axiom#477
     }
 
     private fun processWidgetSend() {

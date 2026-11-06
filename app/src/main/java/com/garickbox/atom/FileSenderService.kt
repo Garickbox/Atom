@@ -609,6 +609,8 @@ class FileSenderService : Service() {
             put("peer_name", AtomController.myName)
             put("resume_offset", resumeOffset)
             put("relative_path", relativePath ?: "")
+            put("file_index", fileIndex)   // B239 axiom#468
+            put("file_count", fileCount)
         }
 
         // ВАЖНО: CompletableDeferred одноразовый. Новый на каждую попытку,

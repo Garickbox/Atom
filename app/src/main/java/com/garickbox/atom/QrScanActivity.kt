@@ -45,6 +45,7 @@ class QrScanActivity : AppCompatActivity() {
     private var currentConnectedPeer: Peer? = null
     private var pendingRelativePaths: List<String?> = emptyList()  // B113
     private val handler = Handler(Looper.getMainLooper())
+    private var wnsAttempt: Int = 0  // B239 axiom#476
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -186,8 +187,15 @@ class QrScanActivity : AppCompatActivity() {
                     }
                     override fun onUnavailable() {
                         handler.post {
-                            statusText.text = "Wi-Fi не подключился"
-                            handler.postDelayed({ finish() }, 2000L)
+                            // B239 axiom#476: retry до 3 попыток (axiom#228 WNS race)
+                            wnsAttempt++
+                            if (wnsAttempt < 3) {
+                                InAppLogger.qr("QrScan: WNS unavailable, retry ${wnsAttempt}/3 in ${2000L * wnsAttempt}ms")
+                                handler.postDelayed({ connectWifi(ssid, pass, ip) }, 2000L * wnsAttempt)
+                            } else {
+                                statusText.text = "Wi-Fi не подключился"
+                                handler.postDelayed({ finish() }, 2000L)
+                            }
                         }
                     }
                 }, 20000)
