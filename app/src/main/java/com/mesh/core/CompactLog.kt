@@ -4,61 +4,38 @@ import android.content.Context
 import java.io.File
 import java.util.Locale
 
+/**
+ * B227 axiom#409: ONE log file. CompactLog = обёртка → InAppLogger.compact().
+ * Все методы сохранены (backward-compat всех 6 call sites).
+ */
 object CompactLog {
-    private const val MAX_BYTES = 100_000L
-    private const val MAX_FILES = 2
 
-    private var dir: File? = null
     private var sessionStartMs: Long = 0L
     private var sessionOpen: Boolean = false
     private var lastPauseIdx: Int = -1
-    private val sb = StringBuilder()
-
-    fun init(ctx: Context) {
-        val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
-        base.mkdirs()
-        dir = base
-    }
-
-    fun getLogFile(): File? {
-        val d = dir ?: return null
-        // B105: fallback на .log.1/.log.2 если основной пуст
-        val current = File(d, "atom-compact.log")
-        if (current.exists() && current.length() > 0) return current
-        for (i in 1..MAX_FILES) {
-            val rot = File(d, "atom-compact.log.$i")
-            if (rot.exists() && rot.length() > 0) return rot
-        }
-        return null
-    }
-
     private var lastSpeedMbps: Double = 0.0
 
-    @Synchronized
+    fun init(ctx: Context) { /* no-op, InAppLogger.init covers */ }
+    fun getLogFile(): File? = InAppLogger.getLogFile()
+
     fun sessionStart(files: Int, resumed: Boolean, connectMs: Long = 0L) {
         if (resumed && sessionOpen) {
-            sb.append("r\n")
-            flush()
+            InAppLogger.compact("r")
             return
         }
-        if (sessionOpen) {
-            sb.append("E0/0/1/0.0/0.0\n")
-        }
+        if (sessionOpen) InAppLogger.compact("E0/0/1/0.0/0.0")
         sessionStartMs = System.currentTimeMillis()
         lastPauseIdx = -1
         lastSpeedMbps = 0.0
         sessionOpen = true
-        sb.append('S').append(files)
-        if (connectMs > 0) sb.append('/').append(connectMs / 1000)
-        sb.append('\n')
-        flush()
+        val conn = if (connectMs > 0) "/${connectMs / 1000}" else ""
+        InAppLogger.compact("S$files$conn")
     }
 
-    @Synchronized
     fun file(idx: Int, sizeKB: Long, acceptMs: Long, busyCnt: Int,
-             transMs: Long, hashMs: Long, speedMbps: Double,
-             failReason: String? = null) {
+             transMs: Long, hashMs: Long, speedMbps: Double, failReason: String? = null) {
         val dt = (System.currentTimeMillis() - sessionStartMs) / 1000
+        val sb = StringBuilder()
         sb.append(dt).append('T').append(idx)
             .append('/').append(sizeKB)
             .append('/').append(acceptMs)
@@ -66,73 +43,34 @@ object CompactLog {
             .append('/').append(transMs)
             .append('/').append(hashMs)
             .append('/').append("%.1f".format(Locale.US, speedMbps))
-        if (failReason != null) {
-            sb.append("-F/").append(failReason.replace("/", "_").take(14))
-        } else if (lastSpeedMbps > 1.0 && speedMbps < lastSpeedMbps * 0.3) {
-            sb.append('!')
-        }
+        if (failReason != null) sb.append("-F/").append(failReason.replace("/", "_").take(14))
+        else if (lastSpeedMbps > 1.0 && speedMbps < lastSpeedMbps * 0.3) sb.append('!')
         if (speedMbps > 0) lastSpeedMbps = speedMbps
-        sb.append('\n')
-        flush()
+        InAppLogger.compact(sb.toString())
     }
 
-    @Synchronized
     fun pause(idx: Int) {
         if (idx == lastPauseIdx) return
         lastPauseIdx = idx
-        sb.append('P').append(idx).append('\n')
-        flush()
+        InAppLogger.compact("P$idx")
     }
 
-    @Synchronized
-    fun cancel(idx: Int) {
-        sb.append('C').append(idx).append('\n')
-        flush()
-    }
+    fun cancel(idx: Int) = InAppLogger.compact("C$idx")
 
-    @Synchronized
     fun sessionEnd(ok: Int, fail: Int, durMs: Long, avgMbps: Double) {
         if (!sessionOpen) return
         sessionOpen = false
-        sb.append('E').append(ok + fail)
-            .append('/').append(ok)
-            .append('/').append(fail)
-            .append('/').append("%.1f".format(Locale.US, durMs / 1000.0))
-            .append('/').append("%.1f".format(Locale.US, avgMbps))
-            .append('\n')
-        flush()
+        InAppLogger.compact(
+            "E${ok + fail}/$ok/$fail/" +
+                "%.1f".format(Locale.US, durMs / 1000.0) + "/" +
+                "%.1f".format(Locale.US, avgMbps)
+        )
     }
 
-    @Synchronized
     fun receiver(sizeMB: Long, saveMs: Long, shaMs: Long, ok: Boolean) {
         if (sessionStartMs == 0L) sessionStartMs = System.currentTimeMillis()
         val dt = (System.currentTimeMillis() - sessionStartMs) / 1000
-        sb.append(dt).append('R')
-            .append('/').append(sizeMB)
-            .append('/').append(saveMs)
-            .append('/').append(shaMs)
-        if (!ok) sb.append("/F")
-        sb.append('\n')
-        flush()
-    }
-
-    private fun flush() {
-        val d = dir ?: return
-        try {
-            val f = File(d, "atom-compact.log")
-            if (f.exists() && f.length() > MAX_BYTES) rotate(d)
-            f.appendText(sb.toString())
-            sb.setLength(0)
-        } catch (_: Exception) {}
-    }
-
-    private fun rotate(d: File) {
-        for (i in MAX_FILES downTo 2) {
-            val src = File(d, "atom-compact.log.$i")
-            val dst = File(d, "atom-compact.log.${i + 1}")
-            if (src.exists()) src.renameTo(dst)
-        }
-        val cur = File(d, "atom-compact.log")
-        if (cur.exists()) cur.renameTo(File(d, "atom-compact.log.1"))
+        val tail = if (ok) "" else "/F"
+        InAppLogger.compact("$dt R/$sizeMB/$saveMs/$shaMs$tail")
     }
 }
