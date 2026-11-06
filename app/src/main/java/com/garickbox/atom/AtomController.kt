@@ -263,10 +263,17 @@ object AtomController {
             kotlinx.coroutines.delay(500L)
             while (true) {
                 try {
-                    val bcast = subnetBroadcastIp()
-                    if (bcast != null) {
-                        _meshNode?.sendHello(bcast)
-                        InAppLogger.d("AtomController", "B133: HELLO → $bcast")
+                    val activeIp = lastPeer?.ip ?: ""
+                    if (transferActive && activeIp.isNotBlank()) {
+                        // B226 axiom#400: во время transfer — unicast (broadcast → ENETUNREACH на p2p0)
+                        _meshNode?.sendHello(activeIp)
+                        InAppLogger.d("AtomController", "B133: HELLO → $activeIp (unicast during transfer)")
+                    } else {
+                        val bcast = subnetBroadcastIp()
+                        if (bcast != null) {
+                            _meshNode?.sendHello(bcast)
+                            InAppLogger.d("AtomController", "B133: HELLO → $bcast")
+                        }
                     }
                 } catch (e: Exception) {
                     InAppLogger.d("AtomController", "B133: hello loop: ${e.message}")

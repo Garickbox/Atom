@@ -224,7 +224,10 @@ class NfcReaderActivity : AppCompatActivity() {
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
-                            AtomController.meshNode?.recreateUdpSocket()
+                            // B226 axiom#398: НЕ recreate UDP во время активного transfer
+                            if (!AtomController.transferActive) {
+                                AtomController.meshNode?.recreateUdpSocket()
+                            }
                         } catch (e: Exception) {
                             InAppLogger.err("NfcReader", "B192: bind ${e.message}")
                         }
@@ -356,9 +359,12 @@ class NfcReaderActivity : AppCompatActivity() {
             // B195: КОРЕНЬ — после WPS-PBC пересоздать сокеты на p2p0 (QR это делает в onAvailable)
             try {
                 boundCm?.bindProcessToNetwork(null)
-                AtomController.meshNode?.recreateUdpSocket()
-                AtomController.meshNode?.recreateTcpServer()
-                InAppLogger.nfc("NfcReader", "B195: fallback onConnected — UDP+TCP recreated")
+                // B226 axiom#398: не recreate во время активного transfer
+                if (!AtomController.transferActive) {
+                    AtomController.meshNode?.recreateUdpSocket()
+                    AtomController.meshNode?.recreateTcpServer()
+                    InAppLogger.nfc("NfcReader", "B195: fallback onConnected — UDP+TCP recreated")
+                }
             } catch (e: Exception) {
                 InAppLogger.err("NfcReader", "B195: recreate ${e.message}")
             }

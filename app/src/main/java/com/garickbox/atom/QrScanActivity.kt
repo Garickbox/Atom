@@ -175,9 +175,10 @@ class QrScanActivity : AppCompatActivity() {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
                             boundNetwork = network
-                            // B30: старый udpSocket висит на home WiFi — пересоздать,
-                            // чтобы HELLO/FILE_OFFER шли через hotspot.
-                            AtomController.meshNode?.recreateUdpSocket()
+                            // B30/B226 axiom#398: не recreate во время активного transfer
+                            if (!AtomController.transferActive) {
+                                AtomController.meshNode?.recreateUdpSocket()
+                            }
                         } catch (e: Exception) {
                             InAppLogger.d("QrScan", "bind error: ${e.message}")
                         }

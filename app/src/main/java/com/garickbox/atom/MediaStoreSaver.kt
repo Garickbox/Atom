@@ -136,7 +136,10 @@ object MediaStoreSaver {
     private fun sanitizeDir(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         // B181c: strip "Download/" — sender мог прислать полный path от tree root
-        var s = raw.replace("..", "").trim('/').removePrefix("Download/").trim('/')
+        var s = raw.replace("..", "").trim('/').removePrefix("sdcard/")
+            .removePrefix("Download/")
+            .removePrefix("Atom/")
+            .trim('/')
         if (s.isBlank()) return null
         // B116: split на сегменты, санитизируем каждый, max 5 уровней, каждый ≤ 100 симв
         val parts = s.split('/')
