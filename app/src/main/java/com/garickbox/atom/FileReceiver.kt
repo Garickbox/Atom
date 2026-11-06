@@ -409,13 +409,14 @@ object FileReceiver {
                         InAppLogger.d("FileReceiver",
                             "thread $threadIdx finished, $done/${session.threadCount} (tid=${session.tid.take(8)})")
                         if (done >= session.threadCount) {
-                            InAppLogger.d("FileReceiver", "all threads done, releasing busy")
-                            _isBusy.set(false)
+                            InAppLogger.d("FileReceiver", "all threads done, starting finalize (busy until done)")
+                            // B235 axiom#451: busy=false ПОСЛЕ finalize (SHA+MediaStore+activeSessions.remove)
                             FileReceiverService.finalizeStart()
                             scope.launch {
                                 try {
                                     finalizeSession(session, ctx)
                                 } finally {
+                                    _isBusy.set(false)
                                     FileReceiverService.finalizeEnd(ctx)
                                 }
                             }
