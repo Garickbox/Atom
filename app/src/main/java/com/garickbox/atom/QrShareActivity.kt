@@ -20,6 +20,7 @@ class QrShareActivity : AppCompatActivity() {
     private var hotspotRetryCount = 0
     private var usingHotspot = false
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
+    @Volatile private var wasWifiEnabled: Boolean = false  // B220: restore home WiFi после QR
 
     private lateinit var qrImage: ImageView
     private lateinit var statusText: TextView
@@ -64,7 +65,26 @@ class QrShareActivity : AppCompatActivity() {
         }
         if (TvHelper.isTv(this)) closeBtn?.requestFocus()
 
-        startP2pGroup()
+        // B220 axiom#323: home WiFi на HyperOS = anchor 2.4GHz → createGroup 2.4.
+        // Disable home WiFi → framework выбирает 5GHz. axiom#325: foreground Activity OK.
+        @Suppress("DEPRECATION")
+        try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            wasWifiEnabled = wifi?.isWifiEnabled == true
+            if (wasWifiEnabled) {
+                val ok = wifi?.setWifiEnabled(false) ?: false
+                InAppLogger.nfc("QrServer", "B220: home WiFi disabled=$ok")
+                if (!ok) {
+                    statusText.text = "⚠️ HyperOS блокирует auto-WiFi\nВыключи WiFi вручную для 5GHz"
+                }
+                handler.postDelayed({ if (!isFinishing && !isDestroyed) startP2pGroup() }, 800L)
+            } else {
+                startP2pGroup()
+            }
+        } catch (e: Exception) {
+            InAppLogger.err("QrServer", "B220: WiFi disable err ${e.message}")
+            startP2pGroup()
+        }
     }
 
     private fun startP2pGroup() {
@@ -148,6 +168,10 @@ class QrShareActivity : AppCompatActivity() {
                     groupCreated = true
                     usingHotspot = false
                     val ip = "192.168.49.1"
+                    // B220 axiom#326: WifiP2pGroup.frequency (API 29+, WifiP2pInfo НЕ содержит)
+                    val freq = if (android.os.Build.VERSION.SDK_INT >= 29) group.frequency else 0
+                    val band = when { freq >= 5000 -> "5GHz"; freq >= 2400 -> "2.4GHz"; else -> "?" }
+                    InAppLogger.nfc("QrServer", "B220: createGroup freq=${freq}MHz ($band)")
                     InAppLogger.nfc("QrServer", "creds OK on attempt $attempt, ip=$ip")
                     showQr(ssid, pass, ip, "P2P")
                 } else {
@@ -311,6 +335,18 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // B220 axiom#325: восстановить home WiFi (был выключен для 5GHz)
+        @Suppress("DEPRECATION")
+        try {
+            if (wasWifiEnabled) {
+                val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val ok = wifi?.setWifiEnabled(true) ?: false
+                InAppLogger.nfc("QrServer", "B220: home WiFi restored=$ok")
+                wifi?.reconnect()
+            }
+        } catch (e: Exception) {
+            InAppLogger.err("QrServer", "B220: WiFi restore err ${e.message}")
+        }
         try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
