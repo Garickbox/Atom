@@ -46,11 +46,11 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.8.0'
     implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.2'
     implementation 'androidx.activity:activity-ktx:1.9.2'
-    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.core:core-ktx:1.19.1'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.5'
     implementation 'androidx.lifecycle:lifecycle-process:2.8.5'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
@@ -67,7 +67,7 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.7.0'
     implementation 'io.coil-kt:coil-video:2.7.0'
     debugImplementation 'androidx.compose.ui:ui-tooling'
-    implementation 'androidx.core:core-splashscreen:1.0.1'
+    implementation 'androidx.core:core-splashscreen:1.2.0'
 
     // B94: JVM unit-тесты mesh protocol
     testImplementation 'junit:junit:4.13.2'
