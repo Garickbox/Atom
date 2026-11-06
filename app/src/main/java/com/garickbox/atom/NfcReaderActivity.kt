@@ -103,6 +103,7 @@ class NfcReaderActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { nfcAdapter?.disableReaderMode(this) } catch (_: Exception) {}
+        handler.removeCallbacksAndMessages(null)  // B515: prevent stale postDelayed on destroyed activity
         // B224 axiom#368: НЕ сбрасывать WNS здесь — FileSender живёт после finish()
         // bind(null) + recreateUdp → UDP на wlan0 → ENETUNREACH для FILE_OFFER.
         // WNS cleanup: FileSenderService.onDestroy (после transferActive=false).
@@ -224,6 +225,7 @@ class NfcReaderActivity : AppCompatActivity() {
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
+                            try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {}  // B516: no leak
                             // B226 axiom#398: НЕ recreate UDP во время активного transfer
                             if (!AtomController.transferActive) {
                                 AtomController.meshNode?.recreateUdpSocket()

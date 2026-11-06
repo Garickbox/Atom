@@ -359,8 +359,9 @@ object AtomController {
     val transferActive: Boolean get() = _transferActive.get() > 0
 
     fun setTransferActive(active: Boolean) {
-        val v = if (active) _transferActive.incrementAndGet() else _transferActive.decrementAndGet()
-        if (v < 0) _transferActive.set(0)
+        // B478 axiom#478: atomic decrement with clamp — no unconditional set(0) race
+        if (active) _transferActive.incrementAndGet()
+        else _transferActive.updateAndGet { if (it > 0) it - 1 else 0 }
         // B141: discoverPeers на HyperOS/MIUI рубит wlan0 на 5-10 сек → UDP ENETUNREACH → FILE_OFFER timeout.
         // Паузим background P2P discover пока идёт transfer (sender или receiver).
         try { wifiDirect?.suppressDiscover = _transferActive.get() > 0 } catch (_: Exception) {}

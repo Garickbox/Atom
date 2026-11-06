@@ -298,8 +298,8 @@ class FileSenderService : Service() {
                 try {
                     val cancelJson = JSONObject().apply { put("tid", cur.transferId) }
                     AtomController.meshNode?.sendPacketBlocking(
-                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 300L
-                    )
+                        lastPeerIp, MeshPacket(PacketType.FILE_PAUSE, cancelJson), 800L
+                    )  // B513: 800ms symmetric with FILE_CANCEL
                 } catch (_: Exception) {}
 
                 try { com.mesh.core.CompactLog.pause(cur.fileIndex) } catch (_: Exception) {}
@@ -422,6 +422,7 @@ class FileSenderService : Service() {
                 }
             }
 
+            try {  // B512: keepAlive cancel in finally (protect CancellationException)
             val finalFileCount = if (totalFileCount > 0) totalFileCount else uris.size
             for ((idx, uri) in uris.withIndex()) {
                 if (!isActive) break
@@ -514,6 +515,11 @@ class FileSenderService : Service() {
                     timestamp = System.currentTimeMillis(),
                     savedPath = ""
                 ))
+            }
+
+            } finally {  // B512: keepAlive cancel on exception path too
+                keepAliveJob?.cancel()
+                keepAliveJob = null
             }
 
             keepAliveJob?.cancel()
