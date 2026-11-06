@@ -21,8 +21,6 @@ class QrShareActivity : AppCompatActivity() {
     private var hotspotRetryCount = 0
     private var usingHotspot = false
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
-    @Volatile private var wasWifiEnabled: Boolean = false  // B222: pre-state
-    @Volatile private var savedNetworks: List<Int> = emptyList()  // B222: restore
 
     private lateinit var qrImage: ImageView
     private lateinit var statusText: TextView
@@ -67,36 +65,7 @@ class QrShareActivity : AppCompatActivity() {
         }
         if (TvHelper.isTv(this)) closeBtn?.requestFocus()
 
-        // B222 axiom#328,#330,#331,#334,#335: WiFi reset для 5GHz host
-        try {
-            val wmWifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            wasWifiEnabled = wmWifi?.isWifiEnabled == true
-            @Suppress("DEPRECATION")
-            val nets = wmWifi?.configuredNetworks?.map { it.networkId } ?: emptyList()
-            savedNetworks = nets
-            InAppLogger.nfc("QrServer", "B222: disable ${nets.size} nets, wasWifi=$wasWifiEnabled")
-            nets.forEach { netId ->
-                try { @Suppress("DEPRECATION") wmWifi?.disableNetwork(netId) } catch (_: Exception) {}
-            }
-            if (wasWifiEnabled) {
-                @Suppress("DEPRECATION")
-                val ok = wmWifi?.setWifiEnabled(false) ?: false
-                InAppLogger.nfc("QrServer", "B222: WiFi OFF ok=$ok")
-                handler.postDelayed({
-                    @Suppress("DEPRECATION")
-                    wmWifi?.setWifiEnabled(true)
-                    InAppLogger.nfc("QrServer", "B222: WiFi ON, wait 1.5s")
-                    handler.postDelayed({
-                        if (!isFinishing && !isDestroyed) startP2pGroup()
-                    }, 1500L)
-                }, 1000L)
-            } else {
-                startP2pGroup()
-            }
-        } catch (e: Exception) {
-            InAppLogger.err("QrServer", "B222: reset err ${e.message}")
-            startP2pGroup()
-        }
+        startP2pGroup()
     }
 
     private fun startP2pGroup() {
@@ -375,24 +344,6 @@ class QrShareActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // B222: restore nets + WiFi OFF->ON cycle (async)
-        try {
-            val wmWifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            InAppLogger.nfc("QrServer", "B222: restore ${savedNetworks.size} nets")
-            savedNetworks.forEach { netId ->
-                try { @Suppress("DEPRECATION") wmWifi?.enableNetwork(netId, true) } catch (_: Exception) {}
-            }
-            if (wasWifiEnabled) {
-                Thread {
-                    try { Thread.sleep(100); @Suppress("DEPRECATION") wmWifi?.setWifiEnabled(false) } catch (_: Exception) {}
-                    try { Thread.sleep(1500); @Suppress("DEPRECATION") wmWifi?.setWifiEnabled(true) } catch (_: Exception) {}
-                    try { Thread.sleep(1000); wmWifi?.reconnect() } catch (_: Exception) {}
-                    InAppLogger.nfc("QrServer", "B222: WiFi cycle done (async)")
-                }.apply { isDaemon = true }.start()
-            }
-        } catch (e: Exception) {
-            InAppLogger.err("QrServer", "B222: restore err ${e.message}")
-        }
         try { NfcHceService.clear() } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
         try { hotspotReservation?.close() } catch (_: Exception) {}
