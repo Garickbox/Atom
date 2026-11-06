@@ -22,11 +22,18 @@ object InAppLogger {
     private val fmtMs = SimpleDateFormat("HHmmss.SSS", Locale.US)
 
     private fun shortTag(tag: String): String = when (tag) {
-        "FileSenderService" -> "S"; "FileReceiver" -> "R"; "FileReceiverService" -> "RS"
-        "WifiDirect" -> "W"; "MeshNode" -> "N"; "MainActivity" -> "M"
-        "ShareTarget" -> "T"; "UpdateChecker" -> "U"; "MediaStoreSaver" -> "MS"
+        "FileSenderService" -> "SNDR"; "FileReceiver" -> "RCVR"; "FileReceiverService" -> "RCVS"
+        "WifiDirect" -> "P2P"; "MeshNode" -> "MESH"; "MainActivity" -> "MAIN"
+        "MainScreen" -> "SCRN"
+        "ShareTarget" -> "SHAR"; "ShareTargetActivity" -> "SHAR"
+        "UpdateChecker" -> "UPD"; "MediaStoreSaver" -> "MSSV"
         "WidgetUltra" -> "WU"; "WidgetCompact" -> "WC"; "AtomQSTile" -> "QS"
-        else -> tag.take(3)
+        "NfcReader" -> "NFC"; "NfcReaderActivity" -> "NFC"; "NfcHce" -> "NFC"
+        "QrScan" -> "QR"; "QrScanActivity" -> "QR"; "QrShare" -> "QRSH"
+        "Preflight" -> "PRFL"; "Onboarding" -> "ONBD"
+        "NameSetup" -> "NAME"; "LogViewer" -> "LOGS"; "Settings" -> "SETG"
+        "History" -> "HIST"; "ApkShare" -> "APKS"; "About" -> "ABOT"
+        else -> tag.take(4).uppercase()
     }
 
     fun init(ctx: Context) {

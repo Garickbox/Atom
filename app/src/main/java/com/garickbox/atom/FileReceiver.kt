@@ -54,6 +54,7 @@ object FileReceiver {
     )
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
+        try { com.mesh.core.InAppLogger.recv("OFFER " + offer.name + " " + offer.size + "b peer=" + offer.peerName) } catch (_: Exception) {}
         InAppLogger.d("FileReceiver",
             "offer: ${offer.name} (${offer.size} b) from ${offer.peerName}, busy=$isBusy, sessions=${activeSessions.size}")
 
@@ -700,6 +701,7 @@ object FileReceiver {
                             "B123-FixB: skip Success, state=${curS.javaClass.simpleName}")
                     } else {
                         if (hashOk) {
+                            try { com.mesh.core.InAppLogger.recv("SUCCESS " + session.name + " " + session.totalSize + "b") } catch (_: Exception) {}
                             try { BadgeHelper.increment(ctx) } catch (_: Exception) {}
                             AtomController.transferState.value = TransferState.Success(
                                 session.peerName, 1, session.totalSize, 0
@@ -788,6 +790,7 @@ fun cancelActiveReceive(ctx: Context) {
     }
 
     fun onCancel(ctx: Context, transferId: String) {
+        try { com.mesh.core.InAppLogger.recv("CANCEL tid=" + transferId.take(8)) } catch (_: Exception) {}
         InAppLogger.d("FileReceiver", "FILE_CANCEL tid=${transferId.take(8)}")
         val session = activeSessions.remove(transferId)
         if (session != null) {

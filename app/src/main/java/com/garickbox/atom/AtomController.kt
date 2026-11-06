@@ -152,7 +152,19 @@ object AtomController {
         // B11: обновление виджета при каждом изменении transferState
         try {
             scope.launch {
-                transferState.collect {
+                transferState.collect { st ->
+                    try {
+                        val label = when (st) {
+                            is TransferState.Idle -> "IDLE"
+                            is TransferState.Running -> "RUNNING " + st.fileIndex + "/" + st.fileCount + " " + st.bytesSent + "/" + st.bytesTotal
+                            is TransferState.Paused -> "PAUSED " + st.fileIndex + "/" + st.fileCount
+                            is TransferState.Success -> "SUCCESS files=" + st.fileCount
+                            is TransferState.Failed -> "FAILED " + st.reason
+                            is TransferState.UpdatePending -> "UPDATE " + st.versionCode
+                            else -> "?"
+                        }
+                        com.mesh.core.InAppLogger.state(label)
+                    } catch (_: Exception) {}
                     try { AtomWidgetCompactProvider.refresh(ctx.applicationContext) } catch (_: Exception) {}
                     try { AtomQSTile.requestUpdate(ctx.applicationContext) } catch (_: Exception) {}
                 }

@@ -128,9 +128,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildMainActions(): MainActions = MainActions(
         onFabClick = {
+            try { com.mesh.core.InAppLogger.user("tap:FAB -> FileBrowser") } catch (_: Exception) {}
             startActivity(Intent(this, FileBrowserActivity::class.java))
         },
         onAcceptClick = {
+            try { com.mesh.core.InAppLogger.user("tap:Accept -> QrShare") } catch (_: Exception) {}
             try { startActivity(Intent(this, QrShareActivity::class.java)) } catch (_: Exception) {}
         },
         onPeerSend = { peer ->
@@ -147,7 +149,10 @@ class MainActivity : AppCompatActivity() {
             try { AtomController.removeKnownP2pPeer(peer.mac) } catch (_: Exception) {}
             Toast.makeText(this, "Забыто: ${peer.name}", Toast.LENGTH_SHORT).show()
         },
-        onTransferAction = { action -> sendActionToSender(action) },
+        onTransferAction = { action ->
+            try { com.mesh.core.InAppLogger.user("tap:Transfer action=" + action) } catch (_: Exception) {}
+            sendActionToSender(action)
+        },
         onMenuAction = { name ->
             when (name) {
                 "update" -> checkUpdate()
@@ -251,6 +256,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        try { com.mesh.core.InAppLogger.lifecycle("MainActivity.onPause") } catch (_: Exception) {}
         detachDownloadListeners()
         try { downloadDialog?.dismiss() } catch (_: Exception) {}
         downloadDialog = null
@@ -315,6 +321,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        try { com.mesh.core.InAppLogger.lifecycle("MainActivity.onResume") } catch (_: Exception) {}
         maybePromptBatteryOnce()
         try { AtomController.wifiDirect?.startContinuousDiscover() } catch (_: Exception) {}
         try { BadgeHelper.clear(this) } catch (_: Exception) {}

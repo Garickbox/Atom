@@ -204,6 +204,7 @@ class FileSenderService : Service() {
                 val cancelInfo = if (curStateBefore is TransferState.Running) {
                     "file=${curStateBefore.fileName} progress=${curStateBefore.bytesSent}/${curStateBefore.bytesTotal}"
                 } else "state=$curStateBefore"
+                try { com.mesh.core.InAppLogger.send("CANCEL by_user") } catch (_: Exception) {}
                 try {
                     val ci = AtomController.transferState.value
                     if (ci is TransferState.Running) com.mesh.core.CompactLog.cancel(ci.fileIndex)
@@ -391,6 +392,7 @@ class FileSenderService : Service() {
                 return@launch
             }
 
+            try { com.mesh.core.InAppLogger.send("START files=" + uris.size + " peer=" + peerName + "@" + peerIp) } catch (_: Exception) {}
             // Probe — только в лог, не блокирует
             val alive = node.probePeer(peerIp, 2000)
             if (!alive) {
@@ -532,6 +534,7 @@ class FileSenderService : Service() {
                     this@FileSenderService, "no-file", peerName, "—",
                     "Не удалось отправить ни один файл")
             } else {
+                try { com.mesh.core.InAppLogger.send("DONE ok=" + filesOk + " total=" + totalSent + " dur=" + duration + "ms") } catch (_: Exception) {}
                 AtomController.transferState.value = TransferState.Success(
                     peerName, filesOk, totalSent, duration
                 )
