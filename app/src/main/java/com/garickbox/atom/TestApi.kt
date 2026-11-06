@@ -80,6 +80,10 @@ object TestApi {
                     "/p2p-connection" -> cmdP2pConnection(ctx)
                     "/net-stat" -> cmdNetStat(ctx)
                     "/verbose" -> cmdVerbose(params["on"])
+                    "/events" -> cmdEvents(ctx, params["area"] ?: "", params["since"] ?: "", params["limit"]?.toIntOrNull() ?: 500)
+                    "/errors" -> cmdErrors(ctx, params["since"] ?: "")
+                    "/errors/count" -> cmdErrorsCount(ctx, params["since"] ?: "")
+                    "/events/mark" -> { com.mesh.core.InAppLogger.mark(params["tag"] ?: "user_mark"); "marked" }
                     else -> "unknown: " + route + " (no /hotspot by axiom#70)"
                 }
             } catch (e: Throwable) {
@@ -224,10 +228,49 @@ object TestApi {
     private fun cmdLog(name: String, ctx: Context): String {
         return try {
             val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
-            val f = File(base, name + ".log")
-            if (!f.exists()) return "no " + name + ".log"
-            val c = f.readText()
+            val f = File(base, "atom.log")
+            if (!f.exists()) return "no atom.log"
+            val full = f.readText()
+            val c = when (name) {
+                "atom-err" -> full.lines().filter { it.contains("[ERR]") }.joinToString("\n")
+                "atom-nfc" -> full.lines().filter { it.contains("[NFC]") || it.contains("[QR]") }.joinToString("\n")
+                "atom-compact" -> full.lines().filter { it.contains("[CMP]") }.joinToString("\n")
+                else -> full
+            }
             if (c.length > 200_000) c.takeLast(200_000) else c
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdEvents(ctx: Context, area: String, since: String, limit: Int): String {
+        return try {
+            val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
+            val f = File(base, "atom.log")
+            if (!f.exists()) return "(empty)"
+            val filtered = f.readLines().filter { ln ->
+                (area.isBlank() || ln.contains("[" + area + "]", ignoreCase = true)) &&
+                (since.isBlank() || ln >= since)
+            }
+            val tail = if (filtered.size > limit) filtered.takeLast(limit) else filtered
+            "count=" + filtered.size + "\n" + tail.joinToString("\n")
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdErrors(ctx: Context, since: String): String {
+        return try {
+            val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
+            val f = File(base, "atom.log")
+            if (!f.exists()) return "(empty)"
+            val errs = f.readLines().filter { it.contains("[ERR]") && (since.isBlank() || it >= since) }
+            "count=" + errs.size + "\n" + errs.takeLast(50).joinToString("\n")
+        } catch (e: Exception) { "err: " + e.message }
+    }
+
+    private fun cmdErrorsCount(ctx: Context, since: String): String {
+        return try {
+            val base = ctx.getExternalFilesDir("logs") ?: File(ctx.filesDir, "logs")
+            val f = File(base, "atom.log")
+            if (!f.exists()) return "0"
+            f.readLines().count { it.contains("[ERR]") && (since.isBlank() || it >= since) }.toString()
         } catch (e: Exception) { "err: " + e.message }
     }
 
