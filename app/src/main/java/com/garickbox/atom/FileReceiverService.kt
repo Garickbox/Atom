@@ -20,13 +20,16 @@ class FileReceiverService : Service() {
         const val ACTION_CANCEL_RECEIVE = "com.garickbox.atom.CANCEL_RECEIVE"
 
         fun start(ctx: Context, fileName: String, totalSize: Long,
-                  peerName: String = "?", transferId: String = "") {
+                  peerName: String = "?", transferId: String = "",
+                  fileIndex: Int = 0, fileCount: Int = 0) {
             val i = Intent(ctx, FileReceiverService::class.java).apply {
                 action = "START"
                 putExtra("fileName", fileName)
                 putExtra("totalSize", totalSize)
                 putExtra("peerName", peerName)
                 putExtra("transferId", transferId)
+                putExtra("fileIndex", fileIndex)
+                putExtra("fileCount", fileCount)
             }
             try {
                 ContextCompat.startForegroundService(ctx, i)
@@ -63,9 +66,11 @@ class FileReceiverService : Service() {
             }
         }
 
-        fun setPeerInfo(peerName: String, transferId: String) {
+        fun setPeerInfo(peerName: String, transferId: String, fileIndex: Int = 0, fileCount: Int = 0) {
             currentPeerName = peerName
             currentTransferId = transferId
+            currentFileIndex = fileIndex
+            currentFileCount = fileCount
             receiverSpeedTracker.reset()
         }
 
@@ -138,8 +143,10 @@ class FileReceiverService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        setPeerInfo(peerName, transferId)
-        InAppLogger.d("FileReceiverService", "start: $fileName ($total b)")
+        val fIdx = intent?.getIntExtra("fileIndex", 0) ?: 0
+        val fCnt = intent?.getIntExtra("fileCount", 0) ?: 0
+        setPeerInfo(peerName, transferId, fIdx, fCnt)
+        InAppLogger.d("FileReceiverService", "start: $fileName ($total b) file $fIdx/$fCnt")
         updateNotif(fileName, 0, total)
         return START_STICKY
     }

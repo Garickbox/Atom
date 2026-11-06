@@ -172,14 +172,16 @@ object FileReceiver {
                 return
             }
 
+            // B237 axiom#467: onIncomingTcp ДО sendAccept — иначе sender сразу connect,
+            // TCP идёт в пустоту → retry × 2-4 (attempt 4 в логе file 6/8)
+            node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
+            FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
+            accepted = true
+
             // B113: transferActive ++ только через FileReceiverService.onCreate (устраняет +1 leak)
             sendAccept(ctx, offer, 0L)
             InAppLogger.d("FileReceiver",
                 "CAS OK — accepted, waiting TCP (tid=${offer.transferId.take(8)})")
-
-            FileReceiverService.start(ctx, offer.name, offer.size, offer.peerName, offer.transferId)
-            node.onIncomingTcp = { socket -> handleIncomingSocket(socket, ctx, node, offer) }
-            accepted = true
             val wdTid = offer.transferId
             scope.launch {
                 delay(30_000)
@@ -340,8 +342,10 @@ object FileReceiver {
                     partFile = wf, raf = wr, channel = wr.channel
                 )
             }
-            session.sockets.add(socket)
+            // B237 axiom#470: registered=true ДО sockets.add — иначе exception между
+            // getOrPut и add оставит _isBusy=true без cleanup в catch
             registered = true
+            session.sockets.add(socket)
             // B101g: over-count fix — не праймить received здесь (multi-thread race)
             // (было: session.received.set(offset) при offset>0 && received==0)
 
@@ -510,7 +514,7 @@ object FileReceiver {
                     session.lastProgressAt = System.currentTimeMillis()
                     continue
                 }
-                if (idleSec > 300) {
+                if (idleSec > 60) {
                     InAppLogger.d("FileReceiver",
                         "watchdog: ${session.tid.take(8)} нет прогресса ${idleSec} сек — abort")
                     session.failed.set(true)
