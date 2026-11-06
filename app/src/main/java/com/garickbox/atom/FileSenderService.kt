@@ -124,7 +124,7 @@ class FileSenderService : Service() {
             startForeground(NOTIF_ID, buildInitialFgsNotif())
         } catch (e: Exception) {
             InAppLogger.err("FileSenderService", "B113: startForeground fail: ${e.message}")
-            try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+            // B113b axiom#511: NO decrement here — onDestroy() releases
             stopSelf()
             return
         }

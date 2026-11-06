@@ -123,7 +123,7 @@ class FileReceiverService : Service() {
             startForeground(NOTIF_ID, buildNotif("Подготовка", 0, 0, 0L))
         } catch (e: Exception) {
             InAppLogger.err("FileReceiverService", "B114: startForeground fail: ${e.message}")
-            try { AtomController.setTransferActive(false) } catch (_: Exception) {}
+            // B114b axiom#511: NO decrement here — onDestroy() releases
             instance = null
             stopSelf()
             return
