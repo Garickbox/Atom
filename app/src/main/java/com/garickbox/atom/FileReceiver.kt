@@ -50,7 +50,8 @@ object FileReceiver {
         @Volatile var watchdogStarted: Boolean = false,
         val relativePath: String? = null,  // B15
         val generation: AtomicInteger = AtomicInteger(1),  // B112: resume race guard
-        val peerId: String = ""  // B113: hijack по peerId (peerName не уникален)
+        val peerId: String = "",  // B113: hijack по peerId (peerName не уникален)
+        val pausedReleased: AtomicInteger = AtomicInteger(0)  // B507: only-last-wins busy release on pause
     )
 
     fun onOffer(offer: MeshNode.FileOffer, ctx: Context) {
@@ -104,6 +105,7 @@ object FileReceiver {
                 existing.finished.set(0)
                 existing.failed.set(false)
                 existing.paused.set(false)
+                existing.pausedReleased.set(0)  // B507: reset counter for resume
                 existing.lastProgressAt = System.currentTimeMillis()
                 InAppLogger.d("FileReceiver",
                     "B112: resume tid=${offer.transferId.take(8)} gen=${existing.generation.get()}")
@@ -408,7 +410,9 @@ object FileReceiver {
                     } else if (session.paused.get() && !session.failed.get()) {
                         InAppLogger.d("FileReceiver",
                             "thread $threadIdx paused — keeping .part (tid=${session.tid.take(8)})")
-                        _isBusy.set(false)
+                        // B507 axiom#507: only LAST paused thread releases busy
+                        val pausedDone = session.pausedReleased.incrementAndGet()
+                        if (pausedDone >= session.threadCount) { _isBusy.set(false) }
                     } else {
                         val done = session.finished.incrementAndGet()
                         InAppLogger.d("FileReceiver",
@@ -770,7 +774,12 @@ fun cancelActiveReceive(ctx: Context) {
             s.partFile.delete()
         }
         activeSessions.clear()
-        _isBusy.set(false)
+        // B508 axiom#508: 300ms delay for thread finalization (same as onCancel B94)
+        Thread {
+            Thread.sleep(300)
+            _isBusy.set(false)
+            InAppLogger.d("FileReceiver", "B508: busy released after cancel wait")
+        }.apply { isDaemon = true }.start()
         AtomController.transferState.value = TransferState.Idle
         FileReceiverService.stop(ctx)
     }
