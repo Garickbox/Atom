@@ -225,7 +225,7 @@ class NfcReaderActivity : AppCompatActivity() {
                         try {
                             cm.bindProcessToNetwork(network)
                             boundCm = cm
-                            try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {}  // B516: no leak
+                            // B520 axiom#520: NO unregister here — kills WiFi binding on HyperOS (B516 regression)
                             // B226 axiom#398: НЕ recreate UDP во время активного transfer
                             if (!AtomController.transferActive) {
                                 AtomController.meshNode?.recreateUdpSocket()
