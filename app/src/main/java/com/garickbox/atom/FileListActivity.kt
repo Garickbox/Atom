@@ -332,7 +332,8 @@ class FileListActivity : AppCompatActivity() {
                 val pkg = if (currentMode == "installed_apps" && row.docId.startsWith("pkg:")) row.docId.removePrefix("pkg:") else null
                 val added = PlaylistManager.add(PlaylistManager.Item(
                     uri = row.uri, name = row.name, sizeBytes = row.size,
-                    relativePath = row.relPath, source = currentMode, icon = row.icon,
+                    // B526 axiom#526: single-file toggle → flat save (MediaStore RELATIVE_PATH leaks full path)
+                    relativePath = null, source = currentMode, icon = row.icon,
                     packageName = pkg))
                 if (!added) android.widget.Toast.makeText(this, "Уже в плейлисте или лимит 500", android.widget.Toast.LENGTH_SHORT).show()
             }
