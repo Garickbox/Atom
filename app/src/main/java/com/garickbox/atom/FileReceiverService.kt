@@ -88,6 +88,7 @@ class FileReceiverService : Service() {
         @Volatile
         private var instance: FileReceiverService? = null
         private val activeFinalizes = java.util.concurrent.atomic.AtomicInteger(0)
+        fun isFinalizing(): Boolean = activeFinalizes.get() > 0  // B523 axiom#523
 
         fun finalizeStart() { activeFinalizes.incrementAndGet() }
         fun finalizeEnd(ctx: Context) {

@@ -129,7 +129,7 @@ object FileReceiver {
         // Это снимает lock даже если finalize async ещё не удалил сессию из map
         // (было 7-12-секундные busy от старого кода на receiver).
         if (_isBusy.get()) {
-            if (activeCount == 0) {
+            if (activeCount == 0 && !FileReceiverService.isFinalizing()) {
                 InAppLogger.d("FileReceiver",
                     "B18: smart self-heal — no active sessions, releasing busy (sessions=${activeSessions.size})")
                 _isBusy.set(false)
