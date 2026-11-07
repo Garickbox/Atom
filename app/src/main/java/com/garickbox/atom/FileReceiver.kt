@@ -47,6 +47,7 @@ object FileReceiver {
         val paused: AtomicBoolean = AtomicBoolean(false),
         val sockets: CopyOnWriteArrayList<Socket> = CopyOnWriteArrayList(),
         @Volatile var lastProgressAt: Long = System.currentTimeMillis(),
+        val startedAt: Long = System.currentTimeMillis(),  // B524: speed metric
         @Volatile var watchdogStarted: Boolean = false,
         val relativePath: String? = null,  // B15
         val generation: AtomicInteger = AtomicInteger(1),  // B112: resume race guard
@@ -748,6 +749,13 @@ object FileReceiver {
         } finally {
             InAppLogger.d("FileReceiver",
                 "finalize DONE in ${System.currentTimeMillis() - finalizeStart}ms")
+            // B524 axiom#524: speed metric for next benchmarks
+            val totalMs = System.currentTimeMillis() - session.startedAt
+            if (totalMs > 0) {
+                val mbps = session.totalSize / 1024.0 / 1024.0 / (totalMs / 1000.0)
+                InAppLogger.d("FileReceiver",
+                    "B524 speed: ${session.totalSize / 1024 / 1024}MB in ${totalMs}ms = ${"%.1f".format(mbps)} MB/s (tid=${session.tid.take(8)})")
+            }
         }
     }
 
