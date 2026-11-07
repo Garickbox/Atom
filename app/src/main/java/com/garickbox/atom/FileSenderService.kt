@@ -886,6 +886,11 @@ class FileSenderService : Service() {
                     for (retry in 1..5) {
                         try {
                             socket = node.openTcpTo(peerIp, 5000)
+                            // B525 axiom#525: sender-side symmetry with B225 (receiver) — 64KB default → 8MB
+                            socket.sendBufferSize = 8 * 1024 * 1024
+                            socket.receiveBufferSize = 8 * 1024 * 1024
+                            socket.tcpNoDelay = true
+                            socket.keepAlive = true
                             val tcpMs = System.currentTimeMillis() - tcpStart
                             InAppLogger.d("FileSenderService",
                                 "tcp connect OK (thread $i, attempt $retry, ${tcpMs}ms)")
