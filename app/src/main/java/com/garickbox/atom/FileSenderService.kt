@@ -173,6 +173,12 @@ class FileSenderService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
+                // B522 axiom#522: multi-tap guard — decline if transfer already running
+                val curState = AtomController.transferState.value
+                if (curState is TransferState.Running && currentJob?.isActive == true) {
+                    InAppLogger.d("FileSenderService", "B522: skip new tap — transfer running (${curState.fileName})")
+                    return START_NOT_STICKY
+                }
                 val peerIp = intent.getStringExtra(EXTRA_PEER_IP) ?: return START_NOT_STICKY
                 val peerId = intent.getStringExtra(EXTRA_PEER_ID) ?: ""
                 val peerName = intent.getStringExtra(EXTRA_PEER_NAME) ?: "?"
@@ -394,7 +400,12 @@ class FileSenderService : Service() {
 
             try { com.mesh.core.InAppLogger.send("START files=" + uris.size + " peer=" + peerName + "@" + peerIp) } catch (_: Exception) {}
             // Probe — только в лог, не блокирует
-            val alive = node.probePeer(peerIp, 2000)
+            // B521 axiom#521: WNS onAvailable != route ready — retry probe with backoff
+            var alive = false
+            for ((i, t) in listOf(1000L, 2000L, 4000L).withIndex()) {
+                if (node.probePeer(peerIp, t)) { alive = true; break }
+                if (i < 2) kotlinx.coroutines.delay(500L)
+            }
             if (!alive) {
                 InAppLogger.err("FileSenderService", "B201: probe FAIL $peerIp - abort (no 45s retry)")
                 AtomController.transferState.value = TransferState.Failed(
